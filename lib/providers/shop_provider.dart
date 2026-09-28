@@ -1,42 +1,47 @@
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
-import '../models/shop.dart';
-import '../services/db_service.dart';
+import '../services/auth_service.dart';
 
-class ShopProvider extends ChangeNotifier {
-  Shop? shop;
-  final _uuid = const Uuid();
+class AuthProvider extends ChangeNotifier {
+  bool isLoggedIn = false;
+  String? phoneNumber;
+  bool isLoading = false;
 
-  Future<void> load() async {
-    final db = await DBService.instance.database;
-    final rows = await db.query('shop', limit: 1);
-    if (rows.isNotEmpty) {
-      shop = Shop.fromMap(rows.first);
+  Future<void> checkExistingSession() async {
+    final saved = await AuthService.instance.getSession();
+    if (saved != null) {
+      phoneNumber = saved;
+      isLoggedIn = true;
       notifyListeners();
     }
   }
 
-  Future<void> save({
-    required String name,
-    required String address,
-    required String phone,
-    String? taxNumber,
-    String? logoPath,
-  }) async {
-    final db = await DBService.instance.database;
-    final id = shop?.id ?? _uuid.v4();
-    final newShop = Shop(
-      id: id,
-      name: name,
-      address: address,
-      phone: phone,
-      taxNumber: taxNumber,
-      logoPath: logoPath ?? shop?.logoPath,
-    );
-    await db.insert('shop', newShop.toMap());
-    // single-row table: clear any stale duplicate from a previous insert
-    await db.delete('shop', where: 'id != ?', whereArgs: [id]);
-    shop = newShop;
+  Future<String> requestOtp(String phone) async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      final otp = await AuthService.instance.sendOtp(phone);
+      return otp;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> confirmOtp(String phone, String otp) async {
+    final ok = await AuthService.instance.verifyOtp(phone, otp);
+    if (ok) {
+      phoneNumber = phone;
+      isLoggedIn = true;
+      await AuthService.instance.persistSession(phone);
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  Future<void> logout() async {
+    await AuthService.instance.clearSession();
+    isLoggedIn = false;
+    phoneNumber = null;
     notifyListeners();
   }
 }
