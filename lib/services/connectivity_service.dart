@@ -1,5 +1,6 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'sync_queue_service.dart';
 import 'sync_service.dart';
 

@@ -1,13 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
-import '../models/bill.dart';
-import '../models/product.dart';
-import '../models/supplier.dart';
-import '../models/shop.dart';
-import '../models/daily_sale.dart';
 import 'db_service.dart';
-import 'sync_queue_service.dart';
 
 /// Multi-device sync service using Firebase Firestore.
 /// Syncs local SQLite changes to cloud and vice versa.
@@ -52,7 +46,7 @@ class SyncService {
             .doc(userId)
             .collection('shop')
             .doc('profile')
-            .set(shopRows.first, SetOptions(merge: true));
+            .set(shopRows.first as Map<String, dynamic>, SetOptions(merge: true));
       }
 
       // Sync products with batch
@@ -65,7 +59,7 @@ class SyncService {
             .doc(userId)
             .collection('products')
             .doc(product['id'] as String);
-        productBatch.set(ref, product, SetOptions(merge: true));
+        productBatch.set(ref, product as Map<String, dynamic>, SetOptions(merge: true));
       }
       await productBatch.commit();
       debugPrint('[SyncService] Synced ${products.length} products');
@@ -80,7 +74,7 @@ class SyncService {
             .doc(userId)
             .collection('bills')
             .doc(bill['id'] as String);
-        billBatch.set(ref, bill, SetOptions(merge: true));
+        billBatch.set(ref, bill as Map<String, dynamic>, SetOptions(merge: true));
       }
       await billBatch.commit();
       debugPrint('[SyncService] Synced ${bills.length} bills');
@@ -95,7 +89,7 @@ class SyncService {
             .doc(userId)
             .collection('suppliers')
             .doc(supplier['id'] as String);
-        supplierBatch.set(ref, supplier, SetOptions(merge: true));
+        supplierBatch.set(ref, supplier as Map<String, dynamic>, SetOptions(merge: true));
       }
       await supplierBatch.commit();
       debugPrint('[SyncService] Synced ${suppliers.length} suppliers');
@@ -110,7 +104,7 @@ class SyncService {
             .doc(userId)
             .collection('sales')
             .doc(sale['id'] as String);
-        salesBatch.set(ref, sale, SetOptions(merge: true));
+        salesBatch.set(ref, sale as Map<String, dynamic>, SetOptions(merge: true));
       }
       await salesBatch.commit();
       debugPrint('[SyncService] Synced ${sales.length} sales entries');
@@ -125,7 +119,7 @@ class SyncService {
             .doc(userId)
             .collection('expenses')
             .doc(expense['id'] as String);
-        expenseBatch.set(ref, expense, SetOptions(merge: true));
+        expenseBatch.set(ref, expense as Map<String, dynamic>, SetOptions(merge: true));
       }
       await expenseBatch.commit();
       debugPrint('[SyncService] Synced ${expenses.length} expenses');
@@ -230,20 +224,5 @@ class SyncService {
     } finally {
       _isSyncing = false;
     }
-  }
-
-  /// Queue operation when offline (for sync later)
-  Future<void> queueOfflineOperation({
-    required String operation,
-    required String tableName,
-    required String documentId,
-    required Map<String, dynamic> data,
-  }) async {
-    await SyncQueueService.instance.queueOperation(
-      operation: operation,
-      tableName: tableName,
-      documentId: documentId,
-      data: data,
-    );
   }
 }

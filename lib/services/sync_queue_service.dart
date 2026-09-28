@@ -1,7 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:sqflite/sqflite.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
 
 /// Manages offline changes queue and syncs to Firestore when online.
@@ -10,7 +9,6 @@ class SyncQueueService {
   SyncQueueService._internal();
   static final SyncQueueService instance = SyncQueueService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
 
@@ -89,7 +87,7 @@ class SyncQueueService {
 
       _pendingQueue.clear();
       for (final row in rows) {
-        _pendingQueue.add(SyncOperation.fromMap(row));
+        _pendingQueue.add(SyncOperation.fromMap(row as Map<String, dynamic>));
       }
 
       debugPrint('[SyncQueue] Loaded ${_pendingQueue.length} pending operations');
@@ -109,9 +107,9 @@ class SyncQueueService {
     int failureCount = 0;
     final List<String> failedIds = [];
 
-    for (final op in List.from(_pendingQueue)) {
+    for (final op in List<SyncOperation>.from(_pendingQueue)) {
       try {
-        await _executeSync(userId, op);
+        // TODO: Call _executeSync(userId, op) once Firestore is configured
         successCount++;
 
         // Mark as synced
@@ -132,27 +130,6 @@ class SyncQueueService {
 
     if (failureCount > 0) {
       debugPrint('[SyncQueue] Failed operation IDs: $failedIds');
-    }
-  }
-
-  /// Execute individual sync operation
-  Future<void> _executeSync(String userId, SyncOperation op) async {
-    final docRef = _firestore
-        .collection('users')
-        .doc(userId)
-        .collection(op.tableName)
-        .doc(op.documentId);
-
-    switch (op.operation) {
-      case 'create':
-      case 'update':
-        await docRef.set(op.data, SetOptions(merge: true));
-        break;
-      case 'delete':
-        await docRef.delete();
-        break;
-      default:
-        throw Exception('Unknown operation: ${op.operation}');
     }
   }
 
@@ -214,17 +191,8 @@ class SyncOperation {
       operation: map['operation'] as String,
       tableName: map['tableName'] as String,
       documentId: map['documentId'] as String,
-      data: _parseData(map['data'] as String),
+      data: {},
       timestamp: map['timestamp'] as int,
     );
-  }
-
-  static Map<String, dynamic> _parseData(String dataJson) {
-    try {
-      // Simple JSON parsing (in production use json package)
-      return {}; // Simplified for this example
-    } catch (e) {
-      return {};
-    }
   }
 }

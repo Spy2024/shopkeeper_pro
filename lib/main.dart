@@ -1,4 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -9,10 +8,12 @@ import 'providers/pos_provider.dart';
 import 'providers/supplier_provider.dart';
 import 'providers/sales_provider.dart';
 import 'providers/finance_provider.dart';
+import 'providers/sync_provider.dart';
 import 'screens/auth/phone_entry_screen.dart';
 import 'screens/profile/shop_profile_screen.dart';
 import 'screens/dashboard/home_screen.dart';
 import 'utils/theme.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +37,7 @@ class ShopkeeperProApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SupplierProvider()),
         ChangeNotifierProvider(create: (_) => SalesProvider()),
         ChangeNotifierProvider(create: (_) => FinanceProvider()),
+        ChangeNotifierProvider(create: (_) => SyncProvider()),
       ],
       child: MaterialApp(
         title: 'Shopkeeper Pro',
@@ -72,6 +74,8 @@ class _StartupGateState extends State<_StartupGate> {
     await auth.checkExistingSession();
     if (auth.isLoggedIn) {
       await context.read<ShopProvider>().load();
+      // Initialize sync services if user ID available
+      // TODO: Get userUid from FirebaseAuthService
     }
     setState(() => _ready = true);
   }
