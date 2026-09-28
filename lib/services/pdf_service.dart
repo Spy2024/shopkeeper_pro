@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -14,26 +15,49 @@ class PdfService {
   static Future<File> generateInvoice(Bill bill, Shop? shop) async {
     final doc = pw.Document();
 
+    // Load shop logo if available
+    pw.ImageProvider? logoImage;
+    if (shop?.logoPath != null && shop!.logoPath!.isNotEmpty) {
+      try {
+        final logoFile = File(shop.logoPath!);
+        if (await logoFile.exists()) {
+          logoImage = pw.MemoryImage(await logoFile.readAsBytes());
+        }
+      } catch (e) {
+        // Logo load failed, continue without it
+      }
+    }
+
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.roll80, // receipt-width; swap to a4 for a full page
         build: (context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
+            // LOGO AND HEADER
             pw.Center(
-              child: pw.Text(shop?.name ?? 'My Shop',
-                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+              child: pw.Column(
+                children: [
+                  if (logoImage != null)
+                    pw.Image(logoImage, width: 60, height: 60)
+                  else
+                    pw.SizedBox(height: 0),
+                  pw.Text(shop?.name ?? 'My Shop',
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                ],
+              ),
             ),
-            if (shop?.address != null) pw.Center(child: pw.Text(shop!.address)),
-            if (shop?.phone != null) pw.Center(child: pw.Text(shop!.phone)),
+            if (shop?.address != null) pw.Center(child: pw.Text(shop!.address, fontSize: 10)),
+            if (shop?.phone != null) pw.Center(child: pw.Text(shop!.phone, fontSize: 10)),
             if (shop?.taxNumber != null && shop!.taxNumber!.isNotEmpty)
-              pw.Center(child: pw.Text('NTN: ${shop.taxNumber}')),
+              pw.Center(child: pw.Text('NTN: ${shop.taxNumber}', fontSize: 10)),
             pw.Divider(),
-            pw.Text('Invoice #: ${bill.id.substring(0, 8).toUpperCase()}'),
-            pw.Text('Date: ${_dateFmt.format(bill.date)}'),
+            pw.Text('Invoice #: ${bill.id.substring(0, 8).toUpperCase()}', fontSize: 11),
+            pw.Text('Date: ${_dateFmt.format(bill.date)}', fontSize: 11),
             if (bill.customerName != null && bill.customerName!.isNotEmpty)
-              pw.Text('Customer: ${bill.customerName}'),
+              pw.Text('Customer: ${bill.customerName}', fontSize: 11),
             pw.Divider(),
+            // LINE ITEMS TABLE
             pw.Table(
               columnWidths: {
                 0: const pw.FlexColumnWidth(3),
@@ -61,7 +85,7 @@ class PdfService {
             pw.Divider(),
             _row('Grand Total', _currency.format(bill.grandTotal), bold: true),
             pw.SizedBox(height: 12),
-            pw.Center(child: pw.Text('Thank you for shopping with us!')),
+            pw.Center(child: pw.Text('Thank you for shopping with us!', fontSize: 10)),
           ],
         ),
       ),

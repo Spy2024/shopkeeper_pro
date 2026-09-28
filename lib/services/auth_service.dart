@@ -2,13 +2,12 @@ import 'dart:math';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Phone + OTP authentication.
+/// This is the DEMO version. For production, use FirebaseAuthService instead.
 ///
 /// IMPORTANT: This class generates and "sends" OTPs locally so the app is
 /// fully runnable offline in dev/demo mode. For production you MUST swap
-/// `sendOtp()` to call a real SMS provider (Firebase Phone Auth, Twilio
-/// Verify, MSG91, etc.) instead of self-generating the code — otherwise
-/// anyone can read the code straight out of the app. The rest of the flow
-/// (verify, session storage, recovery) stays the same either way.
+/// this to FirebaseAuthService which calls Firebase Phone Auth.
+/// Otherwise anyone can read the code straight out of the app.
 class AuthService {
   AuthService._internal();
   static final AuthService instance = AuthService._internal();
@@ -18,10 +17,8 @@ class AuthService {
 
   Future<String> sendOtp(String phoneNumber) async {
     // --- DEMO IMPLEMENTATION ---
-    // Replace this block with a real SMS API call, e.g.:
-    //   await FirebaseAuth.instance.verifyPhoneNumber(...)
-    // or
-    //   await http.post(Uri.parse('https://your-sms-provider/send'), ...)
+    // Replace this block with FirebaseAuthService.instance.sendOtp(phoneNumber)
+    // for production.
     final otp = (100000 + Random().nextInt(899999)).toString();
     _pendingOtps[phoneNumber] = otp;
     return otp; // returned only so the demo UI can show it; a real
