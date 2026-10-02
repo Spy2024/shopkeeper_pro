@@ -25,13 +25,10 @@ jobs:
           flutter-version: '3.x'
           channel: 'stable'
 
-      - name: Re-create Android Platform & Get Pub
-        run: |
-          rm -rf android
-          flutter create --platforms=android .
-          flutter pub get
+      - name: Install Dependencies
+        run: flutter pub get
 
-      - name: Build APK
+      - name: Build Release APK
         run: flutter build apk --release
 
       - name: Upload APK Artifact
@@ -39,4 +36,3 @@ jobs:
         with:
           name: app-release-apk
           path: "**/build/app/outputs/flutter-apk/app-release.apk"
-          
