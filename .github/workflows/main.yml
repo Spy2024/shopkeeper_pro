@@ -1,0 +1,14 @@
+cd shopkeeper_pro
+
+# Clean and get dependencies
+flutter clean
+flutter pub get
+
+# Analyze for errors
+flutter analyze
+
+# Run tests
+flutter test
+
+# Build APK
+flutter build apk --release
