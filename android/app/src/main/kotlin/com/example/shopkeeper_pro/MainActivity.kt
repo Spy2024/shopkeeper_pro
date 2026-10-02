@@ -1,1 +1,6 @@
-android/app/src/main/kotlin/com/example/shopkeeper_pro/MainActivity.kt
+package com.example.shopkeeper_pro
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity: FlutterActivity() {
+}
