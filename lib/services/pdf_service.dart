@@ -25,7 +25,8 @@ class PdfService {
     }
 
     final double subtotalVal = bill.items.fold(0.0, (sum, item) {
-      final itemPrice = (item as dynamic).price ?? (item as dynamic).unitPrice ?? 0.0;
+      final dynamic dynItem = item;
+      final double itemPrice = (dynItem.price ?? dynItem.unitPrice ?? 0.0) as double;
       return sum + (item.quantity * itemPrice);
     });
     final double discountVal = bill.discount;
@@ -95,7 +96,8 @@ class PdfService {
               context: context,
               headers: ['Item', 'Qty', 'Price', 'Total'],
               data: bill.items.map((item) {
-                final itemPrice = (item as dynamic).price ?? (item as dynamic).unitPrice ?? 0.0;
+                final dynamic dynItem = item;
+                final double itemPrice = (dynItem.price ?? dynItem.unitPrice ?? 0.0) as double;
                 return [
                   item.name,
                   item.quantity.toString(),
