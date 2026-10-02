@@ -24,7 +24,10 @@ class PdfService {
       } catch (_) {}
     }
 
-    final double subtotalVal = bill.items.fold(0.0, (sum, item) => sum + (item.quantity * item.price));
+    final double subtotalVal = bill.items.fold(0.0, (sum, item) {
+      final itemPrice = (item as dynamic).price ?? (item as dynamic).unitPrice ?? 0.0;
+      return sum + (item.quantity * itemPrice);
+    });
     final double discountVal = bill.discount;
     final double calculatedTotal = subtotalVal - discountVal;
 
@@ -32,7 +35,7 @@ class PdfService {
       pw.Page(
         pageFormat: PdfPageFormat.roll80,
         build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          cross: pw.CrossAxisAlignment.start,
           children: [
             if (logoImage != null)
               pw.Center(
@@ -92,11 +95,12 @@ class PdfService {
               context: context,
               headers: ['Item', 'Qty', 'Price', 'Total'],
               data: bill.items.map((item) {
+                final itemPrice = (item as dynamic).price ?? (item as dynamic).unitPrice ?? 0.0;
                 return [
                   item.name,
                   item.quantity.toString(),
-                  _currency.format(item.price),
-                  _currency.format(item.quantity * item.price),
+                  _currency.format(itemPrice),
+                  _currency.format(item.quantity * itemPrice),
                 ];
               }).toList(),
             ),
@@ -153,7 +157,7 @@ class PdfService {
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          cross: pw.CrossAxisAlignment.start,
           children: [
             if (shop?.name != null)
               pw.Text(
@@ -175,7 +179,7 @@ class PdfService {
               headers: ['Item Description', 'Quantity', 'Expected Unit Price', 'Total'],
               data: items.map((item) {
                 final qty = (item['quantity'] ?? 1) as num;
-                final price = (item['price'] ?? 0.0) as num;
+                final price = (item['price'] ?? item['unitPrice'] ?? 0.0) as num;
                 return [
                   item['name'] ?? '',
                   qty.toString(),
