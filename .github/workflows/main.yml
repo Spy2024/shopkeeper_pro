@@ -25,9 +25,9 @@ jobs:
           flutter-version: '3.x'
           channel: 'stable'
 
-      - name: Clean & Get Dependencies
+      - name: Repair & Re-create Android Platform Files
         run: |
-          flutter clean
+          flutter create --platforms=android .
           flutter pub get
 
       - name: Build APK
