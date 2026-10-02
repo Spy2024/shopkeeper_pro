@@ -25,12 +25,13 @@ jobs:
           flutter-version: '3.x'
           channel: 'stable'
 
-      - name: Clean & Get Dependencies
+      - name: Rebuild Clean Android V2 Platform & Dependencies
         run: |
-          flutter clean
+          rm -rf android/
+          flutter create --platforms=android --org com.example .
           flutter pub get
 
-      - name: Build Release APK with Memory Management
+      - name: Build Release APK
         run: |
           export GRADLE_OPTS="-Dorg.gradle.jvmargs='-Xmx2048m -XX:MaxMetaspaceSize=512m' -Dorg.gradle.daemon=false"
           flutter build apk --release --no-tree-shake-icons
