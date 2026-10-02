@@ -1,14 +1,39 @@
-cd shopkeeper_pro
+name: Flutter CI
 
-# Clean and get dependencies
-flutter clean
-flutter pub get
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
 
-# Analyze for errors
-flutter analyze
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-# Run tests
-flutter test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-# Build APK
-flutter build apk --release
+      - name: Set up Java Development Kit (JDK)
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze code
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --release
