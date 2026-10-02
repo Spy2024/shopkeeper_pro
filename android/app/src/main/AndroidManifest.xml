@@ -1,8 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.shopkeeper_pro">
+    
     <application
         android:label="shopkeeper_pro"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -13,7 +16,6 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
             
-            <!-- Standard Flutter Initialization -->
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
@@ -25,7 +27,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Android v2 Embedding Required Meta-Data -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
