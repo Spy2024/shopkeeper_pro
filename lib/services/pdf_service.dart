@@ -25,11 +25,16 @@ class PdfService {
       } catch (_) {}
     }
 
+    // Dynamic total calculation safety check
+    final double subtotalVal = bill.items.fold(0.0, (sum, item) => sum + (item.quantity * item.price));
+    final double discountVal = bill.discount;
+    final double calculatedTotal = subtotalVal - discountVal;
+
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.roll80,
         build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          cross: pw.CrossAxisAlignment.start,
           children: [
             if (logoImage != null)
               pw.Center(
@@ -102,22 +107,22 @@ class PdfService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text('Subtotal:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                pw.Text(_currency.format(bill.subtotal)),
+                pw.Text(_currency.format(subtotalVal)),
               ],
             ),
-            if (bill.discount > 0)
+            if (discountVal > 0)
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text('Discount:'),
-                  pw.Text('-${_currency.format(bill.discount)}'),
+                  pw.Text('-${_currency.format(discountVal)}'),
                 ],
               ),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text('Total:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                pw.Text(_currency.format(bill.total), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                pw.Text(_currency.format(calculatedTotal), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
               ],
             ),
             pw.SizedBox(height: 15),
@@ -138,7 +143,6 @@ class PdfService {
     return file;
   }
 
-  // Supplier Purchase Order PDF Generator Function
   static Future<File> generatePurchaseOrder({
     required Supplier supplier,
     required List<Map<String, dynamic>> items,
@@ -151,7 +155,7 @@ class PdfService {
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          cross: pw.CrossAxisAlignment.start,
           children: [
             if (shop?.name != null)
               pw.Text(
