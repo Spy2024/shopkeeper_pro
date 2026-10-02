@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-/// Cloud sync service for syncing local SQLite with backend storage.
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
@@ -26,7 +25,7 @@ class SyncService {
     _isSyncing = true;
     try {
       debugPrint('[SyncService] Syncing from cloud for user: $userId');
-      // TODO: fetch cloud data and merge with SQLite
+      // TODO: implement Firestore sync
     } catch (e) {
       debugPrint('[SyncService] Error syncing from cloud: $e');
     } finally {

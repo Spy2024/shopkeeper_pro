@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+
 import '../models/shop.dart';
 import '../services/db_service.dart';
 

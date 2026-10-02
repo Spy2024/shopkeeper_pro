@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+
 import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -22,12 +23,9 @@ class AuthProvider extends ChangeNotifier {
   Future<String> requestOtp(String phone) async {
     isLoading = true;
     notifyListeners();
+
     try {
-      final otp = await AuthService.instance.sendOtp(phone);
-      return otp;
-    } catch (e) {
-      debugPrint('[AuthProvider] Error requesting OTP: $e');
-      rethrow;
+      return await AuthService.instance.sendOtp(phone);
     } finally {
       isLoading = false;
       notifyListeners();
