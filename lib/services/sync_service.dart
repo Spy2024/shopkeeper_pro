@@ -1,47 +1,41 @@
-import 'dart:math';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 
-/// Phone + OTP authentication.
-/// This is the DEMO version. For production, use FirebaseAuthService instead.
-///
-/// IMPORTANT: This class generates and "sends" OTPs locally so the app is
-/// fully runnable offline in dev/demo mode. For production you MUST swap
-/// this to FirebaseAuthService which calls Firebase Phone Auth.
-/// Otherwise anyone can read the code straight out of the app.
-class AuthService {
-  AuthService._internal();
-  static final AuthService instance = AuthService._internal();
+/// Cloud sync service for syncing local SQLite with backend storage.
+class SyncService {
+  SyncService._internal();
+  static final SyncService instance = SyncService._internal();
 
-  final _secureStorage = const FlutterSecureStorage();
-  final Map<String, String> _pendingOtps = {}; // phone -> otp (demo only)
+  bool _isSyncing = false;
+  bool _isOnline = false;
 
-  Future<String> sendOtp(String phoneNumber) async {
-    // --- DEMO IMPLEMENTATION ---
-    // Replace this block with FirebaseAuthService.instance.sendOtp(phoneNumber)
-    // for production.
-    final otp = (100000 + Random().nextInt(899999)).toString();
-    _pendingOtps[phoneNumber] = otp;
-    return otp;
-  }
+  bool get isSyncing => _isSyncing;
+  bool get isOnline => _isOnline;
 
-  Future<bool> verifyOtp(String phoneNumber, String enteredOtp) async {
-    final expected = _pendingOtps[phoneNumber];
-    if (expected != null && expected == enteredOtp) {
-      _pendingOtps.remove(phoneNumber);
-      return true;
+  Future<void> init(String userId) async {
+    try {
+      _isOnline = true;
+      debugPrint('[SyncService] Initialized for user: $userId');
+    } catch (e) {
+      debugPrint('[SyncService] Error initializing: $e');
     }
-    return false;
   }
 
-  Future<void> persistSession(String phoneNumber) async {
-    await _secureStorage.write(key: 'session_phone', value: phoneNumber);
+  Future<void> syncFromCloud(String userId) async {
+    if (_isSyncing) return;
+
+    _isSyncing = true;
+    try {
+      debugPrint('[SyncService] Syncing from cloud for user: $userId');
+      // TODO: fetch cloud data and merge with SQLite
+    } catch (e) {
+      debugPrint('[SyncService] Error syncing from cloud: $e');
+    } finally {
+      _isSyncing = false;
+    }
   }
 
-  Future<String?> getSession() async {
-    return _secureStorage.read(key: 'session_phone');
-  }
-
-  Future<void> clearSession() async {
-    await _secureStorage.delete(key: 'session_phone');
+  void setOnline(bool online) {
+    _isOnline = online;
+    debugPrint('[SyncService] Online status: $_isOnline');
   }
 }
