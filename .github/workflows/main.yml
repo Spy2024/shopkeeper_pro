@@ -30,12 +30,13 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Build Release APK with Verbose Output
-        run: flutter build apk --release --verbose
+      - name: Build Release APK with Memory Management
+        run: |
+          export GRADLE_OPTS="-Dorg.gradle.jvmargs='-Xmx2048m -XX:MaxMetaspaceSize=512m' -Dorg.gradle.daemon=false"
+          flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
           path: "build/app/outputs/flutter-apk/app-release.apk"
-          
