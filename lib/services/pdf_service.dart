@@ -15,7 +15,6 @@ class PdfService {
   static Future<File> generateInvoice(Bill bill, Shop? shop) async {
     final doc = pw.Document();
 
-    // Load shop logo if available
     pw.ImageProvider? logoImage;
     if (shop?.logoPath != null && shop!.logoPath!.isNotEmpty) {
       try {
@@ -23,16 +22,14 @@ class PdfService {
         if (await logoFile.exists()) {
           logoImage = pw.MemoryImage(await logoFile.readAsBytes());
         }
-      } catch (e) {
-        // Logo load failed, continue without it
-      }
+      } catch (_) {}
     }
 
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.roll80,
         build: (context) => pw.Column(
-          cross: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             if (logoImage != null)
               pw.Center(
@@ -88,7 +85,6 @@ class PdfService {
             ),
             pw.Divider(),
             pw.SizedBox(height: 5),
-            // Items Table
             pw.TableHelper.fromTextArray(
               context: context,
               headers: ['Item', 'Qty', 'Price', 'Total'],
@@ -138,6 +134,71 @@ class PdfService {
 
     final output = await getTemporaryDirectory();
     final file = File('${output.path}/invoice_${bill.id}.pdf');
+    await file.writeAsBytes(await doc.save());
+    return file;
+  }
+
+  // Supplier Purchase Order PDF Generator Function
+  static Future<File> generatePurchaseOrder({
+    required Supplier supplier,
+    required List<Map<String, dynamic>> items,
+    required double totalAmount,
+    Shop? shop,
+  }) async {
+    final doc = pw.Document();
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            if (shop?.name != null)
+              pw.Text(
+                shop!.name,
+                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+              ),
+            pw.SizedBox(height: 10),
+            pw.Text(
+              'PURCHASE ORDER',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.Divider(),
+            pw.Text('Supplier Name: ${supplier.name}'),
+            if (supplier.phone.isNotEmpty) pw.Text('Phone: ${supplier.phone}'),
+            pw.Text('Date: ${_dateFmt.format(DateTime.now())}'),
+            pw.SizedBox(height: 15),
+            pw.TableHelper.fromTextArray(
+              context: context,
+              headers: ['Item Description', 'Quantity', 'Expected Unit Price', 'Total'],
+              data: items.map((item) {
+                final qty = (item['quantity'] ?? 1) as num;
+                final price = (item['price'] ?? 0.0) as num;
+                return [
+                  item['name'] ?? '',
+                  qty.toString(),
+                  _currency.format(price),
+                  _currency.format(qty * price),
+                ];
+              }).toList(),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Text(
+                  'Total PO Amount: ${_currency.format(totalAmount)}',
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final output = await getTemporaryDirectory();
+    final file = File('${output.path}/po_${supplier.id}_${DateTime.now().millisecondsSinceEpoch}.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
   }
