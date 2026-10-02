@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -25,7 +24,6 @@ class PdfService {
       } catch (_) {}
     }
 
-    // Dynamic total calculation safety check
     final double subtotalVal = bill.items.fold(0.0, (sum, item) => sum + (item.quantity * item.price));
     final double discountVal = bill.discount;
     final double calculatedTotal = subtotalVal - discountVal;
@@ -34,11 +32,11 @@ class PdfService {
       pw.Page(
         pageFormat: PdfPageFormat.roll80,
         build: (context) => pw.Column(
-          cross: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             if (logoImage != null)
               pw.Center(
-                child: pw.Container(
+                child: pw.SizedBox(
                   height: 50,
                   child: pw.Image(logoImage),
                 ),
@@ -155,7 +153,7 @@ class PdfService {
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         build: (context) => pw.Column(
-          cross: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             if (shop?.name != null)
               pw.Text(
