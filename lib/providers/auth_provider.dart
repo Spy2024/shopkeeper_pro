@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-
 import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -8,54 +7,38 @@ class AuthProvider extends ChangeNotifier {
   bool isLoading = false;
 
   Future<void> checkExistingSession() async {
-    try {
-      final saved = await AuthService.instance.getSession();
-      if (saved != null) {
-        phoneNumber = saved;
-        isLoggedIn = true;
-        notifyListeners();
-      }
-    } catch (e) {
-      debugPrint('[AuthProvider] Error checking session: $e');
+    final saved = await AuthService.instance.getSession();
+    if (saved != null) {
+      phoneNumber = saved;
+      isLoggedIn = true;
+      notifyListeners();
     }
   }
 
   Future<String> requestOtp(String phone) async {
     isLoading = true;
     notifyListeners();
-
-    try {
-      return await AuthService.instance.sendOtp(phone);
-    } finally {
-      isLoading = false;
-      notifyListeners();
-    }
+    final otp = await AuthService.instance.sendOtp(phone);
+    isLoading = false;
+    notifyListeners();
+    return otp;
   }
 
   Future<bool> confirmOtp(String phone, String otp) async {
-    try {
-      final ok = await AuthService.instance.verifyOtp(phone, otp);
-      if (ok) {
-        phoneNumber = phone;
-        isLoggedIn = true;
-        await AuthService.instance.persistSession(phone);
-        notifyListeners();
-      }
-      return ok;
-    } catch (e) {
-      debugPrint('[AuthProvider] Error confirming OTP: $e');
-      return false;
+    final ok = AuthService.instance.verifyOtp(phone, otp);
+    if (ok) {
+      phoneNumber = phone;
+      isLoggedIn = true;
+      await AuthService.instance.persistSession(phone);
+      notifyListeners();
     }
+    return ok;
   }
 
   Future<void> logout() async {
-    try {
-      await AuthService.instance.clearSession();
-      isLoggedIn = false;
-      phoneNumber = null;
-      notifyListeners();
-    } catch (e) {
-      debugPrint('[AuthProvider] Error during logout: $e');
-    }
+    await AuthService.instance.clearSession();
+    isLoggedIn = false;
+    phoneNumber = null;
+    notifyListeners();
   }
 }

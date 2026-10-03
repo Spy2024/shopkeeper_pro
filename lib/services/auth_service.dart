@@ -1,24 +1,31 @@
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Demo OTP implementation for local/offline testing.
-/// For production, replace with FirebaseAuthService.instance.
+/// Phone + OTP authentication.
+/// This is the DEMO version. For production, use FirebaseAuthService instead.
+///
+/// IMPORTANT: This class generates and "sends" OTPs locally so the app is
+/// fully runnable offline in dev/demo mode. For production you MUST swap
+/// this to FirebaseAuthService which calls Firebase Phone Auth.
+/// Otherwise anyone can read the code straight out of the app.
 class AuthService {
   AuthService._internal();
   static final AuthService instance = AuthService._internal();
 
   final _secureStorage = const FlutterSecureStorage();
-  final Map<String, String> _pendingOtps = {};
+  final Map<String, String> _pendingOtps = {}; // phone -> otp (demo only)
 
   Future<String> sendOtp(String phoneNumber) async {
+    // --- DEMO IMPLEMENTATION ---
+    // Replace this block with FirebaseAuthService.instance.sendOtp(phoneNumber)
+    // for production.
     final otp = (100000 + Random().nextInt(899999)).toString();
     _pendingOtps[phoneNumber] = otp;
-    debugPrint('[AuthService] Demo OTP for $phoneNumber: $otp');
-    return otp;
+    return otp; // returned only so the demo UI can show it; a real
+    // provider would NOT return the code to the client.
   }
 
-  Future<bool> verifyOtp(String phoneNumber, String enteredOtp) async {
+  bool verifyOtp(String phoneNumber, String enteredOtp) {
     final expected = _pendingOtps[phoneNumber];
     if (expected != null && expected == enteredOtp) {
       _pendingOtps.remove(phoneNumber);

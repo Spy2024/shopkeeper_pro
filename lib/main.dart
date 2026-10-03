@@ -1,27 +1,25 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
-import 'providers/finance_provider.dart';
+import 'providers/shop_provider.dart';
 import 'providers/inventory_provider.dart';
 import 'providers/pos_provider.dart';
-import 'providers/sales_provider.dart';
-import 'providers/shop_provider.dart';
 import 'providers/supplier_provider.dart';
+import 'providers/sales_provider.dart';
+import 'providers/finance_provider.dart';
 import 'providers/sync_provider.dart';
 import 'screens/auth/phone_entry_screen.dart';
-import 'screens/dashboard/home_screen.dart';
 import 'screens/profile/shop_profile_screen.dart';
+import 'screens/dashboard/home_screen.dart';
 import 'utils/theme.dart';
+import 'package:firebase_core/firebase_core.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
   runApp(const ShopkeeperProApp());
 }
 
@@ -47,20 +45,22 @@ class ShopkeeperProApp extends StatelessWidget {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.system,
-        home: const StartupGate(),
+        home: const _StartupGate(),
       ),
     );
   }
 }
 
-class StartupGate extends StatefulWidget {
-  const StartupGate({super.key});
+/// Decides where to land the user: login, shop-setup, or straight to the
+/// dashboard, based on whatever's already saved on-device.
+class _StartupGate extends StatefulWidget {
+  const _StartupGate();
 
   @override
-  State<StartupGate> createState() => _StartupGateState();
+  State<_StartupGate> createState() => _StartupGateState();
 }
 
-class _StartupGateState extends State<StartupGate> {
+class _StartupGateState extends State<_StartupGate> {
   bool _ready = false;
 
   @override
@@ -70,28 +70,14 @@ class _StartupGateState extends State<StartupGate> {
   }
 
   Future<void> _bootstrap() async {
-    try {
-      final auth = context.read<AuthProvider>();
-      await auth.checkExistingSession();
-
-      if (auth.isLoggedIn) {
-        await context.read<ShopProvider>().load();
-        await context.read<InventoryProvider>().load();
-        await context.read<SupplierProvider>().load();
-        await context.read<SalesProvider>().load();
-        await context.read<FinanceProvider>().load();
-
-        if (auth.phoneNumber != null) {
-          await context.read<SyncProvider>().init(auth.phoneNumber!);
-        }
-      }
-    } catch (_) {
-      // Keep startup resilient even if one provider fails to load.
-    } finally {
-      if (mounted) {
-        setState(() => _ready = true);
-      }
+    final auth = context.read<AuthProvider>();
+    await auth.checkExistingSession();
+    if (auth.isLoggedIn) {
+      await context.read<ShopProvider>().load();
+      // Initialize sync services if user ID available
+      // TODO: Get userUid from FirebaseAuthService
     }
+    setState(() => _ready = true);
   }
 
   @override
@@ -99,16 +85,11 @@ class _StartupGateState extends State<StartupGate> {
     if (!_ready) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     final auth = context.watch<AuthProvider>();
-    if (!auth.isLoggedIn) {
-      return const PhoneEntryScreen();
-    }
+    if (!auth.isLoggedIn) return const PhoneEntryScreen();
 
     final shop = context.watch<ShopProvider>().shop;
-    if (shop == null) {
-      return const ShopProfileScreen(isFirstSetup: true);
-    }
+    if (shop == null) return const ShopProfileScreen(isFirstSetup: true);
 
     return const HomeScreen();
   }

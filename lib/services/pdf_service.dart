@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -14,6 +15,7 @@ class PdfService {
   static Future<File> generateInvoice(Bill bill, Shop? shop) async {
     final doc = pw.Document();
 
+    // Load shop logo if available
     pw.ImageProvider? logoImage;
     if (shop?.logoPath != null && shop!.logoPath!.isNotEmpty) {
       try {
@@ -21,193 +23,128 @@ class PdfService {
         if (await logoFile.exists()) {
           logoImage = pw.MemoryImage(await logoFile.readAsBytes());
         }
-      } catch (_) {}
+      } catch (e) {
+        // Logo load failed, continue without it
+      }
     }
-
-    final double subtotalVal = bill.items.fold(0.0, (sum, item) {
-      final dynamic dynItem = item;
-      final double itemPrice = ((dynItem.price ?? dynItem.unitPrice ?? 0.0) as num).toDouble();
-      return sum + (item.quantity * itemPrice);
-    });
-    final double discountVal = bill.discount;
-    final double calculatedTotal = subtotalVal - discountVal;
 
     doc.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.roll80,
+        pageFormat: PdfPageFormat.roll80, // receipt-width; swap to a4 for a full page
         build: (context) => pw.Column(
-          cross: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            if (logoImage != null)
-              pw.Center(
-                child: pw.SizedBox(
-                  height: 50,
-                  child: pw.Image(logoImage),
-                ),
-              ),
-            if (shop?.name != null)
-              pw.Center(
-                child: pw.Text(
-                  shop!.name,
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-            if (shop?.address != null)
-              pw.Center(
-                child: pw.Text(
-                  shop!.address,
-                  style: const pw.TextStyle(fontSize: 10),
-                ),
-              ),
-            if (shop?.phone != null)
-              pw.Center(
-                child: pw.Text(
-                  shop!.phone,
-                  style: const pw.TextStyle(fontSize: 10),
-                ),
-              ),
-            if (shop?.taxNumber != null && shop!.taxNumber.isNotEmpty)
-              pw.Center(
-                child: pw.Text(
-                  'NTN: ${shop.taxNumber}',
-                  style: const pw.TextStyle(fontSize: 10),
-                ),
-              ),
-            pw.SizedBox(height: 5),
-            pw.Divider(),
-            pw.Text(
-              'Invoice #: ${bill.id.length >= 8 ? bill.id.substring(0, 8).toUpperCase() : bill.id.toUpperCase()}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-            pw.Text(
-              'Date: ${_dateFmt.format(bill.date)}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-            pw.Text(
-              'Customer: ${bill.customerName}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-            pw.Divider(),
-            pw.SizedBox(height: 5),
-            pw.TableHelper.fromTextArray(
-              context: context,
-              headers: ['Item', 'Qty', 'Price', 'Total'],
-              data: bill.items.map((item) {
-                final dynamic dynItem = item;
-                final double itemPrice = ((dynItem.price ?? dynItem.unitPrice ?? 0.0) as num).toDouble();
-                return [
-                  item.name,
-                  item.quantity.toString(),
-                  _currency.format(itemPrice),
-                  _currency.format(item.quantity * itemPrice),
-                ];
-              }).toList(),
-            ),
-            pw.Divider(),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              children: [
-                pw.Text('Subtotal:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                pw.Text(_currency.format(subtotalVal)),
-              ],
-            ),
-            if (discountVal > 0)
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            // LOGO AND HEADER
+            pw.Center(
+              child: pw.Column(
                 children: [
-                  pw.Text('Discount:'),
-                  pw.Text('-${_currency.format(discountVal)}'),
+                  if (logoImage != null)
+                    pw.Image(logoImage, width: 60, height: 60)
+                  else
+                    pw.SizedBox(height: 0),
+                  pw.Text(shop?.name ?? 'My Shop',
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                 ],
               ),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            ),
+            if (shop?.address != null) pw.Center(child: pw.Text(shop!.address, fontSize: 10)),
+            if (shop?.phone != null) pw.Center(child: pw.Text(shop!.phone, fontSize: 10)),
+            if (shop?.taxNumber != null && shop!.taxNumber!.isNotEmpty)
+              pw.Center(child: pw.Text('NTN: ${shop.taxNumber}', fontSize: 10)),
+            pw.Divider(),
+            pw.Text('Invoice #: ${bill.id.substring(0, 8).toUpperCase()}', fontSize: 11),
+            pw.Text('Date: ${_dateFmt.format(bill.date)}', fontSize: 11),
+            if (bill.customerName != null && bill.customerName!.isNotEmpty)
+              pw.Text('Customer: ${bill.customerName}', fontSize: 11),
+            pw.Divider(),
+            // LINE ITEMS TABLE
+            pw.Table(
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(1),
+                2: const pw.FlexColumnWidth(2),
+              },
               children: [
-                pw.Text('Total:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                pw.Text(_currency.format(calculatedTotal), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                pw.TableRow(children: [
+                  pw.Text('Item', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Qty', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Total', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                ]),
+                ...bill.items.map((item) => pw.TableRow(children: [
+                      pw.Text(item.productName),
+                      pw.Text('${item.quantity}'),
+                      pw.Text(_currency.format(item.lineTotal)),
+                    ])),
               ],
             ),
-            pw.SizedBox(height: 15),
-            pw.Center(
-              child: pw.Text(
-                'Thank you for shopping with us!',
-                style: const pw.TextStyle(fontSize: 10),
-              ),
-            ),
+            pw.Divider(),
+            _row('Subtotal', _currency.format(bill.subtotal)),
+            if (bill.discount > 0) _row('Discount', '-${_currency.format(bill.discount)}'),
+            if (bill.taxPercent > 0)
+              _row('Tax (${bill.taxPercent.toStringAsFixed(1)}%)', _currency.format(bill.taxAmount)),
+            pw.Divider(),
+            _row('Grand Total', _currency.format(bill.grandTotal), bold: true),
+            pw.SizedBox(height: 12),
+            pw.Center(child: pw.Text('Thank you for shopping with us!', fontSize: 10)),
           ],
         ),
       ),
     );
 
-    final output = await getTemporaryDirectory();
-    final file = File('${output.path}/invoice_${bill.id}.pdf');
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/invoice_${bill.id}.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
   }
 
-  static Future<File> generatePurchaseOrder({
-    required Supplier supplier,
-    required List<Map<String, dynamic>> items,
-    required double totalAmount,
-    Shop? shop,
-  }) async {
+  static Future<File> generatePurchaseOrder(
+      String orderId, Supplier supplier, List<Map<String, dynamic>> items, double total) async {
     final doc = pw.Document();
 
     doc.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         build: (context) => pw.Column(
-          cross: pw.CrossAxisAlignment.start,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            if (shop?.name != null)
-              pw.Text(
-                shop!.name,
-                style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-              ),
-            pw.SizedBox(height: 10),
-            pw.Text(
-              'PURCHASE ORDER',
-              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            pw.Text('Purchase Order', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Order #: ${orderId.substring(0, 8).toUpperCase()}'),
+            pw.Text('Supplier: ${supplier.name} (${supplier.phone})'),
+            pw.Text('Date: ${_dateFmt.format(DateTime.now())}'),
+            pw.Divider(),
+            pw.Table.fromTextArray(
+              headers: ['Product', 'Required Qty', 'Estimated Price', 'Estimated Total'],
+              data: items
+                  .map((i) => [
+                        i['productName'],
+                        '${i['requiredQuantity']}',
+                        _currency.format(i['estimatedPrice']),
+                        _currency.format(i['requiredQuantity'] * i['estimatedPrice']),
+                      ])
+                  .toList(),
             ),
             pw.Divider(),
-            pw.Text('Supplier Name: ${supplier.name}'),
-            if (supplier.phone.isNotEmpty) pw.Text('Phone: ${supplier.phone}'),
-            pw.Text('Date: ${_dateFmt.format(DateTime.now())}'),
-            pw.SizedBox(height: 15),
-            pw.TableHelper.fromTextArray(
-              context: context,
-              headers: ['Item Description', 'Quantity', 'Expected Unit Price', 'Total'],
-              data: items.map((item) {
-                final qty = (item['quantity'] ?? 1) as num;
-                final price = (item['price'] ?? item['unitPrice'] ?? 0.0) as num;
-                return [
-                  item['name'] ?? '',
-                  qty.toString(),
-                  _currency.format(price),
-                  _currency.format(qty * price),
-                ];
-              }).toList(),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.end,
-              children: [
-                pw.Text(
-                  'Total PO Amount: ${_currency.format(totalAmount)}',
-                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-                ),
-              ],
+            pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text('Estimated Order Total: ${_currency.format(total)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
             ),
           ],
         ),
       ),
     );
 
-    final output = await getTemporaryDirectory();
-    final file = File('${output.path}/po_${supplier.id}_${DateTime.now().millisecondsSinceEpoch}.pdf');
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/purchase_order_$orderId.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
   }
+
+  static pw.Widget _row(String label, String value, {bool bold = false}) => pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label, style: bold ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null),
+          pw.Text(value, style: bold ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null),
+        ],
+      );
 }
