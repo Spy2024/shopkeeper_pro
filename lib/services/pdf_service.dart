@@ -47,15 +47,15 @@ class PdfService {
                 ],
               ),
             ),
-            if (shop?.address != null) pw.Center(child: pw.Text(shop!.address, style: const pw.TextStyle(fontSize: 10))),
-            if (shop?.phone != null) pw.Center(child: pw.Text(shop!.phone, style: const pw.TextStyle(fontSize: 10))),
+            if (shop?.address != null) pw.Center(child: pw.Text(shop!.address, fontSize: 10)),
+            if (shop?.phone != null) pw.Center(child: pw.Text(shop!.phone, fontSize: 10)),
             if (shop?.taxNumber != null && shop!.taxNumber!.isNotEmpty)
-              pw.Center(child: pw.Text('NTN: ${shop.taxNumber}', style: const pw.TextStyle(fontSize: 10))),
+              pw.Center(child: pw.Text('NTN: ${shop.taxNumber}', fontSize: 10)),
             pw.Divider(),
-            pw.Text('Invoice #: ${bill.id.substring(0, 8).toUpperCase()}', style: const pw.TextStyle(fontSize: 11)),
-            pw.Text('Date: ${_dateFmt.format(bill.date)}', style: const pw.TextStyle(fontSize: 11)),
+            pw.Text('Invoice #: ${bill.id.substring(0, 8).toUpperCase()}', fontSize: 11),
+            pw.Text('Date: ${_dateFmt.format(bill.date)}', fontSize: 11),
             if (bill.customerName != null && bill.customerName!.isNotEmpty)
-              pw.Text('Customer: ${bill.customerName}', style: const pw.TextStyle(fontSize: 11)),
+              pw.Text('Customer: ${bill.customerName}', fontSize: 11),
             pw.Divider(),
             // LINE ITEMS TABLE
             pw.Table(
@@ -85,7 +85,7 @@ class PdfService {
             pw.Divider(),
             _row('Grand Total', _currency.format(bill.grandTotal), bold: true),
             pw.SizedBox(height: 12),
-            pw.Center(child: pw.Text('Thank you for shopping with us!', style: const pw.TextStyle(fontSize: 10))),
+            pw.Center(child: pw.Text('Thank you for shopping with us!', fontSize: 10)),
           ],
         ),
       ),
