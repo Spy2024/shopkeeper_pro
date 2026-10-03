@@ -29,7 +29,7 @@ dependencies:
   printing: ^5.13.2
 
   # Sharing to WhatsApp / SMS / generic share sheet
-  share_plus: ^9.0.0
+  share_plus: ^10.1.4
   url_launcher: ^6.3.0
 
   # Image picking for shop logo
