@@ -1,13 +1,13 @@
-# Flutter/Dart
+# Flutter / Dart
 .dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 .packages
-.pub-cache/
-.pub/
 build/
-.idea/
-.vscode/
-*.iml
 
-# Misc
-.DS_Store
-Thumbs.db
+# Android / Gradle locks
+.gradle/
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+android/local.properties
