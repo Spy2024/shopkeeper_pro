@@ -110,7 +110,9 @@ class SupplierProvider extends ChangeNotifier {
         'requiredQuantity': item.requiredQuantity,
         'estimatedPrice': item.estimatedPrice,
       });
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'supplier_orders/' + order.id + '/items', documentId: itemId.toString(), data: {'id': itemId, 'orderId': order.id, 'productName': item.productName, 'requiredQuantity': item.requiredQuantity, 'estimatedPrice': item.estimatedPrice});
+      final cloudId = _uuid.v4();
+      await db.update('supplier_order_items', {'cloudId': cloudId}, where: 'id = ?', whereArgs: [itemId]);
+      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'supplier_orders/' + order.id + '/items', documentId: cloudId, data: {'cloudId': cloudId, 'orderId': order.id, 'productName': item.productName, 'requiredQuantity': item.requiredQuantity, 'estimatedPrice': item.estimatedPrice});
     }
     _orders.insert(0, order);
     _orderItemsCache[order.id] = items;
