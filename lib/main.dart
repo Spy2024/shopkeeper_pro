@@ -15,11 +15,19 @@ import 'screens/dashboard/home_screen.dart';
 import 'utils/theme.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+
+  // Firebase is optional until real project credentials are configured.
+  // Keep the offline-first app usable instead of blocking startup.
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('Firebase initialization skipped: $e');
+  }
+
   runApp(const ShopkeeperProApp());
 }
 
@@ -51,8 +59,6 @@ class ShopkeeperProApp extends StatelessWidget {
   }
 }
 
-/// Decides where to land the user: login, shop-setup, or straight to the
-/// dashboard, based on whatever's already saved on-device.
 class _StartupGate extends StatefulWidget {
   const _StartupGate();
 
@@ -72,24 +78,33 @@ class _StartupGateState extends State<_StartupGate> {
   Future<void> _bootstrap() async {
     final auth = context.read<AuthProvider>();
     await auth.checkExistingSession();
+
+    if (!mounted) return;
+
     if (auth.isLoggedIn) {
       await context.read<ShopProvider>().load();
-      // Initialize sync services if user ID available
-      // TODO: Get userUid from FirebaseAuthService
     }
-    setState(() => _ready = true);
+
+    if (mounted) {
+      setState(() => _ready = true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
+
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) return const PhoneEntryScreen();
 
     final shop = context.watch<ShopProvider>().shop;
-    if (shop == null) return const ShopProfileScreen(isFirstSetup: true);
+    if (shop == null) {
+      return const ShopProfileScreen(isFirstSetup: true);
+    }
 
     return const HomeScreen();
   }
