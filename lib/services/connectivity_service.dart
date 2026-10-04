@@ -10,7 +10,7 @@ class ConnectivityService {
   static final ConnectivityService instance = ConnectivityService._internal();
 
   final Connectivity _connectivity = Connectivity();
-  late StreamSubscription<ConnectivityResult> _subscription;
+  late StreamSubscription<List<ConnectivityResult>> _subscription;
   bool _isOnline = false;
   String? _userId;
 
@@ -22,14 +22,14 @@ class ConnectivityService {
 
     // Check initial state
     final result = await _connectivity.checkConnectivity();
-    _isOnline = result != ConnectivityResult.none;
+    _isOnline = !result.contains(ConnectivityResult.none);
 
     debugPrint('[Connectivity] Initial state: ${_isOnline ? 'ONLINE' : 'OFFLINE'}');
 
     // Listen to changes
     _subscription = _connectivity.onConnectivityChanged.listen((result) {
       final wasOnline = _isOnline;
-      _isOnline = result != ConnectivityResult.none;
+      _isOnline = !result.contains(ConnectivityResult.none);
 
       debugPrint(
           '[Connectivity] Status changed: ${_isOnline ? 'ONLINE' : 'OFFLINE'}');
