@@ -13,6 +13,7 @@ class SyncQueueService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
+  Timer? _scheduledSync;
   static const queueTableName = 'sync_queue';
 
   Future<void> init(String userId) async => _loadPendingQueue();
@@ -50,7 +51,10 @@ class SyncQueueService {
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      unawaited(syncPendingOperations(uid));
+      _scheduledSync?.cancel();
+      _scheduledSync = Timer(const Duration(milliseconds: 300), () {
+        unawaited(syncPendingOperations(uid));
+      });
     }
   }
 
@@ -117,6 +121,11 @@ class SyncQueueService {
   int get pendingCount => _pendingQueue.length;
   bool get hasPending => _pendingQueue.isNotEmpty;
   bool get isSyncing => _isSyncing;
+
+  Future<void> dispose() async {
+    _scheduledSync?.cancel();
+    _scheduledSync = null;
+  }
 
   Future<void> clearFailedOperations() async {
     final db = await DBService.instance.database;
