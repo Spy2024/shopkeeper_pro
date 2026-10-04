@@ -189,6 +189,7 @@ class SyncService {
         final bill = Map<String, dynamic>.from(doc.data());
         await db.insert('bills', bill, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
+        await db.delete('bill_items', where: 'billId = ?', whereArgs: [bill['id']]);
         for (final item in items.docs) {
           final data = Map<String, dynamic>.from(item.data());
           data['cloudId'] = item.id;
@@ -214,6 +215,7 @@ class SyncService {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
         final items = await doc.reference.collection('items').get();
+        await db.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [order['id']]);
         for (final item in items.docs) {
           final data = Map<String, dynamic>.from(item.data());
           data['cloudId'] = item.id;
