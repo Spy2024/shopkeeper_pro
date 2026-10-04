@@ -16,12 +16,18 @@ class DBService {
     final path = join(dbPath, 'shopkeeper_pro.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createSyncQueue(db);
+        }
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE bill_items ADD COLUMN cloudId TEXT');
+          await db.execute('ALTER TABLE supplier_order_items ADD COLUMN cloudId TEXT');
+          await db.execute('UPDATE bill_items SET cloudId = CAST(id AS TEXT) WHERE cloudId IS NULL');
+          await db.execute('UPDATE supplier_order_items SET cloudId = CAST(id AS TEXT) WHERE cloudId IS NULL');
         }
       },
     );
