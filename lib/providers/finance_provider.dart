@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/daily_sale.dart';
 import '../services/db_service.dart';
+import '../services/sync_queue_service.dart';
 
 class FinanceProvider extends ChangeNotifier {
   final List<Expense> _expenses = [];
@@ -22,6 +23,7 @@ class FinanceProvider extends ChangeNotifier {
     final db = await DBService.instance.database;
     final expense = Expense(id: _uuid.v4(), date: date ?? DateTime.now(), label: label, amount: amount);
     await db.insert('expenses', expense.toMap());
+    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'expenses', documentId: expense.id, data: expense.toMap());
     _expenses.insert(0, expense);
     notifyListeners();
   }
@@ -29,6 +31,7 @@ class FinanceProvider extends ChangeNotifier {
   Future<void> deleteExpense(String id) async {
     final db = await DBService.instance.database;
     await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'expenses', documentId: id, data: {});
     _expenses.removeWhere((e) => e.id == id);
     notifyListeners();
   }
