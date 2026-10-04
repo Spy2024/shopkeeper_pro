@@ -71,7 +71,9 @@ class PosProvider extends ChangeNotifier {
     await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
     for (final item in bill.items) {
       final itemId = await db.insert('bill_items', {...item.toMap(), 'billId': bill.id});
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/' + bill.id + '/items', documentId: itemId.toString(), data: {...item.toMap(), 'id': itemId, 'billId': bill.id});
+      final cloudId = _uuid.v4();
+      await db.update('bill_items', {'cloudId': cloudId}, where: 'id = ?', whereArgs: [itemId]);
+      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/' + bill.id + '/items', documentId: cloudId, data: {...item.toMap(), 'cloudId': cloudId, 'billId': bill.id});
       await inventory.deductStock(item.productName, item.quantity);
 
       // Record daily sales for margin and profit tracking
