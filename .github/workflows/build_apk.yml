@@ -35,6 +35,38 @@ jobs:
       - name: Run Tests
         run: flutter test
 
+      - name: Prepare release signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/shopkeeper-release.jks"
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "${KEYSTORE}"
+            STORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD_SECRET}"
+            KEY_ALIAS="${ANDROID_KEY_ALIAS_SECRET}"
+            KEY_PASSWORD="${ANDROID_KEY_PASSWORD_SECRET}"
+          else
+            STORE_PASSWORD="$(openssl rand -hex 24)"
+            KEY_PASSWORD="${STORE_PASSWORD}"
+            KEY_ALIAS="shopkeeper-ci"
+            keytool -genkeypair -v -noprompt \
+              -keystore "${KEYSTORE}" \
+              -storepass "${STORE_PASSWORD}" \
+              -keypass "${KEY_PASSWORD}" \
+              -alias "${KEY_ALIAS}" \
+              -keyalg RSA -keysize 2048 -validity 3650 \
+              -dname "CN=Shopkeeper Pro CI, OU=Build, O=Shopkeeper Pro, L=Karachi, S=Sindh, C=PK"
+          fi
+          echo "ANDROID_KEYSTORE_FILE=${KEYSTORE}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=${STORE_PASSWORD}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=${KEY_ALIAS}" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=${KEY_PASSWORD}" >> "$GITHUB_ENV"
+
       - name: Build Release APK
         run: flutter build apk --release
 
