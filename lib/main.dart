@@ -74,8 +74,10 @@ class _StartupGateState extends State<_StartupGate> {
     await auth.checkExistingSession();
     if (auth.isLoggedIn) {
       await context.read<ShopProvider>().load();
-      // Initialize sync services if user ID available
-      // TODO: Get userUid from FirebaseAuthService
+      final userId = auth.userUid;
+      if (userId != null && userId.isNotEmpty) {
+        await context.read<SyncProvider>().init(userId);
+      }
     }
     setState(() => _ready = true);
   }
