@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
+import '../services/sync_queue_service.dart';
 
 class InventoryProvider extends ChangeNotifier {
   final List<Product> _products = [];
@@ -39,6 +40,7 @@ class InventoryProvider extends ChangeNotifier {
       lowStockThreshold: lowStockThreshold,
     );
     await db.insert('products', product.toMap());
+    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'products', documentId: product.id, data: product.toMap());
     _products.add(product);
     notifyListeners();
   }
@@ -46,6 +48,7 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> updateProduct(Product product) async {
     final db = await DBService.instance.database;
     await db.update('products', product.toMap(), where: 'id = ?', whereArgs: [product.id]);
+    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'products', documentId: product.id, data: product.toMap());
     final idx = _products.indexWhere((p) => p.id == product.id);
     if (idx != -1) _products[idx] = product;
     notifyListeners();
@@ -54,6 +57,7 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> deleteProduct(String id) async {
     final db = await DBService.instance.database;
     await db.delete('products', where: 'id = ?', whereArgs: [id]);
+    await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'products', documentId: id, data: {});
     _products.removeWhere((p) => p.id == id);
     notifyListeners();
   }
