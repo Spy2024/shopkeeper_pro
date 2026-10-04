@@ -42,7 +42,7 @@ class SyncService {
       final end = start + 400 > rows.length ? rows.length : start + 400;
       final batch = _firestore.batch();
       for (final row in rows.sublist(start, end)) {
-        final id = row['id']?.toString();
+        final id = (row['cloudId'] ?? row['id'])?.toString();
         if (id == null || id.isEmpty) continue;
         batch.set(
           _collection(userId, collectionName).doc(id),
@@ -66,7 +66,7 @@ class SyncService {
       final batch = _firestore.batch();
       final parent = _collection(userId, parentCollection).doc(parentId);
       for (final row in rows.sublist(start, end)) {
-        final id = row['id']?.toString();
+        final id = (row['cloudId'] ?? row['id'])?.toString();
         if (id == null || id.isEmpty) continue;
         batch.set(
           parent.collection(childCollection).doc(id),
@@ -191,11 +191,8 @@ class SyncService {
         final items = await doc.reference.collection('items').get();
         for (final item in items.docs) {
           final data = Map<String, dynamic>.from(item.data());
-          final id = int.tryParse(item.id);
-          if (id != null) {
-            data['id'] = id;
-            await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
-          }
+          data['cloudId'] = item.id;
+          await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
 
@@ -219,15 +216,12 @@ class SyncService {
         final items = await doc.reference.collection('items').get();
         for (final item in items.docs) {
           final data = Map<String, dynamic>.from(item.data());
-          final id = int.tryParse(item.id);
-          if (id != null) {
-            data['id'] = id;
-            await db.insert(
-              'supplier_order_items',
-              data,
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
-          }
+          data['cloudId'] = item.id;
+          await db.insert(
+            'supplier_order_items',
+            data,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
         }
       }
 
