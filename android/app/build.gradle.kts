@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.shopkeeperpro.app"
-    compileSdk = 34
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -23,8 +23,6 @@ android {
 
     buildTypes {
         release {
-            // Debug signing keeps local/CI release builds runnable.
-            // Replace with a production keystore before Play Store release.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
