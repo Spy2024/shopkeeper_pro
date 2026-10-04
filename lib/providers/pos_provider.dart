@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/bill.dart';
+import '../models/product.dart';
+import '../models/daily_sale.dart';
 import '../services/db_service.dart';
 import 'inventory_provider.dart';
 
@@ -68,6 +70,29 @@ class PosProvider extends ChangeNotifier {
     for (final item in bill.items) {
       await db.insert('bill_items', {...item.toMap(), 'billId': bill.id});
       await inventory.deductStock(item.productName, item.quantity);
+
+      // Record daily sales for margin and profit tracking
+      final product = inventory.products.firstWhere(
+        (p) => p.name == item.productName,
+        orElse: () => Product(
+          id: '',
+          name: item.productName,
+          costPrice: item.unitPrice * 0.7,
+          sellingPrice: item.unitPrice,
+          stockQuantity: 0,
+        ),
+      );
+
+      for (int i = 0; i < item.quantity; i++) {
+        final sale = DailySale(
+          id: _uuid.v4(),
+          date: bill.date,
+          productName: item.productName,
+          costPrice: product.costPrice,
+          salePrice: item.unitPrice,
+        );
+        await db.insert('daily_sales', sale.toMap());
+      }
     }
 
     savedBills.insert(0, bill);
