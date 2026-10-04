@@ -12,7 +12,6 @@ class PosProvider extends ChangeNotifier {
   double taxPercent = 0;
   String? customerName;
   final _uuid = const Uuid();
-
   final List<Bill> savedBills = [];
   final Map<String, List<BillItem>> _billItemsCache = {};
 
@@ -21,22 +20,24 @@ class PosProvider extends ChangeNotifier {
   double get grandTotal => (subtotal - discount) + taxAmount;
 
   void addItem(String productName, int quantity, double unitPrice) {
+    if (quantity <= 0 || unitPrice < 0) return;
     cart.add(BillItem(productName: productName, quantity: quantity, unitPrice: unitPrice));
     notifyListeners();
   }
 
   void removeItem(int index) {
+    if (index < 0 || index >= cart.length) return;
     cart.removeAt(index);
     notifyListeners();
   }
 
   void setDiscount(double value) {
-    discount = value;
+    discount = value < 0 ? 0 : value;
     notifyListeners();
   }
 
   void setTax(double percent) {
-    taxPercent = percent;
+    taxPercent = percent < 0 ? 0 : percent;
     notifyListeners();
   }
 
@@ -53,9 +54,18 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Persists the current cart as a completed bill, deducts stock, and
-  /// resets the cart for the next customer. Returns the saved bill.
   Future<Bill> checkout(InventoryProvider inventory) async {
+    if (cart.isEmpty) throw StateError('Cart is empty');
+
+    for (final item in cart) {
+      final matches = inventory.products.where((p) => p.name == item.productName);
+      if (matches.isEmpty) throw StateError('Product not found: ${item.productName}');
+      final product = matches.first;
+      if (product.stockQuantity < item.quantity) {
+        throw StateError('Insufficient stock for ${item.productName}');
+      }
+    }
+
     final db = await DBService.instance.database;
     final bill = Bill(
       id: _uuid.v4(),
@@ -66,33 +76,25 @@ class PosProvider extends ChangeNotifier {
       taxPercent: taxPercent,
     );
 
-    await db.insert('bills', bill.toMap());
-    for (final item in bill.items) {
-      await db.insert('bill_items', {...item.toMap(), 'billId': bill.id});
-      await inventory.deductStock(item.productName, item.quantity);
-
-      // Record daily sales for margin and profit tracking
-      final product = inventory.products.firstWhere(
-        (p) => p.name == item.productName,
-        orElse: () => Product(
-          id: '',
-          name: item.productName,
-          costPrice: item.unitPrice * 0.7,
-          sellingPrice: item.unitPrice,
-          stockQuantity: 0,
-        ),
-      );
-
-      for (int i = 0; i < item.quantity; i++) {
-        final sale = DailySale(
-          id: _uuid.v4(),
-          date: bill.date,
-          productName: item.productName,
-          costPrice: product.costPrice,
-          salePrice: item.unitPrice,
-        );
-        await db.insert('daily_sales', sale.toMap());
+    await db.transaction((txn) async {
+      await txn.insert('bills', bill.toMap());
+      for (final item in bill.items) {
+        await txn.insert('bill_items', {...item.toMap(), 'billId': bill.id});
+        final product = inventory.products.firstWhere((p) => p.name == item.productName);
+        for (int i = 0; i < item.quantity; i++) {
+          await txn.insert('daily_sales', DailySale(
+            id: _uuid.v4(),
+            date: bill.date,
+            productName: item.productName,
+            costPrice: product.costPrice,
+            salePrice: item.unitPrice,
+          ).toMap());
+        }
       }
+    });
+
+    for (final item in bill.items) {
+      await inventory.deductStock(item.productName, item.quantity);
     }
 
     savedBills.insert(0, bill);
@@ -125,11 +127,8 @@ class PosProvider extends ChangeNotifier {
 
   List<Bill> filterHistory({DateTime? date, String? customer, double? minAmount}) {
     return savedBills.where((b) {
-      final matchesDate = date == null ||
-          (b.date.year == date.year && b.date.month == date.month && b.date.day == date.day);
-      final matchesCustomer = customer == null ||
-          customer.isEmpty ||
-          (b.customerName?.toLowerCase().contains(customer.toLowerCase()) ?? false);
+      final matchesDate = date == null || (b.date.year == date.year && b.date.month == date.month && b.date.day == date.day);
+      final matchesCustomer = customer == null || customer.isEmpty || (b.customerName?.toLowerCase().contains(customer.toLowerCase()) ?? false);
       final matchesAmount = minAmount == null || b.grandTotal >= minAmount;
       return matchesDate && matchesCustomer && matchesAmount;
     }).toList();
