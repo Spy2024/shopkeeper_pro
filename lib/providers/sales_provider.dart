@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/daily_sale.dart';
 import '../services/db_service.dart';
+import '../services/sync_queue_service.dart';
 
 class SalesProvider extends ChangeNotifier {
   final List<DailySale> _sales = [];
@@ -40,6 +41,7 @@ class SalesProvider extends ChangeNotifier {
       salePrice: salePrice,
     );
     await db.insert('daily_sales', sale.toMap());
+    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'sales', documentId: sale.id, data: sale.toMap());
     _sales.insert(0, sale);
     notifyListeners();
   }
@@ -47,6 +49,7 @@ class SalesProvider extends ChangeNotifier {
   Future<void> deleteRow(String id) async {
     final db = await DBService.instance.database;
     await db.delete('daily_sales', where: 'id = ?', whereArgs: [id]);
+    await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'sales', documentId: id, data: {});
     _sales.removeWhere((s) => s.id == id);
     notifyListeners();
   }
