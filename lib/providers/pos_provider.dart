@@ -77,6 +77,7 @@ class PosProvider extends ChangeNotifier {
         orElse: () => Product(
           id: '',
           name: item.productName,
+          category: 'Other',
           costPrice: item.unitPrice * 0.7,
           sellingPrice: item.unitPrice,
           stockQuantity: 0,
