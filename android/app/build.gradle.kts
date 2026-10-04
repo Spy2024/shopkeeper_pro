@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.shopkeeper_pro"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
