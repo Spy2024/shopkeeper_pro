@@ -4,9 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
 
-/// Multi-device sync service using Firebase Firestore.
-/// Syncs local SQLite changes to cloud and vice versa.
-/// Handles offline-first with sync queue.
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
@@ -19,209 +16,240 @@ class SyncService {
   bool get isOnline => _isOnline;
   bool get isSyncing => _isSyncing;
 
-  /// Initialize sync service and monitor connectivity
   Future<void> init(String userId) async {
+    final initial = await _connectivity.checkConnectivity();
+    _isOnline = initial != ConnectivityResult.none;
     _connectivity.onConnectivityChanged.listen((result) {
       _isOnline = result != ConnectivityResult.none;
       if (_isOnline) {
-        debugPrint('[SyncService] Online detected, triggering sync');
         _syncAll(userId);
       }
     });
   }
 
-  /// Sync all local data to Firebase (push)
-  Future<void> _syncAll(String userId) async {
-    if (_isSyncing) return;
-    _isSyncing = true;
+  CollectionReference<Map<String, dynamic>> _collection(
+    String userId,
+    String name,
+  ) =>
+      _firestore.collection('users').doc(userId).collection(name);
 
+  Future<void> _writeBatch(
+    String userId,
+    String collectionName,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    for (var start = 0; start < rows.length; start += 400) {
+      final end = (start + 400).clamp(0, rows.length);
+      final batch = _firestore.batch();
+      for (final row in rows.sublist(start, end)) {
+        final id = row['id']?.toString();
+        if (id == null || id.isEmpty) continue;
+        batch.set(
+          _collection(userId, collectionName).doc(id),
+          row,
+          SetOptions(merge: true),
+        );
+      }
+      await batch.commit();
+    }
+  }
+
+  Future<void> _writeChildBatch(
+    String userId,
+    String parentCollection,
+    String parentId,
+    String childCollection,
+    List<Map<String, dynamic>> rows,
+  ) async {
+    for (var start = 0; start < rows.length; start += 400) {
+      final end = (start + 400).clamp(0, rows.length);
+      final batch = _firestore.batch();
+      final parent = _collection(userId, parentCollection).doc(parentId);
+      for (final row in rows.sublist(start, end)) {
+        final id = row['id']?.toString();
+        if (id == null || id.isEmpty) continue;
+        batch.set(
+          parent.collection(childCollection).doc(id),
+          row,
+          SetOptions(merge: true),
+        );
+      }
+      await batch.commit();
+    }
+  }
+
+  Future<void> _syncAll(String userId) async {
+    if (_isSyncing || !_isOnline) return;
+    _isSyncing = true;
     try {
       final db = await DBService.instance.database;
 
-      // Sync shop profile
-      debugPrint('[SyncService] Syncing shop profile...');
       final shopRows = await db.query('shop', limit: 1);
       if (shopRows.isNotEmpty) {
-        await _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('shop')
-            .doc('profile')
-            .set(shopRows.first as Map<String, dynamic>, SetOptions(merge: true));
+        await _collection(userId, 'shop').doc('profile').set(
+              Map<String, dynamic>.from(shopRows.first),
+              SetOptions(merge: true),
+            );
       }
 
-      // Sync products with batch
-      debugPrint('[SyncService] Syncing products...');
-      final products = await db.query('products');
-      final productBatch = _firestore.batch();
-      for (final product in products) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('products')
-            .doc(product['id'] as String);
-        productBatch.set(ref, product as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await productBatch.commit();
-      debugPrint('[SyncService] Synced ${products.length} products');
+      final products = (await db.query('products'))
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      await _writeBatch(userId, 'products', products);
 
-      // Sync bills with batch
-      debugPrint('[SyncService] Syncing bills...');
-      final bills = await db.query('bills');
-      final billBatch = _firestore.batch();
+      final bills = (await db.query('bills'))
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      await _writeBatch(userId, 'bills', bills);
       for (final bill in bills) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('bills')
-            .doc(bill['id'] as String);
-        billBatch.set(ref, bill as Map<String, dynamic>, SetOptions(merge: true));
+        final items = (await db.query(
+          'bill_items',
+          where: 'billId = ?',
+          whereArgs: [bill['id']],
+        ))
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList();
+        await _writeChildBatch(
+          userId,
+          'bills',
+          bill['id'].toString(),
+          'items',
+          items,
+        );
       }
-      await billBatch.commit();
-      debugPrint('[SyncService] Synced ${bills.length} bills');
 
-      // Sync suppliers
-      debugPrint('[SyncService] Syncing suppliers...');
-      final suppliers = await db.query('suppliers');
-      final supplierBatch = _firestore.batch();
-      for (final supplier in suppliers) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('suppliers')
-            .doc(supplier['id'] as String);
-        supplierBatch.set(ref, supplier as Map<String, dynamic>, SetOptions(merge: true));
+      final suppliers = (await db.query('suppliers'))
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      await _writeBatch(userId, 'suppliers', suppliers);
+
+      final orders = (await db.query('supplier_orders'))
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      await _writeBatch(userId, 'supplier_orders', orders);
+      for (final order in orders) {
+        final items = (await db.query(
+          'supplier_order_items',
+          where: 'orderId = ?',
+          whereArgs: [order['id']],
+        ))
+            .map((r) => Map<String, dynamic>.from(r))
+            .toList();
+        await _writeChildBatch(
+          userId,
+          'supplier_orders',
+          order['id'].toString(),
+          'items',
+          items,
+        );
       }
-      await supplierBatch.commit();
-      debugPrint('[SyncService] Synced ${suppliers.length} suppliers');
 
-      // Sync sales
-      debugPrint('[SyncService] Syncing sales...');
-      final sales = await db.query('daily_sales');
-      final salesBatch = _firestore.batch();
-      for (final sale in sales) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('sales')
-            .doc(sale['id'] as String);
-        salesBatch.set(ref, sale as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await salesBatch.commit();
-      debugPrint('[SyncService] Synced ${sales.length} sales entries');
+      final sales = (await db.query('daily_sales'))
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      await _writeBatch(userId, 'sales', sales);
 
-      // Sync expenses
-      debugPrint('[SyncService] Syncing expenses...');
-      final expenses = await db.query('expenses');
-      final expenseBatch = _firestore.batch();
-      for (final expense in expenses) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('expenses')
-            .doc(expense['id'] as String);
-        expenseBatch.set(ref, expense as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await expenseBatch.commit();
-      debugPrint('[SyncService] Synced ${expenses.length} expenses');
-
-      debugPrint('[SyncService] ✓ All data synced to cloud');
+      final expenses = (await db.query('expenses'))
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      await _writeBatch(userId, 'expenses', expenses);
     } catch (e) {
-      debugPrint('[SyncService] Sync error: $e');
+      debugPrint('[SyncService] push error: ' + e.toString());
     } finally {
       _isSyncing = false;
     }
   }
 
-  /// Download cloud data and merge with local SQLite (pull)
   Future<void> syncFromCloud(String userId) async {
     if (_isSyncing || !_isOnline) return;
     _isSyncing = true;
-
     try {
       final db = await DBService.instance.database;
 
-      // Sync shop
-      debugPrint('[SyncService] Pulling shop from cloud...');
-      final shopSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('shop')
-          .doc('profile')
-          .get();
-      if (shopSnap.exists) {
-        await db.insert('shop', shopSnap.data()!,
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      final shop = await _collection(userId, 'shop').doc('profile').get();
+      if (shop.exists && shop.data() != null) {
+        await db.insert(
+          'shop',
+          Map<String, dynamic>.from(shop.data()!),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
 
-      // Pull products
-      debugPrint('[SyncService] Pulling products from cloud...');
-      final productsSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('products')
-          .get();
-      for (final doc in productsSnap.docs) {
-        await db.insert('products', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      final products = await _collection(userId, 'products').get();
+      for (final doc in products.docs) {
+        await db.insert(
+          'products',
+          Map<String, dynamic>.from(doc.data()),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
-      debugPrint('[SyncService] Pulled ${productsSnap.docs.length} products');
 
-      // Pull bills
-      debugPrint('[SyncService] Pulling bills from cloud...');
-      final billsSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('bills')
-          .get();
-      for (final doc in billsSnap.docs) {
-        await db.insert('bills', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      final bills = await _collection(userId, 'bills').get();
+      for (final doc in bills.docs) {
+        final bill = Map<String, dynamic>.from(doc.data());
+        await db.insert('bills', bill, conflictAlgorithm: ConflictAlgorithm.replace);
+        final items = await doc.reference.collection('items').get();
+        for (final item in items.docs) {
+          final data = Map<String, dynamic>.from(item.data());
+          final id = int.tryParse(item.id);
+          if (id != null) {
+            data['id'] = id;
+            await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        }
       }
-      debugPrint('[SyncService] Pulled ${billsSnap.docs.length} bills');
 
-      // Pull suppliers
-      debugPrint('[SyncService] Pulling suppliers from cloud...');
-      final suppliersSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('suppliers')
-          .get();
-      for (final doc in suppliersSnap.docs) {
-        await db.insert('suppliers', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      final suppliers = await _collection(userId, 'suppliers').get();
+      for (final doc in suppliers.docs) {
+        await db.insert(
+          'suppliers',
+          Map<String, dynamic>.from(doc.data()),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
-      debugPrint('[SyncService] Pulled ${suppliersSnap.docs.length} suppliers');
 
-      // Pull sales
-      debugPrint('[SyncService] Pulling sales from cloud...');
-      final salesSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('sales')
-          .get();
-      for (final doc in salesSnap.docs) {
-        await db.insert('daily_sales', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      final orders = await _collection(userId, 'supplier_orders').get();
+      for (final doc in orders.docs) {
+        final order = Map<String, dynamic>.from(doc.data());
+        await db.insert(
+          'supplier_orders',
+          order,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        final items = await doc.reference.collection('items').get();
+        for (final item in items.docs) {
+          final data = Map<String, dynamic>.from(item.data());
+          final id = int.tryParse(item.id);
+          if (id != null) {
+            data['id'] = id;
+            await db.insert(
+              'supplier_order_items',
+              data,
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+        }
       }
-      debugPrint('[SyncService] Pulled ${salesSnap.docs.length} sales');
 
-      // Pull expenses
-      debugPrint('[SyncService] Pulling expenses from cloud...');
-      final expensesSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .get();
-      for (final doc in expensesSnap.docs) {
-        await db.insert('expenses', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      final sales = await _collection(userId, 'sales').get();
+      for (final doc in sales.docs) {
+        await db.insert(
+          'daily_sales',
+          Map<String, dynamic>.from(doc.data()),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
-      debugPrint('[SyncService] Pulled ${expensesSnap.docs.length} expenses');
 
-      debugPrint('[SyncService] ✓ All cloud data pulled and merged');
+      final expenses = await _collection(userId, 'expenses').get();
+      for (final doc in expenses.docs) {
+        await db.insert(
+          'expenses',
+          Map<String, dynamic>.from(doc.data()),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
     } catch (e) {
-      debugPrint('[SyncService] Cloud pull error: $e');
+      debugPrint('[SyncService] pull error: ' + e.toString());
     } finally {
       _isSyncing = false;
     }
