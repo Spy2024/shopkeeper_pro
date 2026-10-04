@@ -62,7 +62,7 @@ class SyncService {
     List<Map<String, dynamic>> rows,
   ) async {
     for (var start = 0; start < rows.length; start += 400) {
-      final end = (start + 400).clamp(0, rows.length);
+      final end = start + 400 > rows.length ? rows.length : start + 400;
       final batch = _firestore.batch();
       final parent = _collection(userId, parentCollection).doc(parentId);
       for (final row in rows.sublist(start, end)) {
