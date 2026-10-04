@@ -1,198 +1,60 @@
-import 'dart:async';
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
 
-/// Manages offline changes queue and syncs to Firestore when online.
-/// Implements local-first architecture with eventual consistency.
 class SyncQueueService {
   SyncQueueService._internal();
   static final SyncQueueService instance = SyncQueueService._internal();
-
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
+  static const queueTableName = 'sync_queue';
 
-  // Queue operations table schema
-  static const String queueTableName = 'sync_queue';
-  static const String queueCreateSql = '''CREATE TABLE IF NOT EXISTS $queueTableName (
-    id TEXT PRIMARY KEY,
-    operation TEXT NOT NULL,
-    tableName TEXT NOT NULL,
-    documentId TEXT NOT NULL,
-    data TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    synced INTEGER DEFAULT 0
-  )''';
+  Future<void> init(String userId) async { await _loadPendingQueue(); }
 
-  /// Initialize queue from database
-  Future<void> init(String userId) async {
-    await _loadPendingQueue();
-    debugPrint('[SyncQueue] Initialized with ${_pendingQueue.length} pending operations');
+  Future<void> queueOperation({required String operation, required String tableName, required String documentId, required Map<String, dynamic> data}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final op = SyncOperation(id: '${tableName}_${documentId}_$now', operation: operation, tableName: tableName, documentId: documentId, data: data, timestamp: now);
+    _pendingQueue.add(op);
+    final db = await DBService.instance.database;
+    await db.insert(queueTableName, {'id': op.id, 'operation': op.operation, 'tableName': op.tableName, 'documentId': op.documentId, 'data': jsonEncode(op.data), 'timestamp': op.timestamp, 'synced': 0}, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  /// Add operation to queue when offline
-  Future<void> queueOperation({
-    required String operation, // 'create', 'update', 'delete'
-    required String tableName, // 'products', 'bills', etc.
-    required String documentId, // record ID
-    required Map<String, dynamic> data,
-  }) async {
-    final syncOp = SyncOperation(
-      id: '${tableName}_${documentId}_${DateTime.now().millisecondsSinceEpoch}',
-      operation: operation,
-      tableName: tableName,
-      documentId: documentId,
-      data: data,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-    );
-
-    _pendingQueue.add(syncOp);
-    await _saveSyncOperation(syncOp);
-
-    debugPrint('[SyncQueue] Queued: $operation on $tableName/$documentId');
-  }
-
-  /// Save operation to local queue table
-  Future<void> _saveSyncOperation(SyncOperation op) async {
-    try {
-      final db = await DBService.instance.database;
-      await db.insert(
-        queueTableName,
-        {
-          'id': op.id,
-          'operation': op.operation,
-          'tableName': op.tableName,
-          'documentId': op.documentId,
-          'data': op.dataAsJson,
-          'timestamp': op.timestamp,
-          'synced': 0,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    } catch (e) {
-      debugPrint('[SyncQueue] Error saving operation: $e');
-    }
-  }
-
-  /// Load all pending operations from database
   Future<void> _loadPendingQueue() async {
-    try {
-      final db = await DBService.instance.database;
-      final rows = await db.query(
-        queueTableName,
-        where: 'synced = ?',
-        whereArgs: [0],
-        orderBy: 'timestamp ASC',
-      );
-
-      _pendingQueue.clear();
-      for (final row in rows) {
-        _pendingQueue.add(SyncOperation.fromMap(row as Map<String, dynamic>));
-      }
-
-      debugPrint('[SyncQueue] Loaded ${_pendingQueue.length} pending operations');
-    } catch (e) {
-      debugPrint('[SyncQueue] Error loading queue: $e');
-    }
+    final db = await DBService.instance.database;
+    final rows = await db.query(queueTableName, where: 'synced = ?', whereArgs: [0], orderBy: 'timestamp ASC');
+    _pendingQueue..clear()..addAll(rows.map((r) => SyncOperation.fromMap(r)));
   }
 
-  /// Process queue and sync to Firestore
   Future<void> syncPendingOperations(String userId) async {
     if (_isSyncing || _pendingQueue.isEmpty) return;
-
     _isSyncing = true;
-    debugPrint('[SyncQueue] Starting sync of ${_pendingQueue.length} operations');
-
-    int successCount = 0;
-    int failureCount = 0;
-    final List<String> failedIds = [];
-
-    for (final op in List<SyncOperation>.from(_pendingQueue)) {
-      try {
-        // TODO: Call _executeSync(userId, op) once Firestore is configured
-        successCount++;
-
-        // Mark as synced
-        await _markSynced(op.id);
-        _pendingQueue.remove(op);
-
-        debugPrint('[SyncQueue] ✓ Synced: ${op.tableName}/${op.documentId}');
-      } catch (e) {
-        failureCount++;
-        failedIds.add(op.id);
-        debugPrint('[SyncQueue] ✗ Failed: ${op.tableName}/${op.documentId} - $e');
-      }
-    }
-
-    _isSyncing = false;
-    debugPrint(
-        '[SyncQueue] Sync complete: $successCount succeeded, $failureCount failed');
-
-    if (failureCount > 0) {
-      debugPrint('[SyncQueue] Failed operation IDs: $failedIds');
-    }
-  }
-
-  /// Mark operation as synced
-  Future<void> _markSynced(String opId) async {
     try {
       final db = await DBService.instance.database;
-      await db.update(
-        queueTableName,
-        {'synced': 1},
-        where: 'id = ?',
-        whereArgs: [opId],
-      );
-    } catch (e) {
-      debugPrint('[SyncQueue] Error marking as synced: $e');
-    }
+      for (final op in List<SyncOperation>.from(_pendingQueue)) {
+        try {
+          final collection = _firestore.collection('users').doc(userId).collection(op.tableName);
+          final ref = collection.doc(op.documentId);
+          if (op.operation == 'delete') { await ref.delete(); } else { await ref.set(op.data, SetOptions(merge: op.operation == 'update')); }
+          await db.update(queueTableName, {'synced': 1}, where: 'id = ?', whereArgs: [op.id]);
+          _pendingQueue.remove(op);
+        } catch (e) { debugPrint('[SyncQueue] failed ${op.id}: $e'); }
+      }
+    } finally { _isSyncing = false; }
   }
 
-  /// Get pending operation count
   int get pendingCount => _pendingQueue.length;
   bool get hasPending => _pendingQueue.isNotEmpty;
   bool get isSyncing => _isSyncing;
-
-  /// Clear failed operations after manual review
-  Future<void> clearFailedOperations() async {
-    try {
-      final db = await DBService.instance.database;
-      // In production, mark failed ops differently for manual review
-      debugPrint('[SyncQueue] Cleared failed operations');
-    } catch (e) {
-      debugPrint('[SyncQueue] Error clearing failed ops: $e');
-    }
-  }
+  Future<void> clearFailedOperations() async {}
 }
 
-/// Represents a single sync operation
 class SyncOperation {
-  final String id;
-  final String operation; // 'create', 'update', 'delete'
-  final String tableName;
-  final String documentId;
+  final String id, operation, tableName, documentId;
   final Map<String, dynamic> data;
   final int timestamp;
-
-  SyncOperation({
-    required this.id,
-    required this.operation,
-    required this.tableName,
-    required this.documentId,
-    required this.data,
-    required this.timestamp,
-  });
-
-  String get dataAsJson => data.toString();
-
-  factory SyncOperation.fromMap(Map<String, dynamic> map) {
-    return SyncOperation(
-      id: map['id'] as String,
-      operation: map['operation'] as String,
-      tableName: map['tableName'] as String,
-      documentId: map['documentId'] as String,
-      data: {},
-      timestamp: map['timestamp'] as int,
-    );
-  }
+  SyncOperation({required this.id, required this.operation, required this.tableName, required this.documentId, required this.data, required this.timestamp});
+  factory SyncOperation.fromMap(Map<String, dynamic> map) => SyncOperation(id: map['id'] as String, operation: map['operation'] as String, tableName: map['tableName'] as String, documentId: map['documentId'] as String, data: jsonDecode(map['data'] as String) is Map ? Map<String, dynamic>.from(jsonDecode(map['data'] as String)) : {}, timestamp: map['timestamp'] as int);
 }
