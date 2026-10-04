@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/supplier.dart';
 import '../services/db_service.dart';
+import '../services/sync_queue_service.dart';
 
 class SupplierProvider extends ChangeNotifier {
   final List<Supplier> _suppliers = [];
@@ -50,6 +51,7 @@ class SupplierProvider extends ChangeNotifier {
     final db = await DBService.instance.database;
     final supplier = Supplier(id: _uuid.v4(), name: name, phone: phone);
     await db.insert('suppliers', supplier.toMap());
+    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'suppliers', documentId: supplier.id, data: supplier.toMap());
     _suppliers.add(supplier);
     notifyListeners();
   }
@@ -78,6 +80,7 @@ class SupplierProvider extends ChangeNotifier {
     );
     final db = await DBService.instance.database;
     await db.update('suppliers', updated.toMap(), where: 'id = ?', whereArgs: [s.id]);
+    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'suppliers', documentId: updated.id, data: updated.toMap());
     _suppliers[idx] = updated;
     notifyListeners();
   }
@@ -99,13 +102,15 @@ class SupplierProvider extends ChangeNotifier {
       'date': order.date.toIso8601String(),
       'status': order.status,
     });
+    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'supplier_orders', documentId: order.id, data: {'id': order.id, 'supplierId': order.supplierId, 'supplierName': order.supplierName, 'date': order.date.toIso8601String(), 'status': order.status});
     for (final item in items) {
-      await db.insert('supplier_order_items', {
+      final itemId = await db.insert('supplier_order_items', {
         'orderId': order.id,
         'productName': item.productName,
         'requiredQuantity': item.requiredQuantity,
         'estimatedPrice': item.estimatedPrice,
       });
+      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'supplier_orders/' + order.id + '/items', documentId: itemId.toString(), data: {'id': itemId, 'orderId': order.id, 'productName': item.productName, 'requiredQuantity': item.requiredQuantity, 'estimatedPrice': item.estimatedPrice});
     }
     _orders.insert(0, order);
     _orderItemsCache[order.id] = items;
