@@ -22,7 +22,7 @@ class SyncService {
   /// Initialize sync service and monitor connectivity
   Future<void> init(String userId) async {
     _connectivity.onConnectivityChanged.listen((result) {
-      _isOnline = result != ConnectivityResult.none;
+      _isOnline = !result.contains(ConnectivityResult.none);
       if (_isOnline) {
         debugPrint('[SyncService] Online detected, triggering sync');
         _syncAll(userId);
