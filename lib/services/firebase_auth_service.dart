@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Production-ready Firebase Phone Authentication.
-/// Replaces the demo OTP system with real SMS verification.
+/// Firebase Phone Authentication service.
 class FirebaseAuthService {
   FirebaseAuthService._internal();
   static final FirebaseAuthService instance = FirebaseAuthService._internal();
@@ -12,65 +12,81 @@ class FirebaseAuthService {
   String? _verificationId;
   int? _resendToken;
 
-  /// Send OTP via SMS using Firebase
+  User? get currentUser => _firebaseAuth.currentUser;
+  int? get resendToken => _resendToken;
+
   Future<void> sendOtp(String phoneNumber) async {
+    final completer = Completer<void>();
     await _firebaseAuth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
       verificationCompleted: (PhoneAuthCredential credential) async {
-        // Auto-resolve on Android when SIM matches
-        await _firebaseAuth.signInWithCredential(credential);
+        try {
+          await _firebaseAuth.signInWithCredential(credential);
+          await _persistCurrentUser();
+          if (!completer.isCompleted) completer.complete();
+        } catch (e) {
+          if (!completer.isCompleted) completer.completeError(e);
+        }
       },
       verificationFailed: (FirebaseAuthException e) {
-        throw Exception('Firebase Auth Error: ${e.message}');
+        if (!completer.isCompleted) {
+          completer.completeError(
+            Exception(e.message ?? 'Firebase phone authentication failed.'),
+          );
+        }
       },
       codeSent: (String verificationId, int? resendToken) {
         _verificationId = verificationId;
         _resendToken = resendToken;
+        if (!completer.isCompleted) completer.complete();
       },
       codeAutoRetrievalTimeout: (String verificationId) {
         _verificationId = verificationId;
       },
       timeout: const Duration(minutes: 2),
     );
+    await completer.future;
   }
 
-  /// Verify OTP code
   Future<bool> verifyOtp(String otp) async {
     try {
-      if (_verificationId == null) return false;
+      final verificationId = _verificationId;
+      if (verificationId == null) return false;
 
       final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
+        verificationId: verificationId,
         smsCode: otp,
       );
-      final userCredential = await _firebaseAuth.signInWithCredential(credential);
-      final phone = userCredential.user?.phoneNumber;
-
-      if (phone != null) {
-        await _secureStorage.write(key: 'session_phone', value: phone);
-        await _secureStorage.write(key: 'user_uid', value: userCredential.user!.uid);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      throw Exception('OTP verification failed: $e');
+      await _firebaseAuth.signInWithCredential(credential);
+      await _persistCurrentUser();
+      _verificationId = null;
+      return _firebaseAuth.currentUser != null;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(e.message ?? 'OTP verification failed.');
     }
   }
 
-  /// Get current user UID for Firestore sync
-  Future<String?> getUserUid() async {
-    return _firebaseAuth.currentUser?.uid ?? await _secureStorage.read(key: 'user_uid');
+  Future<void> _persistCurrentUser() async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) return;
+    final phone = user.phoneNumber;
+    if (phone != null) {
+      await _secureStorage.write(key: 'session_phone', value: phone);
+    }
+    await _secureStorage.write(key: 'user_uid', value: user.uid);
   }
 
-  /// Check if user is already logged in
-  Future<String?> getSession() async {
-    return _secureStorage.read(key: 'session_phone');
-  }
+  Future<String?> getUserUid() async => _firebaseAuth.currentUser?.uid;
 
-  /// Logout and clear session
+  Future<String?> getSession() async =>
+      _firebaseAuth.currentUser?.phoneNumber ??
+      await _secureStorage.read(key: 'session_phone');
+
   Future<void> clearSession() async {
     await _firebaseAuth.signOut();
     await _secureStorage.delete(key: 'session_phone');
     await _secureStorage.delete(key: 'user_uid');
+    _verificationId = null;
+    _resendToken = null;
   }
 }
