@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/shop.dart';
 import '../services/db_service.dart';
+import '../services/sync_queue_service.dart';
 
 class ShopProvider extends ChangeNotifier {
   Shop? shop;
@@ -34,6 +35,7 @@ class ShopProvider extends ChangeNotifier {
       logoPath: logoPath ?? shop?.logoPath,
     );
     await db.insert('shop', newShop.toMap());
+    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'shop', documentId: 'profile', data: newShop.toMap());
     // single-row table: clear any stale duplicate from a previous insert
     await db.delete('shop', where: 'id != ?', whereArgs: [id]);
     shop = newShop;
