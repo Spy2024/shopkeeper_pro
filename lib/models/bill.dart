@@ -47,7 +47,7 @@ class Bill {
         assert(taxPercent >= 0);
 
   double get subtotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
-  double get taxableSubtotal => (subtotal - discount).clamp(0.0, double.infinity);
+  double get taxableSubtotal => (subtotal - discount).clamp(0.0, double.infinity).toDouble();
   double get taxAmount => taxableSubtotal * (taxPercent / 100);
   double get grandTotal => taxableSubtotal + taxAmount;
 
