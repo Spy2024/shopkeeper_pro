@@ -74,18 +74,31 @@ class SupplierProvider extends ChangeNotifier {
   Future<void> _adjustSupplier(String supplierId,
       {double stockDelta = 0, double paymentDelta = 0}) async {
     final idx = _suppliers.indexWhere((s) => s.id == supplierId);
-    if (idx == -1) return;
-    final s = _suppliers[idx];
+    if (idx == -1) throw StateError('Supplier not found');
+    if (stockDelta < 0 || paymentDelta < 0) throw ArgumentError('Amounts cannot be negative');
+    final current = _suppliers[idx];
     final updated = Supplier(
-      id: s.id,
-      name: s.name,
-      phone: s.phone,
-      totalStockReceivedValue: s.totalStockReceivedValue + stockDelta,
-      totalPaymentsMade: s.totalPaymentsMade + paymentDelta,
-    );
+      id: current.id, name: current.name, phone: current.phone,
+      totalStockReceivedValue: current.totalStockReceivedValue + stockDelta,
+      totalPaymentsMade: current.totalPaymentsMade + paymentDelta);
     final db = await DBService.instance.database;
-    await db.update('suppliers', updated.toMap(), where: 'id = ?', whereArgs: [s.id]);
-    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'suppliers', documentId: updated.id, data: updated.toMap());
+    await db.transaction((txn) async {
+      await txn.update('suppliers', updated.toMap(),
+          where: 'id = ?', whereArgs: [current.id]);
+      if (stockDelta > 0) {
+        await txn.insert('supplier_transactions', {
+          'id': _uuid.v4(), 'supplierId': current.id, 'type': 'stock_received',
+          'amount': stockDelta, 'date': DateTime.now().toIso8601String()});
+      }
+      if (paymentDelta > 0) {
+        await txn.insert('supplier_transactions', {
+          'id': _uuid.v4(), 'supplierId': current.id, 'type': 'payment',
+          'amount': paymentDelta, 'date': DateTime.now().toIso8601String()});
+      }
+    });
+    await SyncQueueService.instance.queueOperation(
+      operation: 'update', tableName: 'suppliers', documentId: updated.id,
+      data: updated.toMap());
     _suppliers[idx] = updated;
     notifyListeners();
   }
