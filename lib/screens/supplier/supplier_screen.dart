@@ -226,8 +226,12 @@ class _OrdersTab extends StatelessWidget {
                       .toList(),
                   o.estimatedOrderTotal,
                 );
-                await Share.shareXFiles([XFile(file.path)],
-                    text: 'Purchase order for ${o.supplierName}');
+                await SharePlus.instance.share(
+                  ShareParams(
+                    files: [XFile(file.path)],
+                    text: 'Purchase order for ${o.supplierName}',
+                  ),
+                );
               },
             ),
           ),
@@ -269,7 +273,7 @@ class _NewOrderSheetState extends State<_NewOrderSheet> {
           const Text('New Purchase Order', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           DropdownButtonFormField<Supplier>(
-            value: _selected,
+            initialValue: _selected,
             decoration: const InputDecoration(labelText: 'Supplier'),
             items: widget.suppliers.map((s) => DropdownMenuItem(value: s, child: Text(s.name))).toList(),
             onChanged: (v) => setState(() => _selected = v),
