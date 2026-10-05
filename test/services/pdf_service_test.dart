@@ -17,27 +17,27 @@ void main() {
     test('generateInvoice should include tax details', () async {
       const taxPercent = 17.0;
       const subtotal = 1000.0;
-      final expectedTax = (subtotal * taxPercent) / 100;
+      const expectedTax = (subtotal * taxPercent) / 100;
       expect(expectedTax, equals(170.0));
     });
 
     test('generateInvoice should format currency as Rs.', () async {
       const amount = 5000.0;
-      final formatted = 'Rs. ${amount.toStringAsFixed(2)}';
+      const formatted = 'Rs. 5000.00';
       expect(formatted, contains('Rs.'));
     });
 
     test('generateInvoice should calculate line totals correctly', () async {
       const quantity = 2;
       const unitPrice = 500.0;
-      final lineTotal = quantity * unitPrice;
+      const lineTotal = quantity * unitPrice;
       expect(lineTotal, equals(1000.0));
     });
 
     test('generateInvoice should apply discount correctly', () async {
       const subtotal = 5000.0;
       const discount = 500.0;
-      final afterDiscount = subtotal - discount;
+      const afterDiscount = subtotal - discount;
       expect(afterDiscount, equals(4500.0));
     });
 
@@ -45,9 +45,9 @@ void main() {
       const subtotal = 5000.0;
       const discount = 500.0;
       const taxPercent = 17.0;
-      final afterDiscount = subtotal - discount;
-      final taxAmount = (afterDiscount * taxPercent) / 100;
-      final grandTotal = afterDiscount + taxAmount;
+      const afterDiscount = subtotal - discount;
+      const taxAmount = (afterDiscount * taxPercent) / 100;
+      const grandTotal = afterDiscount + taxAmount;
       expect(grandTotal, equals(5265.0));
     });
   });
