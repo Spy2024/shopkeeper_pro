@@ -17,7 +17,6 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
-  final _searchCtrl = TextEditingController();
 
   void _openAddItemSheet() {
     final inventory = context.read<InventoryProvider>();
@@ -112,7 +111,7 @@ class _BillSummaryPanel extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, -4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, -4))],
       ),
       child: SafeArea(
         top: false,
@@ -220,7 +219,12 @@ class _BillSummaryPanel extends StatelessWidget {
     final bill = await pos.checkout(inventory);
     final file = await PdfService.generateInvoice(bill, shop);
     if (!context.mounted) return;
-    await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path)],
+        text: 'Here is your invoice from ${shop?.name ?? "our shop"}.',
+      ),
+    );
   }
 }
 
