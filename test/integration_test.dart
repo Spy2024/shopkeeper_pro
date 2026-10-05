@@ -16,10 +16,10 @@ void main() {
     });
 
     test('TEST 4: Create Bill (Offline)', () async {
-      final subtotal = (2 * 150.0) + (1 * 120.0);
-      final afterDiscount = subtotal - 20.0;
-      final tax = (afterDiscount * 17.0) / 100;
-      final grandTotal = afterDiscount + tax;
+      const subtotal = (2 * 150.0) + (1 * 120.0);
+      const afterDiscount = subtotal - 20.0;
+      const tax = (afterDiscount * 17.0) / 100;
+      const grandTotal = afterDiscount + tax;
       expect(grandTotal, equals(468.0));
     });
 
