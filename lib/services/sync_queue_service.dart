@@ -10,7 +10,8 @@ class SyncQueueService {
   SyncQueueService._internal();
   static final SyncQueueService instance = SyncQueueService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore? _firestore;
+  FirebaseFirestore get _dbFirestore => _firestore ??= FirebaseFirestore.instance;
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
   Timer? _scheduledSync;
@@ -80,7 +81,7 @@ class SyncQueueService {
     String collectionPath,
     String documentId,
   ) {
-    return _firestore
+    return _dbFirestore
         .collection('users')
         .doc(userId)
         .collection(collectionPath)
