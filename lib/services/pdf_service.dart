@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -112,7 +111,7 @@ class PdfService {
             pw.Text('Supplier: ${supplier.name} (${supplier.phone})'),
             pw.Text('Date: ${_dateFmt.format(DateTime.now())}'),
             pw.Divider(),
-            pw.Table.fromTextArray(
+            pw.TableHelper.fromTextArray(
               headers: ['Product', 'Required Qty', 'Estimated Price', 'Estimated Total'],
               data: items
                   .map((i) => [
