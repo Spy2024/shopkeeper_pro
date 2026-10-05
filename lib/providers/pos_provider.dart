@@ -91,11 +91,12 @@ class PosProvider extends ChangeNotifier {
 
     await db.transaction((txn) async {
       await txn.insert('bills', bill.toMap());
-      for (final item in bill.items) {
+      for (var itemIndex = 0; itemIndex < bill.items.length; itemIndex++) {
+        final item = bill.items[itemIndex];
         await txn.insert('bill_items', {
           ...item.toMap(),
           'billId': bill.id,
-          'cloudId': itemCloudIds[i],
+          'cloudId': itemCloudIds[itemIndex],
         });
       }
       for (final entry in quantitiesById.entries) {
@@ -109,6 +110,9 @@ class PosProvider extends ChangeNotifier {
       for (final item in bill.items) {
         final product = productsById[item.productId ?? ''] ??
             inventory.products.firstWhere((p) => p.name == item.productName);
+        final netUnitPrice = bill.subtotal <= 0
+            ? item.unitPrice
+            : item.unitPrice * (1 - bill.discount / bill.subtotal);
         for (var i = 0; i < item.quantity; i++) {
           await txn.insert('daily_sales', DailySale(
             id: _uuid.v4(), date: bill.date, billId: bill.id, productId: product.id,
@@ -121,10 +125,12 @@ class PosProvider extends ChangeNotifier {
 
     await SyncQueueService.instance.queueOperation(
       operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
-    for (final item in bill.items) {
+    for (var itemIndex = 0; itemIndex < bill.items.length; itemIndex++) {
+      final item = bill.items[itemIndex];
       await SyncQueueService.instance.queueOperation(
         operation: 'create', tableName: 'bills/' + bill.id + '/items',
-        documentId: itemCloudIds[i], data: {...item.toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id});
+        documentId: itemCloudIds[itemIndex],
+        data: {...item.toMap(), 'cloudId': itemCloudIds[itemIndex], 'billId': bill.id});
     }
     for (final entry in newQuantities.entries) {
       final product = inventory.findById(entry.key)!;
