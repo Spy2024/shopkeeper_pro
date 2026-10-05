@@ -71,12 +71,14 @@ class _StartupGateState extends State<_StartupGate> {
 
   Future<void> _bootstrap() async {
     final auth = context.read<AuthProvider>();
+    final shopProvider = context.read<ShopProvider>();
+    final syncProvider = context.read<SyncProvider>();
     await auth.checkExistingSession();
     if (auth.isLoggedIn) {
-      await context.read<ShopProvider>().load();
+      await shopProvider.load();
       final userId = auth.userUid;
       if (userId != null && userId.isNotEmpty) {
-        await context.read<SyncProvider>().init(userId);
+        await syncProvider.init(userId);
       }
     }
     if (!mounted) return;
