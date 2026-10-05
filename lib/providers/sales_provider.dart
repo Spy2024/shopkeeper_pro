@@ -35,6 +35,7 @@ class SalesProvider extends ChangeNotifier {
     required double salePrice,
     DateTime? date,
   }) async {
+    if (productName.trim().isEmpty || costPrice < 0 || salePrice < 0) throw ArgumentError('Invalid sale');
     final db = await DBService.instance.database;
     final sale = DailySale(
       id: _uuid.v4(),
