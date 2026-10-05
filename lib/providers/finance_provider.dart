@@ -11,6 +11,7 @@ class FinanceProvider extends ChangeNotifier {
   List<Expense> get expenses => List.unmodifiable(_expenses);
 
   Future<void> load() async {
+    if (label.trim().isEmpty || amount <= 0) throw ArgumentError('Invalid expense');
     final db = await DBService.instance.database;
     final rows = await db.query('expenses', orderBy: 'date DESC');
     _expenses
