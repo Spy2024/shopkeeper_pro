@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../providers/supplier_provider.dart';
+import '../../providers/inventory_provider.dart';
 import '../../models/supplier.dart';
 import '../../services/pdf_service.dart';
 
@@ -215,9 +216,34 @@ class _OrdersTab extends StatelessWidget {
           child: ListTile(
             title: Text(o.supplierName, style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text('${o.items.length} item(s) • ${currency.format(o.estimatedOrderTotal)}'),
-            trailing: IconButton(
-              icon: const Icon(Icons.share_outlined),
-              onPressed: () async {
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (o.status != 'received')
+                  IconButton(
+                    tooltip: 'Receive stock',
+                    icon: const Icon(Icons.inventory_2_outlined),
+                    onPressed: () async {
+                      try {
+                        await context.read<SupplierProvider>().receiveOrder(
+                            o.id, context.read<InventoryProvider>());
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Order received and inventory updated')),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Receive failed: $e')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.share_outlined),
+                  onPressed: () async {
                 final supplier = suppliers.firstWhere((s) => s.id == o.supplierId,
                     orElse: () => Supplier(id: o.supplierId, name: o.supplierName, phone: ''));
                 final file = await PdfService.generatePurchaseOrder(
@@ -239,6 +265,8 @@ class _OrdersTab extends StatelessWidget {
                   ),
                 );
               },
+                  ),
+              ],
             ),
           ),
         );
