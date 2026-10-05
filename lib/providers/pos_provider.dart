@@ -19,7 +19,7 @@ class PosProvider extends ChangeNotifier {
 
   double get subtotal => cart.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get taxAmount => taxableSubtotal * (taxPercent / 100);
-  double get taxableSubtotal => (subtotal - discount).clamp(0.0, double.infinity);
+  double get taxableSubtotal => (subtotal - discount).clamp(0.0, double.infinity).toDouble();
   double get grandTotal => taxableSubtotal + taxAmount;
 
   void addItem(String productName, int quantity, double unitPrice) {
