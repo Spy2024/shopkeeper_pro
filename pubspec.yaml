@@ -1,7 +1,7 @@
 name: shopkeeper_pro
 description: Android-first shopkeeper management app - production ready with offline-first, Firebase sync and invoice generation.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -28,11 +28,11 @@ dependencies:
 
   # Invoice & PDF
   pdf: ^3.10.8
-  printing: ^5.12.0
+  printing: ^5.15.1
   share_plus: ^13.3.1
   image_picker: ^1.2.3
   flutter_secure_storage: ^11.2.0
-  connectivity_plus: ^5.0.2
+  connectivity_plus: ^7.3.2
   fl_chart: ^1.2.0
 
   # Utils
