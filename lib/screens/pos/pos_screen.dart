@@ -28,6 +28,14 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pos = context.watch<PosProvider>();
 
@@ -216,15 +224,23 @@ class _BillSummaryPanel extends StatelessWidget {
   Future<void> _checkoutAndShare(BuildContext context, PosProvider pos) async {
     final inventory = context.read<InventoryProvider>();
     final shop = context.read<ShopProvider>().shop;
-    final bill = await pos.checkout(inventory);
-    final file = await PdfService.generateInvoice(bill, shop);
-    if (!context.mounted) return;
-    await SharePlus.instance.share(
+    try {
+      final bill = await pos.checkout(inventory);
+      final file = await PdfService.generateInvoice(bill, shop);
+      if (!context.mounted) return;
+      await SharePlus.instance.share(
       ShareParams(
         files: [XFile(file.path)],
         text: 'Here is your invoice from ${shop?.name ?? "our shop"}.',
       ),
-    );
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Checkout failed: $e')),
+        );
+      }
+    }
   }
 }
 
