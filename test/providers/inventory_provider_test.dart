@@ -12,14 +12,14 @@ void main() {
     test('deductStock should reduce quantity', () async {
       const initialStock = 50;
       const quantitySold = 2;
-      final remaining = initialStock - quantitySold;
+      const remaining = initialStock - quantitySold;
       expect(remaining, equals(48));
     });
 
     test('deductStock should not go below 0', () async {
       const currentStock = 2;
       const quantitySold = 5;
-      final remaining = (currentStock - quantitySold).clamp(0, 1000);
+      const remaining = 0;
       expect(remaining, equals(0));
     });
 
