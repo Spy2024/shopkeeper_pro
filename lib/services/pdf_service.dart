@@ -42,7 +42,7 @@ class PdfService {
                   else
                     pw.SizedBox(height: 0),
                   pw.Text(shop?.name ?? 'My Shop',
-                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                      style: const pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                 ],
               ),
             ),
@@ -65,9 +65,9 @@ class PdfService {
               },
               children: [
                 pw.TableRow(children: [
-                  pw.Text('Item', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.Text('Qty', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.Text('Total', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Item', style: const pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Qty', style: const pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Total', style: const pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                 ]),
                 ...bill.items.map((item) => pw.TableRow(children: [
                       pw.Text(item.productName),
@@ -106,7 +106,7 @@ class PdfService {
         build: (context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text('Purchase Order', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Purchase Order', style: const pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
             pw.Text('Order #: ${orderId.substring(0, 8).toUpperCase()}'),
             pw.Text('Supplier: ${supplier.name} (${supplier.phone})'),
             pw.Text('Date: ${_dateFmt.format(DateTime.now())}'),
@@ -126,7 +126,7 @@ class PdfService {
             pw.Align(
               alignment: pw.Alignment.centerRight,
               child: pw.Text('Estimated Order Total: ${_currency.format(total)}',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  style: const pw.TextStyle(fontWeight: pw.FontWeight.bold)),
             ),
           ],
         ),
@@ -142,8 +142,8 @@ class PdfService {
   static pw.Widget _row(String label, String value, {bool bold = false}) => pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(label, style: bold ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null),
-          pw.Text(value, style: bold ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null),
+          pw.Text(label, style: bold ? const pw.TextStyle(fontWeight: pw.FontWeight.bold) : null),
+          pw.Text(value, style: bold ? const pw.TextStyle(fontWeight: pw.FontWeight.bold) : null),
         ],
       );
 }
