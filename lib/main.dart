@@ -79,6 +79,7 @@ class _StartupGateState extends State<_StartupGate> {
         await context.read<SyncProvider>().init(userId);
       }
     }
+    if (!mounted) return;
     setState(() => _ready = true);
   }
 
