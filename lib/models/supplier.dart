@@ -26,7 +26,7 @@ class Supplier {
   factory Supplier.fromMap(Map<String, dynamic> map) => Supplier(
         id: map['id'] as String,
         name: map['name'] as String,
-        phone: map['phone'] as String,
+        phone: (map['phone'] as String?) ?? '',
         totalStockReceivedValue: (map['totalStockReceivedValue'] as num).toDouble(),
         totalPaymentsMade: (map['totalPaymentsMade'] as num).toDouble(),
       );
