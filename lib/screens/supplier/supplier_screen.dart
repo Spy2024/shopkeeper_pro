@@ -51,6 +51,12 @@ class _SupplierScreenState extends State<SupplierScreen> with SingleTickerProvid
   }
 
   @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final supplierProvider = context.watch<SupplierProvider>();
 
