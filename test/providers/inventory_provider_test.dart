@@ -1,30 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/models/product.dart';
 
 void main() {
-  group('InventoryProvider Tests', () {
-    test('addProduct should add to inventory', () async {
-      const productName = 'Tea';
-      const stockQuantity = 50;
-      expect(productName, isNotEmpty);
-      expect(stockQuantity, greaterThan(0));
-    });
-
-    test('deductStock should reduce quantity', () async {
-      const initialStock = 50;
-      const quantitySold = 2;
-      const remaining = initialStock - quantitySold;
-      expect(remaining, equals(48));
-    });
-
-    test('deductStock should not go below 0', () async {
-      const currentStock = 2;
-      const quantitySold = 5;
-      final remaining = (currentStock - quantitySold).clamp(0, 1000);
-      expect(remaining, equals(0));
-    });
-
-    test('lowOrOutOfStock should filter products', () async {
-      expect(true, true);
-    });
+  test('low stock classification is correct', () {
+    final low = Product(id: '1', name: 'Tea', category: 'Grocery',
+      stockQuantity: 3, costPrice: 50, sellingPrice: 70, lowStockThreshold: 5);
+    final normal = Product(id: '2', name: 'Sugar', category: 'Grocery',
+      stockQuantity: 20, costPrice: 50, sellingPrice: 70, lowStockThreshold: 5);
+    final out = Product(id: '3', name: 'Milk', category: 'Grocery',
+      stockQuantity: 0, costPrice: 50, sellingPrice: 70, lowStockThreshold: 5);
+    expect(low.isLowStock, isTrue);
+    expect(normal.isLowStock, isFalse);
+    expect(out.isOutOfStock, isTrue);
   });
 }
