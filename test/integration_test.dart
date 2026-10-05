@@ -1,50 +1,39 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/models/bill.dart';
+import 'package:shopkeeper_pro/models/daily_sale.dart';
+import 'package:shopkeeper_pro/models/product.dart';
+import 'package:shopkeeper_pro/models/supplier.dart';
 
 void main() {
-  group('End-to-End Integration Tests', () {
-    test('TEST 1: Authentication Flow', () async {
-      const phoneNumber = '+923334455667';
-      expect(phoneNumber, contains('+92'));
+  group('Shopkeeper business-flow tests', () {
+    test('authentication phone format expectation', () {
+      expect(RegExp(r'^\+\d{8,15}$').hasMatch('+923334455667'), isTrue);
     });
 
-    test('TEST 2: Shop Setup with Logo', () async {
-      expect(true, true);
+    test('inventory stock calculation', () {
+      final p = Product(id: 'p1', name: 'Tea', category: 'Grocery',
+        stockQuantity: 50, costPrice: 80, sellingPrice: 120);
+      expect(p.stockQuantity - 2, 48);
     });
 
-    test('TEST 3: Add Inventory', () async {
-      expect(true, true);
+    test('POS bill calculation', () {
+      final bill = Bill(id: 'b1', date: DateTime.now(),
+        items: [BillItem(productId: 'p1', productName: 'Tea', quantity: 2, unitPrice: 150),
+          BillItem(productId: 'p2', productName: 'Milk', quantity: 1, unitPrice: 120)],
+        discount: 20, taxPercent: 17);
+      expect(bill.grandTotal, closeTo(468.0, 0.0001));
     });
 
-    test('TEST 4: Create Bill (Offline)', () async {
-      const subtotal = (2 * 150.0) + (1 * 120.0);
-      const afterDiscount = subtotal - 20.0;
-      const tax = (afterDiscount * 17.0) / 100;
-      const grandTotal = afterDiscount + tax;
-      expect(grandTotal, equals(468.0));
+    test('daily sale margin is correct', () {
+      final sale = DailySale(id: 's1', date: DateTime.now(), productName: 'Tea',
+        costPrice: 100, salePrice: 150, source: 'pos');
+      expect(sale.margin, 50);
     });
 
-    test('TEST 5: PDF Invoice Quality', () async {
-      expect(true, true);
-    });
-
-    test('TEST 6: Inventory Deducted', () async {
-      expect(true, true);
-    });
-
-    test('TEST 7: Multi-Device Sync', () async {
-      expect(true, true);
-    });
-
-    test('TEST 8: Offline to Online Sync', () async {
-      expect(true, true);
-    });
-
-    test('TEST 9: Financial Dashboard', () async {
-      expect(true, true);
-    });
-
-    test('TEST 10: Supplier Management', () async {
-      expect(true, true);
+    test('supplier balance cannot be negative conceptually', () {
+      final supplier = Supplier(id: 's1', name: 'ABC', phone: '',
+        totalStockReceivedValue: 1000, totalPaymentsMade: 400);
+      expect(supplier.remainingBalance, 600);
     });
   });
 }
