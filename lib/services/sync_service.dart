@@ -96,6 +96,7 @@ class SyncService {
           await _maps(db, 'bill_items', where: 'billId = ?', args: [bill['id']]));
     }
     await _writeBatch(userId, 'suppliers', await _maps(db, 'suppliers'));
+    await _writeBatch(userId, 'supplier_transactions', await _maps(db, 'supplier_transactions'));
     final orders = await _maps(db, 'supplier_orders');
     await _writeBatch(userId, 'supplier_orders', orders);
     for (final order in orders) {
@@ -151,7 +152,32 @@ class SyncService {
           }
         }
       }
-      for (final collection in ['suppliers', 'supplier_orders', 'sales', 'expenses']) {
+      for (final doc in (await _collection(userId, 'suppliers')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('suppliers', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      for (final doc in (await _collection(userId, 'supplier_transactions')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('supplier_transactions', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      for (final doc in (await _collection(userId, 'supplier_orders')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final order = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('supplier_orders', order, conflictAlgorithm: ConflictAlgorithm.replace);
+        final items = await doc.reference.collection('items').get();
+        await db.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [doc.id]);
+        for (final item in items.docs) {
+          final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
+          data['cloudId'] = item.id;
+          await db.insert('supplier_order_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+
+      for (final collection in ['sales', 'expenses']) {
         for (final doc in (await _collection(userId, collection)).docs) {
           if (await _hasPending(db, doc.id)) continue;
           final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
