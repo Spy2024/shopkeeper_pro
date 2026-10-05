@@ -90,7 +90,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         child: ListTile(
                           onTap: () => _openProductForm(existing: p),
                           leading: CircleAvatar(
-                            backgroundColor: statusColor.withOpacity(0.15),
+                            backgroundColor: statusColor.withValues(alpha: 0.15),
                             child: Icon(Icons.inventory_2, color: statusColor),
                           ),
                           title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
