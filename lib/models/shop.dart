@@ -27,8 +27,8 @@ class Shop {
   factory Shop.fromMap(Map<String, dynamic> map) => Shop(
         id: map['id'] as String,
         name: map['name'] as String,
-        address: map['address'] as String,
-        phone: map['phone'] as String,
+        address: (map['address'] as String?) ?? '',
+        phone: (map['phone'] as String?) ?? '',
         taxNumber: map['taxNumber'] as String?,
         logoPath: map['logoPath'] as String?,
       );
