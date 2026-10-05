@@ -154,7 +154,7 @@ class SyncService {
           .toList();
       await _writeBatch(userId, 'expenses', expenses);
     } catch (e) {
-      debugPrint('[SyncService] push error: ' + e.toString());
+      debugPrint('[SyncService] push error: $e');
     } finally {
       _isSyncing = false;
     }
@@ -245,7 +245,7 @@ class SyncService {
         );
       }
     } catch (e) {
-      debugPrint('[SyncService] pull error: ' + e.toString());
+      debugPrint('[SyncService] pull error: $e');
     } finally {
       _isSyncing = false;
     }
