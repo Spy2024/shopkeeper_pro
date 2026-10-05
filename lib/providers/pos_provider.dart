@@ -87,6 +87,7 @@ class PosProvider extends ChangeNotifier {
       items: List.unmodifiable(cart), discount: discount, taxPercent: taxPercent,
     );
     final newQuantities = <String, int>{};
+    final itemCloudIds = List<String>.generate(bill.items.length, (_) => _uuid.v4());
 
     await db.transaction((txn) async {
       await txn.insert('bills', bill.toMap());
@@ -94,7 +95,7 @@ class PosProvider extends ChangeNotifier {
         await txn.insert('bill_items', {
           ...item.toMap(),
           'billId': bill.id,
-          'cloudId': _uuid.v4(),
+          'cloudId': itemCloudIds[i],
         });
       }
       for (final entry in quantitiesById.entries) {
@@ -112,7 +113,7 @@ class PosProvider extends ChangeNotifier {
           await txn.insert('daily_sales', DailySale(
             id: _uuid.v4(), date: bill.date, billId: bill.id, productId: product.id,
             productName: product.name, costPrice: product.costPrice,
-            salePrice: item.unitPrice, source: 'pos',
+            salePrice: netUnitPrice, source: 'pos',
           ).toMap());
         }
       }
@@ -123,7 +124,7 @@ class PosProvider extends ChangeNotifier {
     for (final item in bill.items) {
       await SyncQueueService.instance.queueOperation(
         operation: 'create', tableName: 'bills/' + bill.id + '/items',
-        documentId: item.productId ?? item.productName, data: item.toMap());
+        documentId: itemCloudIds[i], data: {...item.toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id});
     }
     for (final entry in newQuantities.entries) {
       final product = inventory.findById(entry.key)!;
