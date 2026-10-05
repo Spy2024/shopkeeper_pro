@@ -28,14 +28,6 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _qtyCtrl.dispose();
-    _priceCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final pos = context.watch<PosProvider>();
 
