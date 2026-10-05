@@ -241,10 +241,12 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   final _nameCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
   final _priceCtrl = TextEditingController();
+  String? _selectedProductId;
 
-  void _selectProduct(String name, double price) {
+  void _selectProduct(String name, double price, String productId) {
     _nameCtrl.text = name;
     _priceCtrl.text = price.toString();
+    _selectedProductId = productId;
     setState(() {});
   }
 
@@ -276,7 +278,7 @@ class _AddItemSheetState extends State<_AddItemSheet> {
                           dense: true,
                           title: Text(p.name),
                           subtitle: Text('Stock: ${p.stockQuantity} • ${widget.currency.format(p.sellingPrice)}'),
-                          onTap: () => _selectProduct(p.name, p.sellingPrice),
+                          onTap: () => _selectProduct(p.name, p.sellingPrice, p.id),
                         ))
                     .toList(),
               ),
@@ -308,7 +310,8 @@ class _AddItemSheetState extends State<_AddItemSheet> {
               final qty = int.tryParse(_qtyCtrl.text) ?? 0;
               final price = double.tryParse(_priceCtrl.text) ?? 0;
               if (name.isEmpty || qty <= 0 || price <= 0) return;
-              context.read<PosProvider>().addItem(name, qty, price);
+              final selected = widget.inventory.products.where((p) => p.id == _selectedProductId).toList();
+              context.read<PosProvider>().addItem(name, qty, price, productId: selected.isEmpty ? null : selected.first.id);
               Navigator.pop(context);
             },
             child: const Text('Add to Bill'),
