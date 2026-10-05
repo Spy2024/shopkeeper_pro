@@ -22,7 +22,6 @@ void main() {
     });
 
     test('generateInvoice should format currency as Rs.', () async {
-      const amount = 5000.0;
       const formatted = 'Rs. 5000.00';
       expect(formatted, contains('Rs.'));
     });
