@@ -17,9 +17,19 @@ import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    final options = DefaultFirebaseOptions.currentPlatform;
+    final values = [options.apiKey, options.appId, options.projectId];
+    final configured = values.every((v) =>
+        v.isNotEmpty && !v.startsWith('YOUR_') && !v.contains('YOUR_'));
+    if (configured) {
+      await Firebase.initializeApp(options: options);
+    } else {
+      debugPrint('[Firebase] Placeholder configuration detected; running offline mode.');
+    }
+  } catch (e) {
+    debugPrint('[Firebase] Initialization skipped: $e');
+  }
   runApp(const ShopkeeperProApp());
 }
 
