@@ -1,28 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/services/auth_service.dart';
 
 void main() {
-  group('AuthProvider Tests', () {
-    test('Initial state should be logged out', () {
-      expect(true, true);
-    });
-
-    test('requestOtp should set isLoading during request', () async {
-      const phoneNumber = '+923334455667';
-      expect(phoneNumber, isNotEmpty);
-    });
-
-    test('confirmOtp should verify 6-digit code', () async {
-      const otp = '123456';
-      expect(otp.length, equals(6));
-    });
-
-    test('logout should clear session', () async {
-      expect(true, true);
-    });
-
-    test('checkExistingSession should restore session', () async {
-      const savedPhone = '+923334455667';
-      expect(savedPhone, isNotEmpty);
-    });
+  test('demo OTP accepts the generated code and rejects a wrong code', () async {
+    const phone = '+923334455667';
+    final otp = await AuthService.instance.sendOtp(phone);
+    expect(RegExp(r'^\d{6}$').hasMatch(otp), isTrue);
+    expect(AuthService.instance.verifyOtp(phone, '000000'), isFalse);
+    expect(AuthService.instance.verifyOtp(phone, otp), isTrue);
   });
 }

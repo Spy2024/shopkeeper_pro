@@ -34,6 +34,13 @@ class SyncProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  @override
+  void dispose() {
+    ConnectivityService.instance.dispose();
+    SyncQueueService.instance.dispose();
+    super.dispose();
+  }
+
   /// Manual sync trigger
   Future<void> syncNow(String userId) async {
     _isSyncing = true;
@@ -46,7 +53,7 @@ class SyncProvider extends ChangeNotifier {
       }
 
       // Sync from cloud
-      await SyncService.instance.syncFromCloud(userId);
+      await SyncService.instance.syncNow(userId);
 
       _lastSyncTime = DateTime.now().toString();
     } finally {

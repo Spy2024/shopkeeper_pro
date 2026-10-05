@@ -1,39 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/models/product.dart';
+import 'package:shopkeeper_pro/services/sync_service.dart';
 
 void main() {
-  group('SyncService Tests', () {
-    test('init should monitor connectivity', () async {
-      const userId = 'test-user-123';
-      expect(userId, isNotEmpty);
-    });
-
-    test('syncAll should batch write products to Firestore', () async {
-      final mockProducts = [
-        {'id': 'p1', 'name': 'Product 1', 'stockQuantity': 10},
-        {'id': 'p2', 'name': 'Product 2', 'stockQuantity': 5},
-      ];
-      expect(mockProducts.length, equals(2));
-      expect(mockProducts[0]['name'], equals('Product 1'));
-    });
-
-    test('syncAll should batch write bills to Firestore', () async {
-      final mockBills = [
-        {'id': 'b1', 'date': '2026-09-28', 'grandTotal': 5000.0},
-        {'id': 'b2', 'date': '2026-09-28', 'grandTotal': 3000.0},
-      ];
-      expect(mockBills.length, equals(2));
-      expect(mockBills[0]['grandTotal'], isPositive);
-    });
-
-    test('syncFromCloud should merge cloud data with local DB', () async {
-      final cloudProducts = [
-        {'id': 'p1', 'name': 'Updated Product', 'stockQuantity': 15}
-      ];
-      expect(cloudProducts[0]['stockQuantity'], equals(15));
-    });
-
-    test('isOnline should track connectivity status', () async {
-      expect(true, true);
-    });
+  test('sync service starts in a defined non-syncing state', () {
+    expect(SyncService.instance.isSyncing, isFalse);
+    final product = Product(id: 'p1', name: 'Tea', category: 'Grocery',
+      stockQuantity: 10, costPrice: 80, sellingPrice: 100);
+    expect(product.toMap()['id'], 'p1');
   });
 }

@@ -10,7 +10,8 @@ class SyncQueueService {
   SyncQueueService._internal();
   static final SyncQueueService instance = SyncQueueService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore? _firestore;
+  FirebaseFirestore get _dbFirestore => _firestore ??= FirebaseFirestore.instance;
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
   Timer? _scheduledSync;
@@ -49,12 +50,16 @@ class SyncQueueService {
     );
     _pendingQueue.add(op);
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      _scheduledSync?.cancel();
-      _scheduledSync = Timer(const Duration(milliseconds: 300), () {
-        unawaited(syncPendingOperations(uid));
-      });
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        _scheduledSync?.cancel();
+        _scheduledSync = Timer(const Duration(milliseconds: 500), () {
+          unawaited(syncPendingOperations(uid));
+        });
+      }
+    } catch (e) {
+      debugPrint('[SyncQueue] Firebase unavailable; operation remains offline: $e');
     }
   }
 
@@ -76,7 +81,7 @@ class SyncQueueService {
     String collectionPath,
     String documentId,
   ) {
-    return _firestore
+    return _dbFirestore
         .collection('users')
         .doc(userId)
         .collection(collectionPath)

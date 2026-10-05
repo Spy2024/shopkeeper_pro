@@ -18,8 +18,9 @@ class PosProvider extends ChangeNotifier {
   final Map<String, List<BillItem>> _billItemsCache = {};
 
   double get subtotal => cart.fold(0.0, (sum, i) => sum + i.lineTotal);
-  double get taxAmount => (subtotal - discount) * (taxPercent / 100);
-  double get grandTotal => (subtotal - discount) + taxAmount;
+  double get taxAmount => taxableSubtotal * (taxPercent / 100);
+  double get taxableSubtotal => (subtotal - discount).clamp(0.0, double.infinity).toDouble();
+  double get grandTotal => taxableSubtotal + taxAmount;
 
   void addItem(String productName, int quantity, double unitPrice) {
     cart.add(BillItem(productName: productName, quantity: quantity, unitPrice: unitPrice));
@@ -57,50 +58,91 @@ class PosProvider extends ChangeNotifier {
   /// Persists the current cart as a completed bill, deducts stock, and
   /// resets the cart for the next customer. Returns the saved bill.
   Future<Bill> checkout(InventoryProvider inventory) async {
-    final db = await DBService.instance.database;
-    final bill = Bill(
-      id: _uuid.v4(),
-      date: DateTime.now(),
-      customerName: customerName,
-      items: List.of(cart),
-      discount: discount,
-      taxPercent: taxPercent,
-    );
+    if (cart.isEmpty) throw StateError('Cart is empty');
+    if (discount < 0 || discount > subtotal) throw StateError('Invalid discount');
+    if (taxPercent < 0 || taxPercent > 100) throw StateError('Invalid tax');
 
-    await db.insert('bills', bill.toMap());
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
-    for (final item in bill.items) {
-      final itemId = await db.insert('bill_items', {...item.toMap(), 'billId': bill.id});
-      final cloudId = _uuid.v4();
-      await db.update('bill_items', {'cloudId': cloudId}, where: 'id = ?', whereArgs: [itemId]);
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/${bill.id}/items', documentId: cloudId, data: {...item.toMap(), 'cloudId': cloudId, 'billId': bill.id});
-      await inventory.deductStock(item.productName, item.quantity);
-
-      // Record daily sales for margin and profit tracking
-      final product = inventory.products.firstWhere(
-        (p) => p.name == item.productName,
-        orElse: () => Product(
-          id: '',
-          name: item.productName,
-          category: 'Other',
-          costPrice: item.unitPrice * 0.7,
-          sellingPrice: item.unitPrice,
-          stockQuantity: 0,
-        ),
-      );
-
-      for (int i = 0; i < item.quantity; i++) {
-        final sale = DailySale(
-          id: _uuid.v4(),
-          date: bill.date,
-          productName: item.productName,
-          costPrice: product.costPrice,
-          salePrice: item.unitPrice,
-        );
-        await db.insert('daily_sales', sale.toMap());
+    final productsById = <String, Product>{};
+    final quantitiesById = <String, int>{};
+    for (final item in cart) {
+      Product? product;
+      if (item.productId != null) {
+        product = inventory.findById(item.productId!);
+      } else {
+        final matches = inventory.products.where((p) => p.name == item.productName);
+        product = matches.isEmpty ? null : matches.first;
       }
+      if (product == null) throw StateError('Product not found');
+      productsById[product.id] = product;
+      quantitiesById[product.id] = (quantitiesById[product.id] ?? 0) + item.quantity;
+    }
+    for (final entry in quantitiesById.entries) {
+      final product = productsById[entry.key]!;
+      if (product.stockQuantity < entry.value) throw StateError('Insufficient stock');
     }
 
+    final db = await DBService.instance.database;
+    final bill = Bill(
+      id: _uuid.v4(), date: DateTime.now(), customerName: customerName,
+      items: List.unmodifiable(cart), discount: discount, taxPercent: taxPercent,
+    );
+    final newQuantities = <String, int>{};
+    final itemCloudIds = List<String>.generate(bill.items.length, (_) => _uuid.v4());
+
+    await db.transaction((txn) async {
+      await txn.insert('bills', bill.toMap());
+      for (var itemIndex = 0; itemIndex < bill.items.length; itemIndex++) {
+        final item = bill.items[itemIndex];
+        await txn.insert('bill_items', {
+          ...item.toMap(),
+          'billId': bill.id,
+          'cloudId': itemCloudIds[itemIndex],
+        });
+      }
+      for (final entry in quantitiesById.entries) {
+        final product = productsById[entry.key]!;
+        final newQty = product.stockQuantity - entry.value;
+        final changed = await txn.update('products', {'stockQuantity': newQty},
+          where: 'id = ? AND stockQuantity >= ?', whereArgs: [product.id, entry.value]);
+        if (changed != 1) throw StateError('Stock changed. Please retry checkout.');
+        newQuantities[product.id] = newQty;
+      }
+      for (final item in bill.items) {
+        final product = productsById[item.productId ?? ''] ??
+            inventory.products.firstWhere((p) => p.name == item.productName);
+        final netUnitPrice = bill.subtotal <= 0
+            ? item.unitPrice
+            : item.unitPrice * (1 - bill.discount / bill.subtotal);
+        for (var i = 0; i < item.quantity; i++) {
+          await txn.insert('daily_sales', DailySale(
+            id: _uuid.v4(), date: bill.date, billId: bill.id, productId: product.id,
+            productName: product.name, costPrice: product.costPrice,
+            salePrice: netUnitPrice, source: 'pos',
+          ).toMap());
+        }
+      }
+    });
+
+    await SyncQueueService.instance.queueOperation(
+      operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
+    for (var itemIndex = 0; itemIndex < bill.items.length; itemIndex++) {
+      final item = bill.items[itemIndex];
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create', tableName: 'bills/' + bill.id + '/items',
+        documentId: itemCloudIds[itemIndex],
+        data: {...item.toMap(), 'cloudId': itemCloudIds[itemIndex], 'billId': bill.id});
+    }
+    for (final entry in newQuantities.entries) {
+      final product = inventory.findById(entry.key)!;
+      final updated = Product(
+        id: product.id, name: product.name, category: product.category,
+        stockQuantity: entry.value, costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold,
+      );
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
+      inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
+    }
     savedBills.insert(0, bill);
     _billItemsCache[bill.id] = bill.items;
     clearCart();

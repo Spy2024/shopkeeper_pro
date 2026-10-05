@@ -32,13 +32,14 @@ class InventoryProvider extends ChangeNotifier {
     final db = await DBService.instance.database;
     final product = Product(
       id: _uuid.v4(),
-      name: name,
+      name: cleanName,
       category: category,
       stockQuantity: stockQuantity,
       costPrice: costPrice,
       sellingPrice: sellingPrice,
       lowStockThreshold: lowStockThreshold,
     );
+    if (_products.any((p) => p.name.toLowerCase() == cleanName.toLowerCase())) throw StateError('A product with this name already exists');
     await db.insert('products', product.toMap());
     await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'products', documentId: product.id, data: product.toMap());
     _products.add(product);
@@ -63,8 +64,8 @@ class InventoryProvider extends ChangeNotifier {
   }
 
   /// Deducts stock after a POS sale. Call once per line item sold.
-  Future<void> deductStock(String productName, int quantitySold) async {
-    final idx = _products.indexWhere((p) => p.name == productName);
+  Future<void> deductStock(String productId, int quantitySold) async {
+    final idx = _products.indexWhere((p) => p.id == productId);
     if (idx == -1) return;
     final p = _products[idx];
     final updated = Product(

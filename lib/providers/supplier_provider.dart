@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/supplier.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
+import 'inventory_provider.dart';
 
 class SupplierProvider extends ChangeNotifier {
   final List<Supplier> _suppliers = [];
@@ -58,30 +59,105 @@ class SupplierProvider extends ChangeNotifier {
 
   /// Records new stock received from a supplier (increases what's owed).
   Future<void> recordStockReceived(String supplierId, double value) async {
+    if (value <= 0) throw ArgumentError('Amount must be positive');
     await _adjustSupplier(supplierId, stockDelta: value);
   }
 
   /// Records a payment made to a supplier (reduces the remaining balance).
   Future<void> recordPayment(String supplierId, double amount) async {
+    if (amount <= 0) throw ArgumentError('Amount must be positive');
+    final s = _suppliers.firstWhere((s) => s.id == supplierId);
+    if (amount > s.remainingBalance) throw StateError('Payment exceeds outstanding balance');
     await _adjustSupplier(supplierId, paymentDelta: amount);
   }
 
   Future<void> _adjustSupplier(String supplierId,
       {double stockDelta = 0, double paymentDelta = 0}) async {
     final idx = _suppliers.indexWhere((s) => s.id == supplierId);
-    if (idx == -1) return;
-    final s = _suppliers[idx];
+    if (idx == -1) throw StateError('Supplier not found');
+    if (stockDelta < 0 || paymentDelta < 0) throw ArgumentError('Amounts cannot be negative');
+    final current = _suppliers[idx];
     final updated = Supplier(
-      id: s.id,
-      name: s.name,
-      phone: s.phone,
-      totalStockReceivedValue: s.totalStockReceivedValue + stockDelta,
-      totalPaymentsMade: s.totalPaymentsMade + paymentDelta,
-    );
+      id: current.id, name: current.name, phone: current.phone,
+      totalStockReceivedValue: current.totalStockReceivedValue + stockDelta,
+      totalPaymentsMade: current.totalPaymentsMade + paymentDelta);
     final db = await DBService.instance.database;
-    await db.update('suppliers', updated.toMap(), where: 'id = ?', whereArgs: [s.id]);
-    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'suppliers', documentId: updated.id, data: updated.toMap());
+    await db.transaction((txn) async {
+      await txn.update('suppliers', updated.toMap(),
+          where: 'id = ?', whereArgs: [current.id]);
+      if (stockDelta > 0) {
+        await txn.insert('supplier_transactions', {
+          'id': _uuid.v4(), 'supplierId': current.id, 'type': 'stock_received',
+          'amount': stockDelta, 'date': DateTime.now().toIso8601String()});
+      }
+      if (paymentDelta > 0) {
+        await txn.insert('supplier_transactions', {
+          'id': _uuid.v4(), 'supplierId': current.id, 'type': 'payment',
+          'amount': paymentDelta, 'date': DateTime.now().toIso8601String()});
+      }
+    });
+    await SyncQueueService.instance.queueOperation(
+      operation: 'update', tableName: 'suppliers', documentId: updated.id,
+      data: updated.toMap());
     _suppliers[idx] = updated;
+    notifyListeners();
+  }
+
+  Future<void> receiveOrder(String orderId, InventoryProvider inventory) async {
+    final orderIndex = _orders.indexWhere((o) => o.id == orderId);
+    if (orderIndex < 0) throw StateError('Purchase order not found');
+    final order = _orders[orderIndex];
+    if (order.status == 'received') throw StateError('Order already received');
+    final supplier = _suppliers.firstWhere((s) => s.id == order.supplierId);
+    final total = order.estimatedOrderTotal;
+    final db = await DBService.instance.database;
+
+    await db.transaction((txn) async {
+      for (final item in order.items) {
+        final matches = inventory.products.where((p) =>
+            p.name.toLowerCase() == item.productName.toLowerCase());
+        if (matches.isEmpty) throw StateError('Product not found');
+        final product = matches.first;
+        final changed = await txn.update('products',
+            {'stockQuantity': product.stockQuantity + item.requiredQuantity},
+            where: 'id = ?', whereArgs: [product.id]);
+        if (changed != 1) throw StateError('Could not update inventory');
+      }
+      final updatedSupplier = Supplier(
+        id: supplier.id, name: supplier.name, phone: supplier.phone,
+        totalStockReceivedValue: supplier.totalStockReceivedValue + total,
+        totalPaymentsMade: supplier.totalPaymentsMade);
+      await txn.update('suppliers', updatedSupplier.toMap(),
+          where: 'id = ?', whereArgs: [supplier.id]);
+      await txn.insert('supplier_transactions', {
+        'id': _uuid.v4(), 'supplierId': supplier.id, 'type': 'stock_received',
+        'amount': total, 'date': DateTime.now().toIso8601String(), 'referenceId': order.id});
+      await txn.update('supplier_orders', {'status': 'received'},
+          where: 'id = ?', whereArgs: [order.id]);
+    });
+
+    for (final item in order.items) {
+      final product = inventory.products.firstWhere(
+          (p) => p.name.toLowerCase() == item.productName.toLowerCase());
+      inventory.applyStockAfterTransaction(
+          product.id, product.stockQuantity + item.requiredQuantity);
+    }
+    final updatedSupplier = Supplier(
+      id: supplier.id, name: supplier.name, phone: supplier.phone,
+      totalStockReceivedValue: supplier.totalStockReceivedValue + total,
+      totalPaymentsMade: supplier.totalPaymentsMade);
+    _suppliers[_suppliers.indexWhere((s) => s.id == supplier.id)] = updatedSupplier;
+    _orders[orderIndex] = SupplierOrder(
+      id: order.id, supplierId: order.supplierId, supplierName: order.supplierName,
+      date: order.date, items: order.items, status: 'received');
+    await SyncQueueService.instance.queueOperation(
+      operation: 'update', tableName: 'supplier_orders', documentId: order.id,
+      data: {'id': order.id, 'supplierId': order.supplierId,
+        'supplierName': order.supplierName, 'date': order.date.toIso8601String(),
+        'status': 'received'});
+    await SyncQueueService.instance.queueOperation(
+      operation: 'update', tableName: 'suppliers', documentId: updatedSupplier.id,
+      data: updatedSupplier.toMap());
     notifyListeners();
   }
 

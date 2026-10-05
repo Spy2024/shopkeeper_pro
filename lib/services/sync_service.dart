@@ -3,251 +3,190 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
+import 'sync_queue_service.dart';
 
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore? _firestore;
+  FirebaseFirestore get _dbFirestore => _firestore ??= FirebaseFirestore.instance;
   final Connectivity _connectivity = Connectivity();
-  bool _isOnline = true;
+  bool _isOnline = false;
   bool _isSyncing = false;
 
   bool get isOnline => _isOnline;
   bool get isSyncing => _isSyncing;
 
   Future<void> init(String userId) async {
-    final initial = await _connectivity.checkConnectivity();
-    _isOnline = initial != ConnectivityResult.none;
-    _connectivity.onConnectivityChanged.listen((result) {
-      _isOnline = result != ConnectivityResult.none;
-      if (_isOnline) {
-        _syncAll(userId);
-      }
-    });
+    final result = await _connectivity.checkConnectivity();
+    _isOnline = result.any((r) => r != ConnectivityResult.none);
   }
 
-  CollectionReference<Map<String, dynamic>> _collection(
-    String userId,
-    String name,
-  ) =>
-      _firestore.collection('users').doc(userId).collection(name);
+  CollectionReference<Map<String, dynamic>> _collection(String userId, String name) =>
+      _dbFirestore.collection('users').doc(userId).collection(name);
 
-  Future<void> _writeBatch(
-    String userId,
-    String collectionName,
-    List<Map<String, dynamic>> rows,
-  ) async {
+  Future<bool> _checkOnline() async {
+    final result = await _connectivity.checkConnectivity();
+    _isOnline = result.any((r) => r != ConnectivityResult.none);
+    return _isOnline;
+  }
+
+  Future<void> syncNow(String userId) async {
+    if (userId.isEmpty || _isSyncing || !await _checkOnline()) return;
+    _isSyncing = true;
+    try {
+      await SyncQueueService.instance.syncPendingOperations(userId);
+      await _pushLocal(userId);
+      await syncFromCloud(userId, _lockAlreadyHeld: true);
+    } catch (e) {
+      debugPrint('[SyncService] sync error: $e');
+      rethrow;
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
+  Future<void> _writeBatch(String userId, String collectionName, List<Map<String, dynamic>> rows) async {
     for (var start = 0; start < rows.length; start += 400) {
-      final end = start + 400 > rows.length ? rows.length : start + 400;
-      final batch = _firestore.batch();
-      for (final row in rows.sublist(start, end)) {
+      final end = (start + 400) > rows.length ? rows.length : start + 400;
+      final batch = _dbFirestore.batch();
+      for (final raw in rows.sublist(start, end)) {
+        final row = Map<String, dynamic>.from(raw);
         final id = (row['cloudId'] ?? row['id'])?.toString();
         if (id == null || id.isEmpty) continue;
-        batch.set(
-          _collection(userId, collectionName).doc(id),
-          row,
-          SetOptions(merge: true),
-        );
+        row['updatedAt'] ??= FieldValue.serverTimestamp();
+        batch.set(_collection(userId, collectionName).doc(id), row, SetOptions(merge: true));
       }
       await batch.commit();
     }
   }
 
-  Future<void> _writeChildBatch(
-    String userId,
-    String parentCollection,
-    String parentId,
-    String childCollection,
-    List<Map<String, dynamic>> rows,
-  ) async {
+  Future<void> _writeChildBatch(String userId, String parentCollection, String parentId,
+      String childCollection, List<Map<String, dynamic>> rows) async {
     for (var start = 0; start < rows.length; start += 400) {
-      final end = start + 400 > rows.length ? rows.length : start + 400;
+      final end = (start + 400).clamp(0, rows.length);
       final batch = _firestore.batch();
       final parent = _collection(userId, parentCollection).doc(parentId);
-      for (final row in rows.sublist(start, end)) {
+      for (final raw in rows.sublist(start, end)) {
+        final row = Map<String, dynamic>.from(raw);
         final id = (row['cloudId'] ?? row['id'])?.toString();
         if (id == null || id.isEmpty) continue;
-        batch.set(
-          parent.collection(childCollection).doc(id),
-          row,
-          SetOptions(merge: true),
-        );
+        row['updatedAt'] ??= FieldValue.serverTimestamp();
+        batch.set(parent.collection(childCollection).doc(id), row, SetOptions(merge: true));
       }
       await batch.commit();
     }
   }
 
-  Future<void> _syncAll(String userId) async {
-    if (_isSyncing || !_isOnline) return;
-    _isSyncing = true;
-    try {
-      final db = await DBService.instance.database;
-
-      final shopRows = await db.query('shop', limit: 1);
-      if (shopRows.isNotEmpty) {
-        await _collection(userId, 'shop').doc('profile').set(
-              Map<String, dynamic>.from(shopRows.first),
-              SetOptions(merge: true),
-            );
-      }
-
-      final products = (await db.query('products'))
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
-      await _writeBatch(userId, 'products', products);
-
-      final bills = (await db.query('bills'))
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
-      await _writeBatch(userId, 'bills', bills);
-      for (final bill in bills) {
-        final items = (await db.query(
-          'bill_items',
-          where: 'billId = ?',
-          whereArgs: [bill['id']],
-        ))
-            .map((r) => Map<String, dynamic>.from(r))
-            .toList();
-        await _writeChildBatch(
-          userId,
-          'bills',
-          bill['id'].toString(),
-          'items',
-          items,
-        );
-      }
-
-      final suppliers = (await db.query('suppliers'))
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
-      await _writeBatch(userId, 'suppliers', suppliers);
-
-      final orders = (await db.query('supplier_orders'))
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
-      await _writeBatch(userId, 'supplier_orders', orders);
-      for (final order in orders) {
-        final items = (await db.query(
-          'supplier_order_items',
-          where: 'orderId = ?',
-          whereArgs: [order['id']],
-        ))
-            .map((r) => Map<String, dynamic>.from(r))
-            .toList();
-        await _writeChildBatch(
-          userId,
-          'supplier_orders',
-          order['id'].toString(),
-          'items',
-          items,
-        );
-      }
-
-      final sales = (await db.query('daily_sales'))
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
-      await _writeBatch(userId, 'sales', sales);
-
-      final expenses = (await db.query('expenses'))
-          .map((r) => Map<String, dynamic>.from(r))
-          .toList();
-      await _writeBatch(userId, 'expenses', expenses);
-    } catch (e) {
-      debugPrint('[SyncService] push error: $e');
-    } finally {
-      _isSyncing = false;
+  Future<void> _pushLocal(String userId) async {
+    final db = await DBService.instance.database;
+    final shopRows = await db.query('shop', limit: 1);
+    if (shopRows.isNotEmpty) {
+      await _collection(userId, 'shop').doc('profile').set(
+        {...Map<String, dynamic>.from(shopRows.first), 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
     }
+    await _writeBatch(userId, 'products', await _maps(db, 'products'));
+    final bills = await _maps(db, 'bills');
+    await _writeBatch(userId, 'bills', bills);
+    for (final bill in bills) {
+      await _writeChildBatch(userId, 'bills', bill['id'].toString(), 'items',
+          await _maps(db, 'bill_items', where: 'billId = ?', args: [bill['id']]));
+    }
+    await _writeBatch(userId, 'suppliers', await _maps(db, 'suppliers'));
+    await _writeBatch(userId, 'supplier_transactions', await _maps(db, 'supplier_transactions'));
+    final orders = await _maps(db, 'supplier_orders');
+    await _writeBatch(userId, 'supplier_orders', orders);
+    for (final order in orders) {
+      await _writeChildBatch(userId, 'supplier_orders', order['id'].toString(), 'items',
+          await _maps(db, 'supplier_order_items', where: 'orderId = ?', args: [order['id']]));
+    }
+    await _writeBatch(userId, 'sales', await _maps(db, 'daily_sales'));
+    await _writeBatch(userId, 'expenses', await _maps(db, 'expenses'));
   }
 
-  Future<void> syncFromCloud(String userId) async {
-    if (_isSyncing || !_isOnline) return;
-    _isSyncing = true;
+  Future<List<Map<String, dynamic>>> _maps(Database db, String table,
+      {String? where, List<Object?>? args}) async {
+    final rows = await db.query(table, where: where, whereArgs: args);
+    return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  Future<bool> _hasPending(Database db, String documentId) async {
+    final rows = await db.query('sync_queue',
+        columns: ['id'], where: 'synced = 0 AND documentId = ?', whereArgs: [documentId], limit: 1);
+    return rows.isNotEmpty;
+  }
+
+  Future<void> syncFromCloud(String userId, {bool _lockAlreadyHeld = false}) async {
+    if (userId.isEmpty || (!_lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
+    final lockedHere = !_lockAlreadyHeld;
+    if (lockedHere) _isSyncing = true;
     try {
       final db = await DBService.instance.database;
-
       final shop = await _collection(userId, 'shop').doc('profile').get();
-      if (shop.exists && shop.data() != null) {
-        await db.insert(
-          'shop',
-          Map<String, dynamic>.from(shop.data()!),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+      if (shop.exists && shop.data() != null && !(await _hasPending(db, 'profile'))) {
+        final data = Map<String, dynamic>.from(shop.data()!);
+        data.remove('updatedAt');
+        await db.delete('shop');
+        await db.insert('shop', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      final products = await _collection(userId, 'products').get();
-      for (final doc in products.docs) {
-        await db.insert(
-          'products',
-          Map<String, dynamic>.from(doc.data()),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+      for (final doc in (await _collection(userId, 'products')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('products', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-
-      final bills = await _collection(userId, 'bills').get();
-      for (final doc in bills.docs) {
-        final bill = Map<String, dynamic>.from(doc.data());
+      for (final doc in (await _collection(userId, 'bills')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final bill = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('bills', bill, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
-        await db.delete('bill_items', where: 'billId = ?', whereArgs: [bill['id']]);
-        for (final item in items.docs) {
-          final data = Map<String, dynamic>.from(item.data());
-          data['cloudId'] = item.id;
-          await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+        if (!(await _hasPending(db, doc.id))) {
+          await db.delete('bill_items', where: 'billId = ?', whereArgs: [doc.id]);
+          for (final item in items.docs) {
+            final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
+            data['cloudId'] = item.id;
+            await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
         }
       }
-
-      final suppliers = await _collection(userId, 'suppliers').get();
-      for (final doc in suppliers.docs) {
-        await db.insert(
-          'suppliers',
-          Map<String, dynamic>.from(doc.data()),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+      for (final doc in (await _collection(userId, 'suppliers')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('suppliers', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      final orders = await _collection(userId, 'supplier_orders').get();
-      for (final doc in orders.docs) {
-        final order = Map<String, dynamic>.from(doc.data());
-        await db.insert(
-          'supplier_orders',
-          order,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+      for (final doc in (await _collection(userId, 'supplier_transactions')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('supplier_transactions', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      for (final doc in (await _collection(userId, 'supplier_orders')).docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final order = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('supplier_orders', order, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
-        await db.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [order['id']]);
+        await db.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [doc.id]);
         for (final item in items.docs) {
-          final data = Map<String, dynamic>.from(item.data());
+          final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
           data['cloudId'] = item.id;
-          await db.insert(
-            'supplier_order_items',
-            data,
-            conflictAlgorithm: ConflictAlgorithm.replace,
-          );
+          await db.insert('supplier_order_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
 
-      final sales = await _collection(userId, 'sales').get();
-      for (final doc in sales.docs) {
-        await db.insert(
-          'daily_sales',
-          Map<String, dynamic>.from(doc.data()),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+      for (final collection in ['sales', 'expenses']) {
+        for (final doc in (await _collection(userId, collection)).docs) {
+          if (await _hasPending(db, doc.id)) continue;
+          final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+          final table = collection == 'sales' ? 'daily_sales' : collection;
+          await db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
       }
-
-      final expenses = await _collection(userId, 'expenses').get();
-      for (final doc in expenses.docs) {
-        await db.insert(
-          'expenses',
-          Map<String, dynamic>.from(doc.data()),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-    } catch (e) {
-      debugPrint('[SyncService] pull error: $e');
     } finally {
-      _isSyncing = false;
+      if (lockedHere) _isSyncing = false;
     }
   }
 }

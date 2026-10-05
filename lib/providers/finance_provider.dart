@@ -20,6 +20,7 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> addExpense(String label, double amount, {DateTime? date}) async {
+    if (label.trim().isEmpty || amount <= 0) throw ArgumentError('Invalid expense');
     final db = await DBService.instance.database;
     final expense = Expense(id: _uuid.v4(), date: date ?? DateTime.now(), label: label, amount: amount);
     await db.insert('expenses', expense.toMap());

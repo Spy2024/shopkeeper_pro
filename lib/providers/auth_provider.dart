@@ -1,4 +1,6 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import '../services/auth_service.dart';
 import '../services/firebase_auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -7,14 +9,32 @@ class AuthProvider extends ChangeNotifier {
   String? userUid;
   bool isLoading = false;
   String? errorMessage;
+  String? demoOtp;
+
+  bool get firebaseAvailable => Firebase.apps.isNotEmpty;
 
   Future<void> checkExistingSession() async {
-    final service = FirebaseAuthService.instance;
-    final user = service.currentUser;
-    if (user != null) {
-      phoneNumber = user.phoneNumber;
-      userUid = user.uid;
-      isLoggedIn = true;
+    try {
+      if (firebaseAvailable) {
+        final service = FirebaseAuthService.instance;
+        final user = service.currentUser;
+        if (user != null) {
+          phoneNumber = user.phoneNumber;
+          userUid = user.uid;
+          isLoggedIn = true;
+          notifyListeners();
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('[Auth] Firebase session unavailable: $e');
+    }
+
+    final saved = await AuthService.instance.getSession();
+    if (saved != null && saved.isNotEmpty) {
+      phoneNumber = saved;
+      userUid = await AuthService.instance.getUserUid();
+      isLoggedIn = userUid != null;
       notifyListeners();
     }
   }
@@ -22,10 +42,16 @@ class AuthProvider extends ChangeNotifier {
   Future<String> requestOtp(String phone) async {
     isLoading = true;
     errorMessage = null;
+    demoOtp = null;
     notifyListeners();
     try {
-      await FirebaseAuthService.instance.sendOtp(phone);
-      return '';
+      if (firebaseAvailable) {
+        await FirebaseAuthService.instance.sendOtp(phone);
+        return '';
+      }
+      final otp = await AuthService.instance.sendOtp(phone);
+      demoOtp = otp;
+      return otp;
     } catch (e) {
       errorMessage = e.toString().replaceFirst('Exception: ', '');
       rethrow;
@@ -35,17 +61,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> confirmOtp(String otp) async {
+  Future<bool> confirmOtp(String phone, String otp) async {
     isLoading = true;
     errorMessage = null;
     notifyListeners();
     try {
-      final ok = await FirebaseAuthService.instance.verifyOtp(otp);
+      if (firebaseAvailable) {
+        final ok = await FirebaseAuthService.instance.verifyOtp(otp);
+        if (ok) {
+          final user = FirebaseAuthService.instance.currentUser;
+          phoneNumber = user?.phoneNumber ?? phone;
+          userUid = user?.uid;
+          isLoggedIn = user != null;
+        }
+        return ok;
+      }
+
+      final ok = AuthService.instance.verifyOtp(phone, otp);
       if (ok) {
-        final user = FirebaseAuthService.instance.currentUser;
-        phoneNumber = user?.phoneNumber;
-        userUid = user?.uid;
-        isLoggedIn = user != null;
+        await AuthService.instance.persistSession(phone);
+        phoneNumber = phone;
+        userUid = await AuthService.instance.getUserUid();
+        isLoggedIn = true;
+        demoOtp = null;
       }
       return ok;
     } catch (e) {
@@ -58,10 +96,18 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await FirebaseAuthService.instance.clearSession();
+    try {
+      if (firebaseAvailable) {
+        await FirebaseAuthService.instance.clearSession();
+      }
+    } catch (e) {
+      debugPrint('[Auth] Firebase logout unavailable: $e');
+    }
+    await AuthService.instance.clearSession();
     isLoggedIn = false;
     phoneNumber = null;
     userUid = null;
+    demoOtp = null;
     notifyListeners();
   }
 }
