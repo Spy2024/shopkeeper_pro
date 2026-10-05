@@ -267,6 +267,14 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   }
 
   @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final results = widget.inventory.search(_nameCtrl.text);
     return Padding(
