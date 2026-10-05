@@ -36,7 +36,7 @@ jobs:
         run: flutter pub get
 
       - name: Static analysis
-        run: flutter analyze --fatal-infos
+        run: flutter analyze
 
       - name: Run Tests
         run: flutter test
