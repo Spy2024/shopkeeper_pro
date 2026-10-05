@@ -26,7 +26,7 @@ class SyncQueueService {
   }) async {
     final now = DateTime.now().microsecondsSinceEpoch;
     final op = SyncOperation(
-      id: ${tableName.replaceAll('/', '_')}_${documentId}_$now,
+      id: '${tableName.replaceAll('/', '_')}_${documentId}_$now',
       operation: operation,
       tableName: tableName,
       documentId: documentId,
