@@ -4,7 +4,7 @@ import '../models/bill.dart';
 import '../models/product.dart';
 import '../models/daily_sale.dart';
 import '../services/db_service.dart';
-    import '../services/sync_queue_service.dart';
+import '../services/sync_queue_service.dart';
 import 'inventory_provider.dart';
 
 class PosProvider extends ChangeNotifier {
@@ -73,7 +73,7 @@ class PosProvider extends ChangeNotifier {
       final itemId = await db.insert('bill_items', {...item.toMap(), 'billId': bill.id});
       final cloudId = _uuid.v4();
       await db.update('bill_items', {'cloudId': cloudId}, where: 'id = ?', whereArgs: [itemId]);
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/' + bill.id + '/items', documentId: cloudId, data: {...item.toMap(), 'cloudId': cloudId, 'billId': bill.id});
+      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/${bill.id}/items', documentId: cloudId, data: {...item.toMap(), 'cloudId': cloudId, 'billId': bill.id});
       await inventory.deductStock(item.productName, item.quantity);
 
       // Record daily sales for margin and profit tracking
