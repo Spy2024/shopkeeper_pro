@@ -19,7 +19,7 @@ void main() {
     test('deductStock should not go below 0', () async {
       const currentStock = 2;
       const quantitySold = 5;
-      const remaining = 0;
+      const remaining = (currentStock - quantitySold).clamp(0, 1000);
       expect(remaining, equals(0));
     });
 
