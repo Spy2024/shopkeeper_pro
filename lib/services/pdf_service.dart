@@ -51,7 +51,7 @@ class PdfService {
             if (shop?.taxNumber != null && shop!.taxNumber!.isNotEmpty)
               pw.Center(child: pw.Text('NTN: ${shop.taxNumber}', style: const pw.TextStyle(fontSize: 10))),
             pw.Divider(),
-            pw.Text('Invoice #: ${bill.id.substring(0, 8).toUpperCase()}', style: const pw.TextStyle(fontSize: 11)),
+            pw.Text('Invoice #: ${_shortId(bill.id)}', style: const pw.TextStyle(fontSize: 11)),
             pw.Text('Date: ${_dateFmt.format(bill.date)}', style: const pw.TextStyle(fontSize: 11)),
             if (bill.customerName != null && bill.customerName!.isNotEmpty)
               pw.Text('Customer: ${bill.customerName}', style: const pw.TextStyle(fontSize: 11)),
@@ -107,7 +107,7 @@ class PdfService {
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Text('Purchase Order', style: const pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-            pw.Text('Order #: ${orderId.substring(0, 8).toUpperCase()}'),
+            pw.Text('Order #: ${_shortId(orderId)}'),
             pw.Text('Supplier: ${supplier.name} (${supplier.phone})'),
             pw.Text('Date: ${_dateFmt.format(DateTime.now())}'),
             pw.Divider(),
@@ -138,6 +138,8 @@ class PdfService {
     await file.writeAsBytes(await doc.save());
     return file;
   }
+
+  static String _shortId(String id) => id.length <= 8 ? id.toUpperCase() : id.substring(0, 8).toUpperCase();
 
   static pw.Widget _row(String label, String value, {bool bold = false}) => pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
