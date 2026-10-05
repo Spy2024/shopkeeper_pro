@@ -49,12 +49,16 @@ class SyncQueueService {
     );
     _pendingQueue.add(op);
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      _scheduledSync?.cancel();
-      _scheduledSync = Timer(const Duration(milliseconds: 300), () {
-        unawaited(syncPendingOperations(uid));
-      });
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null && uid.isNotEmpty) {
+        _scheduledSync?.cancel();
+        _scheduledSync = Timer(const Duration(milliseconds: 500), () {
+          unawaited(syncPendingOperations(uid));
+        });
+      }
+    } catch (e) {
+      debugPrint('[SyncQueue] Firebase unavailable; operation remains offline: $e');
     }
   }
 
