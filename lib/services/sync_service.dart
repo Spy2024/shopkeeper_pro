@@ -49,7 +49,7 @@ class SyncService {
 
   Future<void> _writeBatch(String userId, String collectionName, List<Map<String, dynamic>> rows) async {
     for (var start = 0; start < rows.length; start += 400) {
-      final end = (start + 400).clamp(0, rows.length);
+      final end = (start + 400) > rows.length ? rows.length : start + 400;
       final batch = _dbFirestore.batch();
       for (final raw in rows.sublist(start, end)) {
         final row = Map<String, dynamic>.from(raw);
