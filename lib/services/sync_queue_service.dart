@@ -26,7 +26,7 @@ class SyncQueueService {
   }) async {
     final now = DateTime.now().microsecondsSinceEpoch;
     final op = SyncOperation(
-      id: tableName.replaceAll('/', '_') + '_' + documentId + '_' + now.toString(),
+      id: ${tableName.replaceAll('/', '_')}_${documentId}_$now,
       operation: operation,
       tableName: tableName,
       documentId: documentId,
@@ -110,7 +110,7 @@ class SyncQueueService {
           );
           _pendingQueue.remove(op);
         } catch (e) {
-          debugPrint('[SyncQueue] failed ' + op.id + ': ' + e.toString());
+          debugPrint('[SyncQueue] failed ${op.id}: $e');
         }
       }
     } finally {
