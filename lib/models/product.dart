@@ -34,10 +34,10 @@ class Product {
   factory Product.fromMap(Map<String, dynamic> map) => Product(
         id: map['id'] as String,
         name: map['name'] as String,
-        category: map['category'] as String,
-        stockQuantity: map['stockQuantity'] as int,
+        category: (map['category'] as String?) ?? '',
+        stockQuantity: (map['stockQuantity'] as num).toInt(),
         costPrice: (map['costPrice'] as num).toDouble(),
         sellingPrice: (map['sellingPrice'] as num).toDouble(),
-        lowStockThreshold: map['lowStockThreshold'] as int? ?? 5,
+        lowStockThreshold: (map['lowStockThreshold'] as num?)?.toInt() ?? 5,
       );
 }
