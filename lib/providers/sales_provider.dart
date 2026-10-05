@@ -18,6 +18,9 @@ class SalesProvider extends ChangeNotifier {
   double get todayMargin => salesForDay(DateTime.now()).fold(0.0, (sum, s) => sum + s.margin);
 
   Future<void> load() async {
+    if (productName.trim().isEmpty || costPrice < 0 || salePrice < 0) {
+      throw ArgumentError('Invalid sale');
+    }
     final db = await DBService.instance.database;
     final rows = await db.query('daily_sales', orderBy: 'date DESC');
     _sales
