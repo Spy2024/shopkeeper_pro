@@ -3,16 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('PosProvider Tests', () {
     test('addItem should add to cart', () async {
-      const productName = 'Tea';
       const quantity = 2;
       const unitPrice = 150.0;
-      final lineTotal = quantity * unitPrice;
+      const lineTotal = quantity * unitPrice;
       expect(lineTotal, equals(300.0));
     });
 
     test('subtotal should sum all line items', () async {
-      const item1 = 2 * 150.0; // 300
-      const item2 = 1 * 120.0; // 120
+      const item1 = 2 * 150.0;
+      const item2 = 1 * 120.0;
       const subtotal = item1 + item2;
       expect(subtotal, equals(420.0));
     });
