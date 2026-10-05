@@ -9,7 +9,8 @@ class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore? _firestore;
+  FirebaseFirestore get _dbFirestore => _firestore ??= FirebaseFirestore.instance;
   final Connectivity _connectivity = Connectivity();
   bool _isOnline = false;
   bool _isSyncing = false;
@@ -23,7 +24,7 @@ class SyncService {
   }
 
   CollectionReference<Map<String, dynamic>> _collection(String userId, String name) =>
-      _firestore.collection('users').doc(userId).collection(name);
+      _dbFirestore.collection('users').doc(userId).collection(name);
 
   Future<bool> _checkOnline() async {
     final result = await _connectivity.checkConnectivity();
@@ -49,7 +50,7 @@ class SyncService {
   Future<void> _writeBatch(String userId, String collectionName, List<Map<String, dynamic>> rows) async {
     for (var start = 0; start < rows.length; start += 400) {
       final end = (start + 400).clamp(0, rows.length);
-      final batch = _firestore.batch();
+      final batch = _dbFirestore.batch();
       for (final raw in rows.sublist(start, end)) {
         final row = Map<String, dynamic>.from(raw);
         final id = (row['cloudId'] ?? row['id'])?.toString();
