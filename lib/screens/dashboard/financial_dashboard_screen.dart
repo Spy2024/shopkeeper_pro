@@ -37,7 +37,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: selectedLabel,
+                initialValue: selectedLabel,
                 items: [...presets, 'Other'].map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                 onChanged: (v) => setDialogState(() => selectedLabel = v ?? selectedLabel),
               ),
@@ -163,7 +163,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
   }
 
   Widget _statCard(String label, String value, Color color) => Card(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           child: Column(
