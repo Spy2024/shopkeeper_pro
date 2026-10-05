@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('SyncService Tests', () {
     test('init should monitor connectivity', () async {
+      const userId = 'test-user-123';
       expect(userId, isNotEmpty);
     });
 
@@ -25,7 +26,6 @@ void main() {
     });
 
     test('syncFromCloud should merge cloud data with local DB', () async {
-      const userId = 'test-user-123';
       final cloudProducts = [
         {'id': 'p1', 'name': 'Updated Product', 'stockQuantity': 15}
       ];
