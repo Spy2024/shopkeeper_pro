@@ -87,7 +87,7 @@ class _StartupGateState extends State<_StartupGate> {
     if (auth.isLoggedIn) {
       await shopProvider.load();
       final userId = auth.userUid;
-      if (userId != null && userId.isNotEmpty) {
+      if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
         await syncProvider.init(userId);
       }
     }
