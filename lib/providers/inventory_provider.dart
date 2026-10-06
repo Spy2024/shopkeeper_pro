@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import '../services/db_service.dart';
+import '../services/sync_queue_service.dart';
 
 class InventoryProvider extends ChangeNotifier {
   final List<Product> _products = [];
@@ -16,7 +17,7 @@ class InventoryProvider extends ChangeNotifier {
     final rows = await db.query('products', orderBy: 'name COLLATE NOCASE');
     _products
       ..clear()
-      ..addAll(rows.map((r) => Product.fromMap(r)));
+      ..addAll(rows.map((r) => Product.fromMap(Map<String, dynamic>.from(r))));
     notifyListeners();
   }
 
@@ -28,26 +29,77 @@ class InventoryProvider extends ChangeNotifier {
     required double sellingPrice,
     int lowStockThreshold = 5,
   }) async {
-    final db = await DBService.instance.database;
+    if (name.trim().isEmpty || category.trim().isEmpty || stockQuantity < 0 ||
+        costPrice < 0 || sellingPrice < 0 || lowStockThreshold < 0) {
+      throw ArgumentError('Invalid product values');
+    }
+
     final product = Product(
       id: _uuid.v4(),
-      name: name,
-      category: category,
+      name: name.trim(),
+      category: category.trim(),
       stockQuantity: stockQuantity,
       costPrice: costPrice,
       sellingPrice: sellingPrice,
       lowStockThreshold: lowStockThreshold,
     );
+
+    final db = await DBService.instance.database;
     await db.insert('products', product.toMap());
     _products.add(product);
+
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create',
+        tableName: 'products',
+        documentId: product.id,
+        data: product.toMap(),
+      );
+    } catch (e) {
+      debugPrint('[Inventory] Queue deferred: $e');
+    }
     notifyListeners();
   }
 
   Future<void> updateProduct(Product product) async {
+    if (product.name.trim().isEmpty || product.category.trim().isEmpty ||
+        product.stockQuantity < 0 || product.costPrice < 0 ||
+        product.sellingPrice < 0 || product.lowStockThreshold < 0) {
+      throw ArgumentError('Invalid product values');
+    }
+
+    final normalized = Product(
+      id: product.id,
+      name: product.name.trim(),
+      category: product.category.trim(),
+      stockQuantity: product.stockQuantity,
+      costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice,
+      lowStockThreshold: product.lowStockThreshold,
+    );
+
     final db = await DBService.instance.database;
-    await db.update('products', product.toMap(), where: 'id = ?', whereArgs: [product.id]);
-    final idx = _products.indexWhere((p) => p.id == product.id);
-    if (idx != -1) _products[idx] = product;
+    final changed = await db.update(
+      'products',
+      normalized.toMap(),
+      where: 'id = ?',
+      whereArgs: [normalized.id],
+    );
+    if (changed != 1) throw StateError('Product not found: ${normalized.id}');
+
+    final idx = _products.indexWhere((p) => p.id == normalized.id);
+    if (idx != -1) _products[idx] = normalized;
+
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update',
+        tableName: 'products',
+        documentId: normalized.id,
+        data: normalized.toMap(),
+      );
+    } catch (e) {
+      debugPrint('[Inventory] Queue deferred: $e');
+    }
     notifyListeners();
   }
 
@@ -55,29 +107,42 @@ class InventoryProvider extends ChangeNotifier {
     final db = await DBService.instance.database;
     await db.delete('products', where: 'id = ?', whereArgs: [id]);
     _products.removeWhere((p) => p.id == id);
+
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'delete',
+        tableName: 'products',
+        documentId: id,
+        data: const {},
+      );
+    } catch (e) {
+      debugPrint('[Inventory] Queue deferred: $e');
+    }
     notifyListeners();
   }
 
-  /// Deducts stock after a POS sale. Call once per line item sold.
   Future<void> deductStock(String productName, int quantitySold) async {
-    final idx = _products.indexWhere((p) => p.name == productName);
-    if (idx == -1) return;
-    final p = _products[idx];
-    final updated = Product(
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      stockQuantity: (p.stockQuantity - quantitySold).clamp(0, 1 << 31),
-      costPrice: p.costPrice,
-      sellingPrice: p.sellingPrice,
-      lowStockThreshold: p.lowStockThreshold,
-    );
-    await updateProduct(updated);
+    if (quantitySold <= 0) throw ArgumentError('quantitySold must be positive');
+    final matches = _products.where((p) => p.name == productName);
+    if (matches.isEmpty) throw StateError('Product not found: ${productName}');
+    final product = matches.first;
+    final remaining = product.stockQuantity - quantitySold;
+    if (remaining < 0) throw StateError('Insufficient stock for ${productName}');
+
+    await updateProduct(Product(
+      id: product.id,
+      name: product.name,
+      category: product.category,
+      stockQuantity: remaining,
+      costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice,
+      lowStockThreshold: product.lowStockThreshold,
+    ));
   }
 
   List<Product> search(String query) {
     if (query.trim().isEmpty) return products;
-    final q = query.toLowerCase();
+    final q = query.toLowerCase().trim();
     return _products.where((p) => p.name.toLowerCase().contains(q)).toList();
   }
 }

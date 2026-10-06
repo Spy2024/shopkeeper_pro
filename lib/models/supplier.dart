@@ -44,6 +44,12 @@ class SupplierOrderItem {
   });
 
   double get estimatedTotal => requiredQuantity * estimatedPrice;
+
+  Map<String, dynamic> toMap() => {
+        'productName': productName,
+        'requiredQuantity': requiredQuantity,
+        'estimatedPrice': estimatedPrice,
+      };
 }
 
 class SupplierOrder {
@@ -52,7 +58,7 @@ class SupplierOrder {
   final String supplierName;
   final DateTime date;
   final List<SupplierOrderItem> items;
-  String status; // draft, sent, received
+  String status;
 
   SupplierOrder({
     required this.id,
@@ -63,5 +69,19 @@ class SupplierOrder {
     this.status = 'draft',
   });
 
-  double get estimatedOrderTotal => items.fold(0.0, (sum, i) => sum + i.estimatedTotal);
+  double get estimatedOrderTotal =>
+      items.fold(0.0, (sum, i) => sum + i.estimatedTotal);
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'supplierId': supplierId,
+        'supplierName': supplierName,
+        'date': date.toIso8601String(),
+        'status': status,
+      };
+
+  Map<String, dynamic> toSyncMap() => {
+        ...toMap(),
+        'items': items.map((item) => item.toMap()).toList(),
+      };
 }
