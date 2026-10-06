@@ -10,7 +10,6 @@ class FirebaseAuthService {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final _secureStorage = const FlutterSecureStorage();
   String? _verificationId;
-  int? _resendToken;
 
   /// Send OTP via SMS using Firebase
   Future<void> sendOtp(String phoneNumber) async {
@@ -23,9 +22,8 @@ class FirebaseAuthService {
       verificationFailed: (FirebaseAuthException e) {
         throw Exception('Firebase Auth Error: ${e.message}');
       },
-      codeSent: (String verificationId, int? resendToken) {
+      codeSent: (String verificationId, int? _) {
         _verificationId = verificationId;
-        _resendToken = resendToken;
       },
       codeAutoRetrievalTimeout: (String verificationId) {
         _verificationId = verificationId;
