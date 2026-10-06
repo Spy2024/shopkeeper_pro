@@ -139,8 +139,15 @@ class SupplierProvider extends ChangeNotifier {
     for (final item in order.items) {
       final product = inventory.products.firstWhere(
           (p) => p.name.toLowerCase() == item.productName.toLowerCase());
-      inventory.applyStockAfterTransaction(
-          product.id, product.stockQuantity + item.requiredQuantity);
+      final newQuantity = product.stockQuantity + item.requiredQuantity;
+      inventory.applyStockAfterTransaction(product.id, newQuantity);
+      final updatedProduct = Product(
+        id: product.id, name: product.name, category: product.category,
+        stockQuantity: newQuantity, costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update', tableName: 'products', documentId: product.id,
+        data: updatedProduct.toMap());
     }
     final updatedSupplier = Supplier(
       id: supplier.id, name: supplier.name, phone: supplier.phone,
