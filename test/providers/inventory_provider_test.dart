@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:shopkeeper_pro/providers/inventory_provider.dart';
+import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/services/db_service.dart';
 
 void main() {
@@ -30,8 +31,15 @@ void main() {
 
     final product = inventory.products.single;
     await inventory.updateProduct(
-      product
-        ..sellingPrice = 160,
+      Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: product.stockQuantity,
+        costPrice: product.costPrice,
+        sellingPrice: 160,
+        lowStockThreshold: product.lowStockThreshold,
+      ),
     );
 
     expect(inventory.products.single.sellingPrice, 160);
