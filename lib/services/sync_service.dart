@@ -17,7 +17,6 @@ class SyncService {
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   Future<void>? _syncInFlight;
-  String? _activeUserId;
   bool _isOnline = false;
   bool _isSyncing = false;
 
@@ -34,7 +33,6 @@ class SyncService {
   };
 
   Future<void> init(String userId) async {
-    _activeUserId = userId;
     final connectivity = await _connectivity.checkConnectivity();
     _isOnline = !connectivity.contains(ConnectivityResult.none);
 
@@ -54,7 +52,6 @@ class SyncService {
   Future<void> dispose() async {
     await _connectivitySubscription?.cancel();
     _connectivitySubscription = null;
-    _activeUserId = null;
   }
 
   Future<void> syncNow(String userId) {
@@ -164,7 +161,7 @@ class SyncService {
 
         if (table == 'bills') {
           final items = await db.query('bill_items', where: 'billId = ?', whereArgs: [documentId]);
-          payload['items'] = items.map(Map<String, dynamic>.from).toList();
+          payload['items'] = items.map((item) => Map<String, dynamic>.from(item)).toList();
         } else if (table == 'supplier_orders') {
           final items = await db.query(
             'supplier_order_items',
