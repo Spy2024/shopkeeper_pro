@@ -96,6 +96,7 @@ class SyncQueueService {
     var failureCount = 0;
     try {
       for (final op in List<SyncOperation>.from(_pendingQueue)) {
+        if (op.attempts >= _maxAttempts) continue;
         if (op.nextRetryAt != null &&
             op.nextRetryAt! > DateTime.now().millisecondsSinceEpoch) {
           continue;
