@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../../providers/pos_provider.dart';
 import '../../providers/inventory_provider.dart';
@@ -220,11 +220,8 @@ class _BillSummaryPanel extends StatelessWidget {
       final bill = await pos.checkout(inventory);
       final file = await PdfService.generateInvoice(bill, shop);
       if (!context.mounted) return;
-      await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path)],
-        text: 'Here is your invoice from ${shop?.name ?? "our shop"}.',
-      ),
+      await Printing.layoutPdf(
+        onLayout: (_) => file.readAsBytes(),
       );
     } catch (e) {
       if (context.mounted) {
