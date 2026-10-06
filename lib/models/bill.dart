@@ -15,7 +15,7 @@ class BillItem {
 
   factory BillItem.fromMap(Map<String, dynamic> map) => BillItem(
         productName: map['productName'] as String,
-        quantity: map['quantity'] as int,
+        quantity: (map['quantity'] as num).toInt(),
         unitPrice: (map['unitPrice'] as num).toDouble(),
       );
 }
@@ -38,8 +38,9 @@ class Bill {
   });
 
   double get subtotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
-  double get taxAmount => (subtotal - discount) * (taxPercent / 100);
-  double get grandTotal => (subtotal - discount) + taxAmount;
+  double get effectiveDiscount => discount.clamp(0, subtotal).toDouble();
+  double get taxAmount => (subtotal - effectiveDiscount) * (taxPercent / 100);
+  double get grandTotal => (subtotal - effectiveDiscount) + taxAmount;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -47,5 +48,10 @@ class Bill {
         'customerName': customerName,
         'discount': discount,
         'taxPercent': taxPercent,
+      };
+
+  Map<String, dynamic> toSyncMap() => {
+        ...toMap(),
+        'items': items.map((item) => item.toMap()).toList(),
       };
 }
