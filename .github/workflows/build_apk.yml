@@ -2,7 +2,7 @@ name: Build Release APK
 
 on:
   push:
-    branches: [ "main", "master", "feature/*" ]
+    branches: [ "main", "master", "feature/*", "production-hardening" ]
   pull_request:
     branches: [ "main", "master" ]
   workflow_dispatch:
@@ -32,8 +32,11 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Static Analysis
+        run: flutter analyze --fatal-infos
+
       - name: Run Tests
-        run: flutter test
+        run: flutter test --reporter expanded
 
       - name: Build Release APK
         run: flutter build apk --release
