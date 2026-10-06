@@ -124,12 +124,15 @@ class SyncService {
         await db.insert('shop', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      for (final doc in (await _collection(userId, 'products')).docs) {
+      final products = await _collection(userId, 'products').get();
+      for (final doc in products.docs) {
         if (await _hasPending(db, doc.id)) continue;
         final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('products', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      for (final doc in (await _collection(userId, 'bills')).docs) {
+
+      final bills = await _collection(userId, 'bills').get();
+      for (final doc in bills.docs) {
         if (await _hasPending(db, doc.id)) continue;
         final bill = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('bills', bill, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -142,17 +145,23 @@ class SyncService {
           await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
-      for (final doc in (await _collection(userId, 'suppliers')).docs) {
+
+      final suppliers = await _collection(userId, 'suppliers').get();
+      for (final doc in suppliers.docs) {
         if (await _hasPending(db, doc.id)) continue;
         final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('suppliers', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      for (final doc in (await _collection(userId, 'supplier_transactions')).docs) {
+
+      final supplierTransactions = await _collection(userId, 'supplier_transactions').get();
+      for (final doc in supplierTransactions.docs) {
         if (await _hasPending(db, doc.id)) continue;
         final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('supplier_transactions', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      for (final doc in (await _collection(userId, 'supplier_orders')).docs) {
+
+      final supplierOrders = await _collection(userId, 'supplier_orders').get();
+      for (final doc in supplierOrders.docs) {
         if (await _hasPending(db, doc.id)) continue;
         final order = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('supplier_orders', order, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -165,8 +174,10 @@ class SyncService {
           await db.insert('supplier_order_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
+
       for (final collection in ['sales', 'expenses']) {
-        for (final doc in (await _collection(userId, collection)).docs) {
+        final snapshot = await _collection(userId, collection).get();
+        for (final doc in snapshot.docs) {
           if (await _hasPending(db, doc.id)) continue;
           final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
           final table = collection == 'sales' ? 'daily_sales' : 'expenses';
