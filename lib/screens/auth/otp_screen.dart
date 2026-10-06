@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/sync_provider.dart';
 import '../profile/shop_profile_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
-
   const OtpScreen({super.key, required this.phoneNumber});
 
   @override
@@ -63,17 +63,20 @@ class _OtpScreenState extends State<OtpScreen> {
                         try {
                           final ok = await auth.confirmOtp(otp);
                           if (!context.mounted) return;
-                          if (ok) {
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ShopProfileScreen(isFirstSetup: true),
-                              ),
-                              (route) => false,
-                            );
-                          } else {
+                          if (!ok || auth.userUid == null) {
                             setState(() => _error = 'Incorrect or expired code.');
+                            return;
                           }
+
+                          await context.read<SyncProvider>().init(auth.userUid!);
+                          if (!context.mounted) return;
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ShopProfileScreen(isFirstSetup: true),
+                            ),
+                            (route) => false,
+                          );
                         } catch (e) {
                           if (mounted) setState(() => _error = e.toString());
                         } finally {
