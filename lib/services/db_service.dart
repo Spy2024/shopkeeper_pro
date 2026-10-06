@@ -48,6 +48,13 @@ class DBService {
     );
   }
 
+  Future<void> resetForTests() async {
+    final path = join(await getDatabasesPath(), 'shopkeeper_pro.db');
+    await _db?.close();
+    _db = null;
+    await deleteDatabase(path);
+  }
+
   Future<void> _createSchema(Database db) async {
     await db.execute('CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL, phone TEXT NOT NULL, taxNumber TEXT, logoPath TEXT)');
     await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5)');
