@@ -177,7 +177,7 @@ class SyncQueueService {
   Future<void> _recordFailure(SyncOperation op, Object error) async {
     final db = await DBService.instance.database;
     final attempts = op.attempts + 1;
-    final delaySeconds = 1 << attempts.clamp(0, 5);
+    final delaySeconds = 1 << attempts.clamp(0, 5).toInt();
     final nextRetryAt = DateTime.now().add(Duration(seconds: delaySeconds)).millisecondsSinceEpoch;
     await db.update(queueTableName, {
       'attempts': attempts,
