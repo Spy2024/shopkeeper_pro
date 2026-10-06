@@ -94,7 +94,10 @@ class InventoryProvider extends ChangeNotifier {
     final product = findById(productId);
     if (product == null) throw StateError('Product not found');
     if (product.stockQuantity < quantitySold) throw StateError('Insufficient stock');
-    applyStockAfterTransaction(productId, product.stockQuantity - quantitySold);
+    final updated = Product(id: product.id, name: product.name, category: product.category,
+      stockQuantity: product.stockQuantity - quantitySold, costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
+    await updateProduct(updated);
   }
 
   List<Product> search(String query) {
