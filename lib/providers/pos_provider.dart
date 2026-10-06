@@ -73,6 +73,10 @@ class PosProvider extends ChangeNotifier {
     final itemProducts = <BillItem, Product>{};
     for (final item in cart) {
       Product? product = item.productId == null ? null : inventory.findById(item.productId!);
+      // Support older/manual cart entries where the product id was stored in the name field.
+      if (product == null && item.productId == null) {
+        product = inventory.findById(item.productName.trim());
+      }
       if (product == null) {
         for (final candidate in inventory.products) {
           if (candidate.name.trim().toLowerCase() == item.productName.trim().toLowerCase()) { product = candidate; break; }
