@@ -1,8 +1,7 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Production-ready Firebase Phone Authentication.
-/// Replaces the demo OTP system with real SMS verification.
 class FirebaseAuthService {
   FirebaseAuthService._internal();
   static final FirebaseAuthService instance = FirebaseAuthService._internal();
@@ -11,63 +10,80 @@ class FirebaseAuthService {
   final _secureStorage = const FlutterSecureStorage();
   String? _verificationId;
 
-  /// Send OTP via SMS using Firebase
   Future<void> sendOtp(String phoneNumber) async {
+    final completer = Completer<void>();
+
+    void complete() {
+      if (!completer.isCompleted) completer.complete();
+    }
+
+    void fail(Object error, [StackTrace? stackTrace]) {
+      if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    }
+
     await _firebaseAuth.verifyPhoneNumber(
       phoneNumber: phoneNumber,
       verificationCompleted: (PhoneAuthCredential credential) async {
-        // Auto-resolve on Android when SIM matches
-        await _firebaseAuth.signInWithCredential(credential);
+        try {
+          await _firebaseAuth.signInWithCredential(credential);
+          complete();
+        } catch (e, st) {
+          fail(e, st);
+        }
       },
       verificationFailed: (FirebaseAuthException e) {
-        throw Exception('Firebase Auth Error: ${e.message}');
+        fail(Exception('Firebase Auth Error: ${e.message ?? e.code}'));
       },
       codeSent: (String verificationId, int? _) {
         _verificationId = verificationId;
+        complete();
       },
       codeAutoRetrievalTimeout: (String verificationId) {
         _verificationId = verificationId;
       },
       timeout: const Duration(minutes: 2),
     );
+
+    await completer.future.timeout(
+      const Duration(minutes: 2),
+      onTimeout: () => throw TimeoutException('Firebase OTP request timed out'),
+    );
   }
 
-  /// Verify OTP code
   Future<bool> verifyOtp(String otp) async {
     try {
-      if (_verificationId == null) return false;
+      final verificationId = _verificationId;
+      if (verificationId == null || otp.length != 6) return false;
 
       final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
+        verificationId: verificationId,
         smsCode: otp,
       );
       final userCredential = await _firebaseAuth.signInWithCredential(credential);
-      final phone = userCredential.user?.phoneNumber;
+      final user = userCredential.user;
+      final phone = user?.phoneNumber;
+      if (user == null || phone == null) return false;
 
-      if (phone != null) {
-        await _secureStorage.write(key: 'session_phone', value: phone);
-        await _secureStorage.write(key: 'user_uid', value: userCredential.user!.uid);
-        return true;
-      }
-      return false;
+      await _secureStorage.write(key: 'session_phone', value: phone);
+      await _secureStorage.write(key: 'user_uid', value: user.uid);
+      _verificationId = null;
+      return true;
     } catch (e) {
-      throw Exception('OTP verification failed: $e');
+      throw Exception('OTP verification failed: ${e}');
     }
   }
 
-  /// Get current user UID for Firestore sync
   Future<String?> getUserUid() async {
     return _firebaseAuth.currentUser?.uid ?? await _secureStorage.read(key: 'user_uid');
   }
 
-  /// Check if user is already logged in
   Future<String?> getSession() async {
     return _secureStorage.read(key: 'session_phone');
   }
 
-  /// Logout and clear session
   Future<void> clearSession() async {
     await _firebaseAuth.signOut();
+    _verificationId = null;
     await _secureStorage.delete(key: 'session_phone');
     await _secureStorage.delete(key: 'user_uid');
   }
