@@ -93,9 +93,16 @@ class PosProvider extends ChangeNotifier {
       if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ' + product.name);
     }
 
+    // Store resolved inventory IDs and canonical names, including legacy cart entries.
+    final normalizedItems = cart.map((item) {
+      final product = itemProducts[item]!;
+      return BillItem(productId: product.id, productName: product.name,
+        quantity: item.quantity, unitPrice: item.unitPrice);
+    }).toList(growable: false);
+
     final db = await DBService.instance.database;
     final bill = Bill(id: _uuid.v4(), date: DateTime.now(), customerName: customerName,
-      items: List.unmodifiable(cart), discount: discount, taxPercent: taxPercent);
+      items: List.unmodifiable(normalizedItems), discount: discount, taxPercent: taxPercent);
     final newQuantities = <String, int>{};
     final itemCloudIds = List<String>.generate(bill.items.length, (_) => _uuid.v4());
 
@@ -114,7 +121,7 @@ class PosProvider extends ChangeNotifier {
       }
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
-        final product = itemProducts[item]!;
+        final product = productsById[item.productId]!;
         await txn.insert('daily_sales', DailySale(id: _uuid.v4(), date: bill.date, billId: bill.id,
           productId: product.id, productName: product.name, costPrice: product.costPrice,
           salePrice: item.unitPrice * (1 - discountRatio), source: 'pos').toMap());
