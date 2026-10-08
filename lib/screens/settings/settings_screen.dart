@@ -51,7 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _createBackup() async {
     final uid = await _userId();
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final file = await BackupRestoreService.instance.createBackup(uid);
@@ -67,7 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _uploadCloudBackup() async {
     final uid = await _userId();
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
     setState(() => _busy = true);
     try {
       await BackupRestoreService.instance.uploadBackupToCloud(uid);
@@ -81,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _restoreCloudBackup() async {
     final uid = await _userId();
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -119,7 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _createStatement() async {
     final uid = await _userId();
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final file = await BackupRestoreService.instance.createFinancialStatement(uid);
@@ -134,7 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _restoreBackup() async {
     final uid = await _userId();
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
     final selected = await openFile(
       acceptedTypeGroups: const [
         XTypeGroup(label: 'Shopkeeper Pro JSON backup', extensions: ['json']),
@@ -207,7 +207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _deleteAccount() async {
     final uid = await _userId();
-    if (uid == null) return;
+    if (uid == null || !mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
