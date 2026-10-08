@@ -82,7 +82,7 @@ class PosProvider extends ChangeNotifier {
           if (candidate.name.trim().toLowerCase() == item.productName.trim().toLowerCase()) { product = candidate; break; }
         }
       }
-      if (product == null) throw StateError('Product not found: ' + item.productName);
+      if (product == null) throw StateError('Product not found: ${item.productName}');
       if (item.quantity <= 0 || item.unitPrice <= 0) throw StateError('Invalid quantity or price');
       productsById[product.id] = product;
       quantitiesById[product.id] = (quantitiesById[product.id] ?? 0) + item.quantity;
@@ -90,7 +90,7 @@ class PosProvider extends ChangeNotifier {
     }
     for (final entry in quantitiesById.entries) {
       final product = productsById[entry.key]!;
-      if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ' + product.name);
+      if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ${product.name}');
     }
 
     // Store resolved inventory IDs and canonical names, including legacy cart entries.
@@ -130,7 +130,7 @@ class PosProvider extends ChangeNotifier {
 
     await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
     for (var i = 0; i < bill.items.length; i++) {
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/' + bill.id + '/items',
+      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/${bill.id}/items',
         documentId: itemCloudIds[i], data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id});
     }
     for (final entry in newQuantities.entries) {
