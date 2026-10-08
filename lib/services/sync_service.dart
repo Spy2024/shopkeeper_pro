@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
 import 'sync_queue_service.dart';
+import 'backup_restore_service.dart';
 
 class SyncService {
   SyncService._internal();
@@ -41,6 +42,11 @@ class SyncService {
       await SyncQueueService.instance.syncPendingOperations(userId);
       await _pushLocal(userId);
       await syncFromCloud(userId, lockAlreadyHeld: true);
+      try {
+        await BackupRestoreService.instance.maybeCreateAutomaticCloudBackup(userId);
+      } catch (e) {
+        debugPrint('[SyncService] automatic cloud backup failed; it will retry on a later sync: $e');
+      }
     } catch (e) {
       debugPrint('[SyncService] sync error: $e');
       rethrow;

@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -14,6 +17,7 @@ import 'sync_queue_service.dart';
 class BackupRestoreService {
   BackupRestoreService._();
   static final BackupRestoreService instance = BackupRestoreService._();
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   static const _tables = <String>[
     'shop',
@@ -58,6 +62,59 @@ class BackupRestoreService {
     ));
     await file.writeAsString(jsonEncode(payload), flush: true);
     return file;
+  }
+
+
+  Future<String> uploadBackupToCloud(String userId) async {
+    await _requireOwner(userId);
+    if (FirebaseAuth.instance.currentUser?.uid != userId) {
+      throw StateError('Sign in with this account before uploading a cloud backup.');
+    }
+    final file = await createBackup(userId);
+    final ref = FirebaseStorage.instance.ref().child('users/$userId/backups/latest.json');
+    await ref.putFile(
+      file,
+      SettableMetadata(contentType: 'application/json'),
+    );
+    await _secureStorage.write(
+      key: 'last_cloud_backup_$userId',
+      value: DateTime.now().toUtc().toIso8601String(),
+    );
+    return ref.fullPath;
+  }
+
+  /// Creates at most one automatic cloud backup per 24 hours when a successful
+  /// sync occurs. A failed upload does not advance the timestamp, so the next
+  /// sync can retry.
+  Future<void> maybeCreateAutomaticCloudBackup(String userId) async {
+    if (FirebaseAuth.instance.currentUser?.uid != userId) return;
+    final last = await _secureStorage.read(key: 'last_cloud_backup_$userId');
+    if (last != null) {
+      final lastTime = DateTime.tryParse(last);
+      if (lastTime != null &&
+          DateTime.now().toUtc().difference(lastTime) < const Duration(hours: 24)) {
+        return;
+      }
+    }
+    await uploadBackupToCloud(userId);
+  }
+
+  Future<void> restoreLatestCloudBackup(String userId) async {
+    await _requireOwner(userId);
+    if (FirebaseAuth.instance.currentUser?.uid != userId) {
+      throw StateError('Sign in with this account before restoring a cloud backup.');
+    }
+    final ref = FirebaseStorage.instance.ref().child('users/$userId/backups/latest.json');
+    final bytes = await ref.getData(100 * 1024 * 1024);
+    if (bytes == null) throw StateError('No cloud backup was found for this account.');
+    final documents = await getApplicationDocumentsDirectory();
+    final tempFile = File(p.join(documents.path, 'cloud_backup_restore.json'));
+    await tempFile.writeAsBytes(bytes, flush: true);
+    try {
+      await restoreBackup(userId, tempFile);
+    } finally {
+      if (await tempFile.exists()) await tempFile.delete();
+    }
   }
 
   Future<void> restoreBackup(String userId, File file) async {

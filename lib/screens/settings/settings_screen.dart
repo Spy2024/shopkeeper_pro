@@ -63,6 +63,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+
+  Future<void> _uploadCloudBackup() async {
+    final uid = await _userId();
+    if (uid == null) return;
+    setState(() => _busy = true);
+    try {
+      await BackupRestoreService.instance.uploadBackupToCloud(uid);
+      _message('Cloud backup uploaded successfully.');
+    } catch (e) {
+      _message('Cloud backup failed: ${e.toString().replaceFirst('Exception: ', '')}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _restoreCloudBackup() async {
+    final uid = await _userId();
+    if (uid == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Restore cloud backup?'),
+        content: const Text(
+          'This replaces current local shop records with the latest cloud backup. '
+          'Export a fresh backup first if you need to keep the current data.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await BackupRestoreService.instance.restoreLatestCloudBackup(uid);
+      if (!mounted) return;
+      await Future.wait([
+        context.read<ShopProvider>().load(),
+        context.read<InventoryProvider>().load(),
+        context.read<PosProvider>().loadHistory(),
+        context.read<SupplierProvider>().load(),
+        context.read<SalesProvider>().load(),
+        context.read<FinanceProvider>().load(),
+      ]);
+      _message('Latest cloud backup restored.');
+    } catch (e) {
+      _message('Cloud restore failed: ${e.toString().replaceFirst('Exception: ', '')}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _createStatement() async {
     final uid = await _userId();
     if (uid == null) return;
@@ -185,6 +238,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
+                  leading: const Icon(Icons.cloud_upload_outlined),
+                  title: const Text('Upload backup to cloud now'),
+                  subtitle: const Text('Requires signed-in Firebase account and Storage rules.'),
+                  onTap: _busy ? null : _uploadCloudBackup,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.cloud_download_outlined),
+                  title: const Text('Restore latest cloud backup'),
+                  subtitle: const Text('Replaces current local records after confirmation.'),
+                  onTap: _busy ? null : _restoreCloudBackup,
+                ),
+                const Divider(height: 1),
+                ListTile(
                   leading: const Icon(Icons.restore_outlined),
                   title: const Text('Restore from backup'),
                   subtitle: const Text('Replaces current local records after confirmation.'),
@@ -221,7 +288,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           const Text(
             'Backups contain business and customer information. Share them only with trusted recipients. '
-            'Cloud backup and restore still require Firebase configuration and verification.',
+            'Automatic cloud backups run after successful sync, at most once per 24 hours; cloud restore requires deployed Storage rules.',
             style: TextStyle(color: Colors.grey),
           ),
         ],
