@@ -9,6 +9,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:sqflite/sqflite.dart';
 
 import 'db_service.dart';
+import 'sync_queue_service.dart';
 
 class BackupRestoreService {
   BackupRestoreService._();
@@ -109,6 +110,7 @@ class BackupRestoreService {
         }
       }
     });
+    await SyncQueueService.instance.reloadPendingQueue();
     debugPrint('[Backup] Restore completed for account $userId');
   }
 

@@ -63,6 +63,8 @@ class SyncQueueService {
     }
   }
 
+  Future<void> reloadPendingQueue() => _loadPendingQueue();
+
   Future<void> _loadPendingQueue() async {
     final db = await DBService.instance.database;
     final rows = await db.query(
