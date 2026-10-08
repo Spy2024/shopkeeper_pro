@@ -89,6 +89,8 @@ class SyncQueueService {
   }
 
   Future<void> syncPendingOperations(String userId) async {
+    // Never write local queued data to a different or unauthenticated account.
+    if (userId.trim().isEmpty || FirebaseAuth.instance.currentUser?.uid != userId) return;
     if (_isSyncing) return;
     if (_pendingQueue.isEmpty) await _loadPendingQueue();
     if (_pendingQueue.isEmpty) return;

@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/firebase_auth_service.dart';
+import '../services/db_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool isLoggedIn = false;
@@ -21,10 +22,15 @@ class AuthProvider extends ChangeNotifier {
         if (user != null) {
           phoneNumber = user.phoneNumber;
           userUid = user.uid;
+          await DBService.instance.configureForUser(user.uid);
           isLoggedIn = true;
           notifyListeners();
           return;
         }
+        // A configured Firebase app must not silently accept an old local demo
+        // session when there is no authenticated Firebase user.
+        await AuthService.instance.clearSession();
+        return;
       }
     } catch (e) {
       debugPrint('[Auth] Firebase session unavailable: $e');
@@ -35,6 +41,9 @@ class AuthProvider extends ChangeNotifier {
       phoneNumber = saved;
       userUid = await AuthService.instance.getUserUid();
       isLoggedIn = userUid != null;
+      if (userUid != null && userUid!.isNotEmpty) {
+        await DBService.instance.configureForUser(userUid!);
+      }
       notifyListeners();
     }
   }
@@ -48,6 +57,9 @@ class AuthProvider extends ChangeNotifier {
       if (firebaseAvailable) {
         await FirebaseAuthService.instance.sendOtp(phone);
         return '';
+      }
+      if (!kDebugMode) {
+        throw StateError('Firebase is not configured. Demo OTP is disabled in release builds.');
       }
       final otp = await AuthService.instance.sendOtp(phone);
       demoOtp = otp;
@@ -73,6 +85,7 @@ class AuthProvider extends ChangeNotifier {
           phoneNumber = user?.phoneNumber ?? phone;
           userUid = user?.uid;
           isLoggedIn = user != null;
+          if (userUid != null) await DBService.instance.configureForUser(userUid!);
         }
         return ok;
       }
@@ -83,6 +96,7 @@ class AuthProvider extends ChangeNotifier {
         phoneNumber = phone;
         userUid = await AuthService.instance.getUserUid();
         isLoggedIn = true;
+        if (userUid != null) await DBService.instance.configureForUser(userUid!);
         demoOtp = null;
       }
       return ok;
@@ -104,6 +118,7 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[Auth] Firebase logout unavailable: $e');
     }
     await AuthService.instance.clearSession();
+    await DBService.instance.clearActiveUser();
     isLoggedIn = false;
     phoneNumber = null;
     userUid = null;
