@@ -36,7 +36,7 @@ class SyncService {
 
   Future<void> syncNow(String userId) async {
     final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-    if (userId.trim().isEmpty || authenticatedUid != userId || _isSyncing || !await _checkOnline()) return;
+    if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || _isSyncing || !await _checkOnline()) return;
     _isSyncing = true;
     try {
       await SyncQueueService.instance.syncPendingOperations(userId);
@@ -122,7 +122,7 @@ class SyncService {
 
   Future<void> syncFromCloud(String userId, {bool lockAlreadyHeld = false}) async {
     final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-    if (userId.trim().isEmpty || authenticatedUid != userId || (!lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
+    if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || (!lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
     final lockedHere = !lockAlreadyHeld;
     if (lockedHere) _isSyncing = true;
     try {
