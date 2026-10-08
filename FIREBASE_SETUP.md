@@ -32,7 +32,7 @@ The rules restrict all `users/{userId}/...` data to the authenticated Firebase u
 This repository also includes `storage.rules` and a Cloud Function for account deletion.
 
 1. Confirm the selected Firebase project is the intended production project.
-2. Enable Firebase Storage and configure Firebase App Check for the Android app.
+2. Enable Firebase Storage and configure Firebase App Check for the Android app. In debug builds, copy the debug token printed by the app into Firebase Console > App Check > Debug tokens; use Play Integrity for release builds.
 3. Install Node.js 22 and Firebase CLI.
 4. From the repository root, run `cd functions; npm install; npm run lint; cd ..`.
 5. Deploy the rules and function with `firebase deploy --only firestore:rules,storage,functions`.
