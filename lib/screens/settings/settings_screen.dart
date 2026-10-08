@@ -14,6 +14,7 @@ import '../../providers/sales_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../providers/supplier_provider.dart';
 import '../../services/backup_restore_service.dart';
+import '../../services/account_deletion_service.dart';
 import '../auth/phone_entry_screen.dart';
 import '../profile/shop_profile_screen.dart';
 
@@ -203,6 +204,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+
+  Future<void> _deleteAccount() async {
+    final uid = await _userId();
+    if (uid == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Permanently delete account?'),
+        content: const Text(
+          'This permanently deletes the signed-in Firebase account, its cloud records, cloud backups, '
+          'and this account\'s local database on this device. This cannot be undone. '
+          'For security, Firebase requires a recent sign-in and App Check verification.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(dialogContext).colorScheme.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await AccountDeletionService.instance.deleteCurrentAccount(uid);
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const PhoneEntryScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      _message('Account deletion was not confirmed: ${e.toString().replaceFirst('Exception: ', '')}. If recent sign-in is required, sign out and sign in again before retrying.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final shop = context.watch<ShopProvider>().shop;
@@ -284,6 +325,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onPressed: _busy ? null : _signOut,
             icon: const Icon(Icons.logout),
             label: const Text('Sign out'),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _busy || !auth.firebaseAvailable ? null : _deleteAccount,
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete account and cloud data'),
           ),
           const SizedBox(height: 16),
           const Text(

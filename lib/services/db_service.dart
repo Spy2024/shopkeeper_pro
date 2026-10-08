@@ -48,6 +48,25 @@ class DBService {
     _activeUserId = null;
   }
 
+
+  Future<void> deleteActiveUserDatabase(String expectedUserId) async {
+    if (_activeUserId != expectedUserId) {
+      throw StateError('Refusing to delete a database owned by another account.');
+    }
+    final dbPath = await getDatabasesPath();
+    final safeId = expectedUserId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
+    if (_db != null) {
+      await _db!.close();
+      _db = null;
+    }
+    _activeUserId = null;
+    for (final suffix in ['', '-wal', '-shm']) {
+      final file = File('$userPath$suffix');
+      if (await file.exists()) await file.delete();
+    }
+  }
+
   Future<Database> get database async {
     if (_db != null) return _db!;
     final dbPath = await getDatabasesPath();

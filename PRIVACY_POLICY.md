@@ -15,7 +15,7 @@ PDFs shared through WhatsApp, email, or other Android sharing targets are transf
 The app is intended to restrict cloud records to the authenticated account. Security also depends on correct Firebase project configuration and deployed Firestore rules. Do not treat a build with placeholder Firebase settings or untested security rules as production-ready.
 
 ## Retention, deletion, and account recovery
-Users should be given a way to export their records before requesting deletion. Account deletion must remove or appropriately retain cloud records according to applicable legal and accounting obligations; local records on each device must also be addressed. Account recovery must use the configured authentication provider and must not rely on a demo OTP.
+Users should be given a way to export their records before requesting deletion. Account deletion is implemented through a server-side callable function that requires recent authentication and Firebase App Check. It deletes the signed-in user's Firestore subtree, cloud backup files, Firebase Authentication account, and the active account's local database on this device. This requires deploying the Cloud Function and configuring App Check. Users should export records first and retain any records required by accounting law. Account recovery must use the configured authentication provider and must not rely on a demo OTP.
 
 ## Children
 Shopkeeper Pro is a business-management application and is not designed for children.
