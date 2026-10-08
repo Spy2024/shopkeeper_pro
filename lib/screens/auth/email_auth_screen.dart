@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/shop_provider.dart';
+import '../../providers/sync_provider.dart';
+import '../dashboard/home_screen.dart';
+import '../profile/shop_profile_screen.dart';
 
 class EmailAuthScreen extends StatefulWidget {
   const EmailAuthScreen({super.key});
@@ -33,7 +37,7 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
           : await auth.signInWithEmail(_email.text.trim(), _password.text);
       if (!mounted) return;
       if (verified) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        await _continueAfterAuth();
       } else {
         setState(() => _showVerificationAction = true);
       }
@@ -42,11 +46,31 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
     }
   }
 
+
+  Future<void> _continueAfterAuth() async {
+    final auth = context.read<AuthProvider>();
+    final shopProvider = context.read<ShopProvider>();
+    await shopProvider.load();
+    if (!mounted) return;
+    final uid = auth.userUid;
+    if (uid != null && uid.isNotEmpty && auth.firebaseAvailable) {
+      await context.read<SyncProvider>().init(uid);
+    }
+    if (!mounted) return;
+    final Widget destination = shopProvider.shop == null
+        ? const ShopProfileScreen(isFirstSetup: true)
+        : const HomeScreen();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => destination),
+      (route) => false,
+    );
+  }
+
   Future<void> _verifyEmail() async {
     final verified = await context.read<AuthProvider>().refreshEmailVerification();
     if (!mounted) return;
     if (verified) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      await _continueAfterAuth();
     } else {
       setState(() => _showVerificationAction = true);
     }
