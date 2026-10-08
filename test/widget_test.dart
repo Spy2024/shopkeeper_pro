@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shopkeeper_pro/models/bill.dart';
+import 'package:shopkeeper_pro/models/daily_sale.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 
 void main() {
@@ -41,4 +42,20 @@ void main() {
     expect(restored.productName, 'Tea');
     expect(restored.lineTotal, 285);
   });
+  test('Daily sale revenue and profit account for sold quantity', () {
+    final sale = DailySale(
+      id: 's1',
+      date: DateTime(2026, 10, 8),
+      productName: 'Tea',
+      costPrice: 80,
+      salePrice: 95,
+      quantity: 3,
+      source: 'pos',
+    );
+    expect(sale.revenue, 285);
+    expect(sale.costOfGoods, 240);
+    expect(sale.margin, 45);
+    expect(DailySale.fromMap(sale.toMap()).quantity, 3);
+  });
+
 }

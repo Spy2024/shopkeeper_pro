@@ -47,8 +47,8 @@ class FinanceProvider extends ChangeNotifier {
   /// `monthlySales` should be the list of DailySale rows for that month
   /// (pass in from SalesProvider.sales filtered by month).
   double calculateNetProfit(List<DailySale> monthlySales, int year, int month) {
-    final revenue = monthlySales.fold(0.0, (sum, s) => sum + s.salePrice);
-    final cogs = monthlySales.fold(0.0, (sum, s) => sum + s.costPrice);
+    final revenue = monthlySales.fold(0.0, (sum, s) => sum + s.revenue);
+    final cogs = monthlySales.fold(0.0, (sum, s) => sum + s.costOfGoods);
     final expenses = totalExpensesForMonth(year, month);
     return revenue - cogs - expenses;
   }

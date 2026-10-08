@@ -124,7 +124,7 @@ class PosProvider extends ChangeNotifier {
         final product = productsById[item.productId]!;
         await txn.insert('daily_sales', DailySale(id: _uuid.v4(), date: bill.date, billId: bill.id,
           productId: product.id, productName: product.name, costPrice: product.costPrice,
-          salePrice: item.unitPrice * (1 - discountRatio), source: 'pos').toMap());
+          salePrice: item.unitPrice * (1 - discountRatio), quantity: item.quantity, source: 'pos').toMap());
       }
     });
 

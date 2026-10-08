@@ -6,6 +6,7 @@ class DailySale {
   final String productName;
   final double costPrice;
   final double salePrice;
+  final int quantity;
   final String source;
 
   DailySale({
@@ -16,10 +17,13 @@ class DailySale {
     required this.productName,
     required this.costPrice,
     required this.salePrice,
+    this.quantity = 1,
     this.source = 'manual',
   });
 
-  double get margin => salePrice - costPrice;
+  double get revenue => salePrice * quantity;
+  double get costOfGoods => costPrice * quantity;
+  double get margin => revenue - costOfGoods;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -29,6 +33,7 @@ class DailySale {
         'productName': productName,
         'costPrice': costPrice,
         'salePrice': salePrice,
+        'quantity': quantity,
         'source': source,
       };
 
@@ -40,6 +45,7 @@ class DailySale {
         productName: map['productName'] as String,
         costPrice: (map['costPrice'] as num).toDouble(),
         salePrice: (map['salePrice'] as num).toDouble(),
+        quantity: (map['quantity'] as num?)?.toInt() ?? 1,
         source: (map['source'] as String?) ?? 'manual',
       );
 }
