@@ -62,6 +62,15 @@ class AuthProvider extends ChangeNotifier {
     try {
       if (firebaseAvailable) {
         await FirebaseAuthService.instance.sendOtp(phone);
+        // Android may verify automatically without presenting an SMS code.
+        final user = FirebaseAuthService.instance.currentUser;
+        if (user != null) {
+          phoneNumber = user.phoneNumber ?? phone;
+          userUid = user.uid;
+          isLoggedIn = true;
+          await DBService.instance.configureForUser(user.uid);
+          notifyListeners();
+        }
         return '';
       }
       if (!kDebugMode) {
