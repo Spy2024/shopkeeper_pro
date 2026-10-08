@@ -24,6 +24,7 @@ class BackupRestoreService {
     'products',
     'bills',
     'bill_items',
+    'bill_returns',
     'suppliers',
     'supplier_orders',
     'supplier_order_items',
@@ -136,7 +137,7 @@ class BackupRestoreService {
     final sourceTables = decoded['tables'] as Map<String, dynamic>;
     final rowsByTable = <String, List<Map<String, Object?>>>{};
     for (final table in _tables) {
-      final rows = sourceTables[table];
+      final rows = sourceTables[table] ?? (table == 'bill_returns' ? <dynamic>[] : null);
       if (rows is! List) throw FormatException('Backup is missing table: $table');
       rowsByTable[table] = rows.map((row) {
         if (row is! Map) throw FormatException('Invalid row in table: $table');
@@ -147,6 +148,7 @@ class BackupRestoreService {
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
       for (final table in [
+        'bill_returns',
         'bill_items',
         'supplier_order_items',
         'supplier_transactions',
@@ -185,6 +187,7 @@ class BackupRestoreService {
       ORDER BY b.date DESC
     ''');
     final expenseRows = await db.query('expenses', orderBy: 'date DESC');
+    final returnRows = await db.query('bill_returns');
     final productRows = await db.query('products');
     var salesTotal = 0.0;
     for (final row in billRows) {
@@ -197,6 +200,10 @@ class BackupRestoreService {
     final expensesTotal = expenseRows.fold<double>(
       0,
       (sum, row) => sum + (row['amount'] as num).toDouble(),
+    );
+    final refundsTotal = returnRows.fold<double>(
+      0,
+      (sum, row) => sum + (row['refundAmount'] as num).toDouble(),
     );
     final stockValue = productRows.fold<double>(
       0,
@@ -226,7 +233,9 @@ class BackupRestoreService {
         pw.TableHelper.fromTextArray(
           headers: ['Metric', 'Amount / Count'],
           data: [
-            ['Total billed sales', 'Rs. ${salesTotal.toStringAsFixed(2)}'],
+            ['Total billed sales (before returns)', 'Rs. ${salesTotal.toStringAsFixed(2)}'],
+            ['Recorded refunds', 'Rs. ${refundsTotal.toStringAsFixed(2)}'],
+            ['Net sales after returns', 'Rs. ${(salesTotal - refundsTotal).toStringAsFixed(2)}'],
             ['Recorded expenses', 'Rs. ${expensesTotal.toStringAsFixed(2)}'],
             ['Current inventory cost value', 'Rs. ${stockValue.toStringAsFixed(2)}'],
             ['Bills recorded', '${billRows.length}'],

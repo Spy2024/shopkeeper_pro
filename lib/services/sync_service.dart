@@ -106,6 +106,7 @@ class SyncService {
       await _writeChildBatch(userId, 'supplier_orders', order['id'].toString(), 'items', await _maps(db, 'supplier_order_items', where: 'orderId = ?', args: [order['id']]));
     }
     await _writeBatch(userId, 'sales', await _maps(db, 'daily_sales'));
+    await _writeBatch(userId, 'returns', await _maps(db, 'bill_returns'));
     await _writeBatch(userId, 'expenses', await _maps(db, 'expenses'));
   }
 
@@ -184,12 +185,16 @@ class SyncService {
         }
       }
 
-      for (final collection in ['sales', 'expenses']) {
+      for (final collection in ['sales', 'expenses', 'returns']) {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(db, doc.id)) continue;
           final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
-          final table = collection == 'sales' ? 'daily_sales' : 'expenses';
+          final table = collection == 'sales'
+              ? 'daily_sales'
+              : collection == 'returns'
+                  ? 'bill_returns'
+                  : 'expenses';
           await db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }

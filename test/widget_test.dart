@@ -58,4 +58,15 @@ void main() {
     expect(DailySale.fromMap(sale.toMap()).quantity, 3);
   });
 
+  test('Partial return refund applies allocated discount and tax', () {
+    final bill = Bill(
+      id: 'b-return',
+      date: DateTime(2026, 10, 8),
+      items: [BillItem(productId: 'p1', productName: 'Tea', quantity: 2, unitPrice: 100)],
+      discount: 20,
+      taxPercent: 10,
+    );
+    expect(bill.refundFor(bill.items.first, 1), closeTo(99, 0.001));
+  });
+
 }

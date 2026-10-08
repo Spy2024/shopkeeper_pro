@@ -51,6 +51,15 @@ class Bill {
   double get taxAmount => taxableSubtotal * (taxPercent / 100);
   double get grandTotal => taxableSubtotal + taxAmount;
 
+  double refundFor(BillItem item, int quantity) {
+    if (quantity <= 0 || quantity > item.quantity) {
+      throw ArgumentError('Return quantity must be between 1 and the sold quantity.');
+    }
+    final discountRatio = subtotal <= 0 ? 0.0 : discount / subtotal;
+    final discountedUnitPrice = item.unitPrice * (1 - discountRatio);
+    return discountedUnitPrice * quantity * (1 + taxPercent / 100);
+  }
+
   Map<String, dynamic> toMap() => {
         'id': id,
         'date': date.toIso8601String(),

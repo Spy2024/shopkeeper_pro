@@ -144,6 +144,105 @@ class PosProvider extends ChangeNotifier {
     savedBills.insert(0, bill); _billItemsCache[bill.id] = bill.items; clearCart(); return bill;
   }
 
+
+  Future<double> returnItem({
+    required Bill bill,
+    required BillItem item,
+    required int quantity,
+    required String reason,
+    required InventoryProvider inventory,
+  }) async {
+    if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
+    if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
+
+    Product? product = item.productId == null
+        ? null
+        : inventory.findById(item.productId!);
+    product ??= inventory.products.cast<Product?>().firstWhere(
+      (candidate) => candidate?.name.trim().toLowerCase() == item.productName.trim().toLowerCase(),
+      orElse: () => null,
+    );
+    if (product == null) {
+      throw StateError('The returned product is no longer in inventory: ${item.productName}');
+    }
+
+    final soldQuantity = bill.items.where((candidate) =>
+      candidate.productId == product!.id ||
+      candidate.productName.trim().toLowerCase() == product.name.trim().toLowerCase()
+    ).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+    final db = await DBService.instance.database;
+    final refundAmount = bill.refundFor(item, quantity);
+    final returnId = _uuid.v4();
+    final returnedAt = DateTime.now();
+    final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
+    final returnSale = DailySale(
+      id: _uuid.v4(),
+      date: returnedAt,
+      billId: bill.id,
+      productId: product.id,
+      productName: product.name,
+      costPrice: -product.costPrice,
+      salePrice: -item.unitPrice * (1 - discountRatio),
+      quantity: quantity,
+      source: 'return',
+    );
+    final returnRow = <String, dynamic>{
+      'id': returnId,
+      'billId': bill.id,
+      'productId': product.id,
+      'productName': product.name,
+      'quantity': quantity,
+      'refundAmount': refundAmount,
+      'date': returnedAt.toIso8601String(),
+      'reason': reason.trim(),
+    };
+    late int newStock;
+    await db.transaction((txn) async {
+      final priorRows = await txn.rawQuery(
+        'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ?',
+        [bill.id, product.id],
+      );
+      final alreadyReturned = (priorRows.first['returnedQuantity'] as num).toInt();
+      if (quantity + alreadyReturned > soldQuantity) {
+        throw StateError('Only ${soldQuantity - alreadyReturned} unit(s) remain eligible for return.');
+      }
+      final stockRows = await txn.query(
+        'products',
+        columns: ['stockQuantity'],
+        where: 'id = ?',
+        whereArgs: [product!.id],
+        limit: 1,
+      );
+      if (stockRows.isEmpty) throw StateError('Product not found in local database.');
+      newStock = (stockRows.first['stockQuantity'] as num).toInt() + quantity;
+      await txn.update('products', {'stockQuantity': newStock},
+          where: 'id = ?', whereArgs: [product.id]);
+      await txn.insert('bill_returns', returnRow);
+      await txn.insert('daily_sales', returnSale.toMap());
+    });
+
+    await SyncQueueService.instance.queueOperation(
+      operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
+    await SyncQueueService.instance.queueOperation(
+      operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
+    await SyncQueueService.instance.queueOperation(
+      operation: 'update',
+      tableName: 'products',
+      documentId: product.id,
+      data: Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: newStock,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        lowStockThreshold: product.lowStockThreshold,
+      ).toMap(),
+    );
+    inventory.applyStockAfterTransaction(product.id, newStock);
+    return refundAmount;
+  }
+
   Future<void> loadHistory() async {
     final db = await DBService.instance.database;
     final billRows = await db.query('bills', orderBy: 'date DESC');
