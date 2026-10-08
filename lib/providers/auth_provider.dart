@@ -7,6 +7,7 @@ import '../services/db_service.dart';
 class AuthProvider extends ChangeNotifier {
   bool isLoggedIn = false;
   String? phoneNumber;
+  String? emailAddress;
   String? userUid;
   bool isLoading = false;
   String? errorMessage;
@@ -19,7 +20,12 @@ class AuthProvider extends ChangeNotifier {
       if (firebaseAvailable) {
         final service = FirebaseAuthService.instance;
         final user = service.currentUser;
+        if (user != null && user.email != null && !user.emailVerified) {
+          await AuthService.instance.clearSession();
+          return;
+        }
         if (user != null) {
+          emailAddress = user.email;
           phoneNumber = user.phoneNumber;
           userUid = user.uid;
           await DBService.instance.configureForUser(user.uid);
@@ -109,6 +115,100 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+
+  Future<bool> registerWithEmail(String email, String password) async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      if (!firebaseAvailable) {
+        throw StateError('Configure Firebase before using email accounts.');
+      }
+      final user = await FirebaseAuthService.instance.createEmailAccount(
+        email: email,
+        password: password,
+      );
+      if (user == null) throw StateError('Account creation failed.');
+      emailAddress = user.email;
+      userUid = user.uid;
+      isLoggedIn = user.emailVerified;
+      if (isLoggedIn) await DBService.instance.configureForUser(user.uid);
+      if (!isLoggedIn) {
+        errorMessage = 'Verification email sent. Verify your email, then tap "I have verified".';
+      }
+      return isLoggedIn;
+    } catch (e) {
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> signInWithEmail(String email, String password) async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      if (!firebaseAvailable) {
+        throw StateError('Configure Firebase before using email accounts.');
+      }
+      final user = await FirebaseAuthService.instance.signInWithEmail(
+        email: email,
+        password: password,
+      );
+      if (user == null) throw StateError('Sign in failed.');
+      emailAddress = user.email;
+      userUid = user.uid;
+      isLoggedIn = user.emailVerified;
+      if (isLoggedIn) {
+        await DBService.instance.configureForUser(user.uid);
+      } else {
+        errorMessage = 'Email is not verified. A verification email has been sent.';
+      }
+      return isLoggedIn;
+    } catch (e) {
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> refreshEmailVerification() async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      final verified = await FirebaseAuthService.instance.refreshEmailVerification();
+      final user = FirebaseAuthService.instance.currentUser;
+      if (verified && user != null) {
+        emailAddress = user.email;
+        userUid = user.uid;
+        isLoggedIn = true;
+        await DBService.instance.configureForUser(user.uid);
+        return true;
+      }
+      errorMessage = 'Email is not verified yet. Please check your inbox and spam folder.';
+      return false;
+    } catch (e) {
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return false;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    if (!firebaseAvailable) {
+      throw StateError('Configure Firebase before resetting an email password.');
+    }
+    await FirebaseAuthService.instance.sendPasswordReset(email);
+  }
+
   Future<void> logout() async {
     try {
       if (firebaseAvailable) {
@@ -121,6 +221,7 @@ class AuthProvider extends ChangeNotifier {
     await DBService.instance.clearActiveUser();
     isLoggedIn = false;
     phoneNumber = null;
+    emailAddress = null;
     userUid = null;
     demoOtp = null;
     notifyListeners();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import 'otp_screen.dart';
+import 'email_auth_screen.dart';
 
 class PhoneEntryScreen extends StatefulWidget {
   final bool isRecovery;
@@ -27,6 +28,12 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
       if (auth.errorMessage != null) Text(auth.errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
       const SizedBox(height: 12),
       SizedBox(width: double.infinity, child: ElevatedButton(onPressed: auth.isLoading ? null : () async { if (!_formKey.currentState!.validate()) return; final phone = _phoneController.text.trim(); try { await context.read<AuthProvider>().requestOtp(phone); if (!context.mounted) return; Navigator.push(context, MaterialPageRoute(builder: (_) => OtpScreen(phoneNumber: phone))); } catch (_) {} }, child: auth.isLoading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Send OTP'))),
+      const SizedBox(height: 8),
+      Center(child: TextButton(
+        onPressed: auth.isLoading ? null : () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const EmailAuthScreen())),
+        child: const Text('Use email instead'),
+      )),
     ])))));
   }
 }
