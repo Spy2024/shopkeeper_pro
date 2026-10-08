@@ -3,7 +3,7 @@
   "private": true,
   "description": "Server-side account deletion for Shopkeeper Pro",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {

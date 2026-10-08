@@ -33,7 +33,7 @@ This repository also includes `storage.rules` and a Cloud Function for account d
 
 1. Confirm the selected Firebase project is the intended production project.
 2. Enable Firebase Storage and configure Firebase App Check for the Android app.
-3. Install Node.js 20 and Firebase CLI.
+3. Install Node.js 22 and Firebase CLI.
 4. From the repository root, run `cd functions; npm install; npm run lint; cd ..`.
 5. Deploy the rules and function with `firebase deploy --only firestore:rules,storage,functions`.
 6. Test using a dedicated test account before using real shop data.

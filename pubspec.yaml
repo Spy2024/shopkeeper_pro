@@ -17,6 +17,7 @@ dependencies:
   
   # Firebase - Core (v3 compatible with share_plus 10+)
   firebase_core: ^3.10.0
+  firebase_app_check: ^0.3.2+10
   firebase_auth: ^5.3.3
   cloud_firestore: ^5.5.0
   cloud_functions: ^5.1.3
