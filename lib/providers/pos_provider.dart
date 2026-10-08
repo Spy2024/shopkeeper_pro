@@ -166,9 +166,10 @@ class PosProvider extends ChangeNotifier {
       throw StateError('The returned product is no longer in inventory: ${item.productName}');
     }
 
+    final resolvedProduct = product;
     final soldQuantity = bill.items.where((candidate) =>
-      candidate.productId == product!.id ||
-      candidate.productName.trim().toLowerCase() == product.name.trim().toLowerCase()
+      candidate.productId == resolvedProduct.id ||
+      candidate.productName.trim().toLowerCase() == resolvedProduct.name.trim().toLowerCase()
     ).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
@@ -179,9 +180,9 @@ class PosProvider extends ChangeNotifier {
       id: _uuid.v4(),
       date: returnedAt,
       billId: bill.id,
-      productId: product.id,
-      productName: product.name,
-      costPrice: -product.costPrice,
+      productId: resolvedProduct.id,
+      productName: resolvedProduct.name,
+      costPrice: -resolvedProduct.costPrice,
       salePrice: -item.unitPrice * (1 - discountRatio),
       quantity: quantity,
       source: 'return',
@@ -189,8 +190,8 @@ class PosProvider extends ChangeNotifier {
     final returnRow = <String, dynamic>{
       'id': returnId,
       'billId': bill.id,
-      'productId': product.id,
-      'productName': product.name,
+      'productId': resolvedProduct.id,
+      'productName': resolvedProduct.name,
       'quantity': quantity,
       'refundAmount': refundAmount,
       'date': returnedAt.toIso8601String(),
@@ -200,7 +201,7 @@ class PosProvider extends ChangeNotifier {
     await db.transaction((txn) async {
       final priorRows = await txn.rawQuery(
         'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ?',
-        [bill.id, product.id],
+        [bill.id, resolvedProduct.id],
       );
       final alreadyReturned = (priorRows.first['returnedQuantity'] as num).toInt();
       if (quantity + alreadyReturned > soldQuantity) {
@@ -210,13 +211,13 @@ class PosProvider extends ChangeNotifier {
         'products',
         columns: ['stockQuantity'],
         where: 'id = ?',
-        whereArgs: [product!.id],
+        whereArgs: [resolvedProduct.id],
         limit: 1,
       );
       if (stockRows.isEmpty) throw StateError('Product not found in local database.');
       newStock = (stockRows.first['stockQuantity'] as num).toInt() + quantity;
       await txn.update('products', {'stockQuantity': newStock},
-          where: 'id = ?', whereArgs: [product.id]);
+          where: 'id = ?', whereArgs: [resolvedProduct.id]);
       await txn.insert('bill_returns', returnRow);
       await txn.insert('daily_sales', returnSale.toMap());
     });
@@ -228,18 +229,18 @@ class PosProvider extends ChangeNotifier {
     await SyncQueueService.instance.queueOperation(
       operation: 'update',
       tableName: 'products',
-      documentId: product.id,
+      documentId: resolvedProduct.id,
       data: Product(
-        id: product.id,
-        name: product.name,
-        category: product.category,
+        id: resolvedProduct.id,
+        name: resolvedProduct.name,
+        category: resolvedProduct.category,
         stockQuantity: newStock,
-        costPrice: product.costPrice,
-        sellingPrice: product.sellingPrice,
-        lowStockThreshold: product.lowStockThreshold,
+        costPrice: resolvedProduct.costPrice,
+        sellingPrice: resolvedProduct.sellingPrice,
+        lowStockThreshold: resolvedProduct.lowStockThreshold,
       ).toMap(),
     );
-    inventory.applyStockAfterTransaction(product.id, newStock);
+    inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
     return refundAmount;
   }
 
