@@ -220,16 +220,16 @@ class BackupRestoreService {
           (shop['name'] as String?)?.trim().isNotEmpty == true
               ? shop['name'] as String
               : 'Shopkeeper Pro Statement',
-          style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+          style: const pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
         ),
         if ((shop['address'] as String?)?.isNotEmpty == true)
           pw.Text(shop['address'] as String),
         if ((shop['phone'] as String?)?.isNotEmpty == true)
           pw.Text('Phone: ${shop['phone']}'),
-        const pw.SizedBox(height: 8),
+        pw.SizedBox(height: 8),
         pw.Text('Generated: ${DateTime.now().toLocal().toString().substring(0, 16)}'),
         pw.Divider(),
-        pw.Text('Financial Summary', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+        pw.Text('Financial Summary', style: const pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
           headers: ['Metric', 'Amount / Count'],
           data: [
@@ -242,8 +242,8 @@ class BackupRestoreService {
             ['Products in inventory', '${productRows.length}'],
           ],
         ),
-        const pw.SizedBox(height: 16),
-        pw.Text('Recent Bills', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 16),
+        pw.Text('Recent Bills', style: const pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
           headers: ['Date', 'Bill ID', 'Total (Rs.)'],
           data: billRows.take(250).map((row) {
@@ -260,7 +260,7 @@ class BackupRestoreService {
             ];
           }).toList(),
         ),
-        const pw.SizedBox(height: 12),
+        pw.SizedBox(height: 12),
         pw.Text('This statement is generated from records currently stored on this device. Verify figures before using it for tax or legal purposes.'),
       ],
     ));
