@@ -128,18 +128,48 @@ class PosProvider extends ChangeNotifier {
       }
     });
 
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
-    for (var i = 0; i < bill.items.length; i++) {
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/${bill.id}/items',
-        documentId: itemCloudIds[i], data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id});
-    }
+    // The SQLite transaction is the source of truth. A cloud-queue failure must
+    // never report a committed checkout as failed; the next full sync can reconcile it.
     for (final entry in newQuantities.entries) {
-      final product = inventory.findById(entry.key);
-      if (product == null) continue;
-      final updated = Product(id: product.id, name: product.name, category: product.category, stockQuantity: entry.value,
-        costPrice: product.costPrice, sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
-      await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
+      final product = productsById[entry.key]!;
+      final updated = Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: entry.value,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        lowStockThreshold: product.lowStockThreshold,
+      );
       inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
+    }
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
+      for (var i = 0; i < bill.items.length; i++) {
+        await SyncQueueService.instance.queueOperation(
+          operation: 'create',
+          tableName: 'bills/${bill.id}/items',
+          documentId: itemCloudIds[i],
+          data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id},
+        );
+      }
+      for (final entry in newQuantities.entries) {
+        final product = productsById[entry.key]!;
+        final updated = Product(
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          stockQuantity: entry.value,
+          costPrice: product.costPrice,
+          sellingPrice: product.sellingPrice,
+          lowStockThreshold: product.lowStockThreshold,
+        );
+        await SyncQueueService.instance.queueOperation(
+          operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
+      }
+    } catch (e) {
+      debugPrint('[PosProvider] Checkout saved locally; sync queue will reconcile on the next sync: $e');
     }
     savedBills.insert(0, bill); _billItemsCache[bill.id] = bill.items; clearCart(); return bill;
   }
