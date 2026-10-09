@@ -7,6 +7,7 @@ import 'providers/shop_provider.dart';
 import 'providers/inventory_provider.dart';
 import 'providers/pos_provider.dart';
 import 'providers/supplier_provider.dart';
+import 'providers/customer_provider.dart';
 import 'providers/sales_provider.dart';
 import 'providers/finance_provider.dart';
 import 'providers/sync_provider.dart';
@@ -50,6 +51,7 @@ class ShopkeeperProApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => InventoryProvider()),
         ChangeNotifierProvider(create: (_) => PosProvider()),
         ChangeNotifierProvider(create: (_) => SupplierProvider()),
+        ChangeNotifierProvider(create: (_) => CustomerProvider()),
         ChangeNotifierProvider(create: (_) => SalesProvider()),
         ChangeNotifierProvider(create: (_) => FinanceProvider()),
         ChangeNotifierProvider(create: (_) => SyncProvider()),
