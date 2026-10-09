@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:cross_file/cross_file.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -231,6 +230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _busy = true);
     try {
       await AccountDeletionService.instance.deleteCurrentAccount(uid);
+      if (!mounted) return;
       await context.read<AuthProvider>().logout();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
