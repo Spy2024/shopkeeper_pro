@@ -252,25 +252,29 @@ class PosProvider extends ChangeNotifier {
       await txn.insert('daily_sales', returnSale.toMap());
     });
 
-    await SyncQueueService.instance.queueOperation(
-      operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
-    await SyncQueueService.instance.queueOperation(
-      operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
-    await SyncQueueService.instance.queueOperation(
-      operation: 'update',
-      tableName: 'products',
-      documentId: resolvedProduct.id,
-      data: Product(
-        id: resolvedProduct.id,
-        name: resolvedProduct.name,
-        category: resolvedProduct.category,
-        stockQuantity: newStock,
-        costPrice: resolvedProduct.costPrice,
-        sellingPrice: resolvedProduct.sellingPrice,
-        lowStockThreshold: resolvedProduct.lowStockThreshold,
-      ).toMap(),
-    );
     inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update',
+        tableName: 'products',
+        documentId: resolvedProduct.id,
+        data: Product(
+          id: resolvedProduct.id,
+          name: resolvedProduct.name,
+          category: resolvedProduct.category,
+          stockQuantity: newStock,
+          costPrice: resolvedProduct.costPrice,
+          sellingPrice: resolvedProduct.sellingPrice,
+          lowStockThreshold: resolvedProduct.lowStockThreshold,
+        ).toMap(),
+      );
+    } catch (e) {
+      debugPrint('[PosProvider] Return saved locally; sync queue will reconcile on the next sync: $e');
+    }
     return refundAmount;
   }
 
