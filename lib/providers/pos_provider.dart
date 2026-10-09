@@ -82,7 +82,7 @@ class PosProvider extends ChangeNotifier {
           if (candidate.name.trim().toLowerCase() == item.productName.trim().toLowerCase()) { product = candidate; break; }
         }
       }
-      if (product == null) throw StateError('Product not found: ' + item.productName);
+      if (product == null) throw StateError('Product not found: ${item.productName}');
       if (item.quantity <= 0 || item.unitPrice <= 0) throw StateError('Invalid quantity or price');
       productsById[product.id] = product;
       quantitiesById[product.id] = (quantitiesById[product.id] ?? 0) + item.quantity;
@@ -90,12 +90,19 @@ class PosProvider extends ChangeNotifier {
     }
     for (final entry in quantitiesById.entries) {
       final product = productsById[entry.key]!;
-      if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ' + product.name);
+      if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ${product.name}');
     }
+
+    // Store resolved inventory IDs and canonical names, including legacy cart entries.
+    final normalizedItems = cart.map((item) {
+      final product = itemProducts[item]!;
+      return BillItem(productId: product.id, productName: product.name,
+        quantity: item.quantity, unitPrice: item.unitPrice);
+    }).toList(growable: false);
 
     final db = await DBService.instance.database;
     final bill = Bill(id: _uuid.v4(), date: DateTime.now(), customerName: customerName,
-      items: List.unmodifiable(cart), discount: discount, taxPercent: taxPercent);
+      items: List.unmodifiable(normalizedItems), discount: discount, taxPercent: taxPercent);
     final newQuantities = <String, int>{};
     final itemCloudIds = List<String>.generate(bill.items.length, (_) => _uuid.v4());
 
@@ -114,16 +121,16 @@ class PosProvider extends ChangeNotifier {
       }
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
-        final product = itemProducts[item]!;
+        final product = productsById[item.productId]!;
         await txn.insert('daily_sales', DailySale(id: _uuid.v4(), date: bill.date, billId: bill.id,
           productId: product.id, productName: product.name, costPrice: product.costPrice,
-          salePrice: item.unitPrice * (1 - discountRatio), source: 'pos').toMap());
+          salePrice: item.unitPrice * (1 - discountRatio), quantity: item.quantity, source: 'pos').toMap());
       }
     });
 
     await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
     for (var i = 0; i < bill.items.length; i++) {
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/' + bill.id + '/items',
+      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/${bill.id}/items',
         documentId: itemCloudIds[i], data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id});
     }
     for (final entry in newQuantities.entries) {
@@ -135,6 +142,106 @@ class PosProvider extends ChangeNotifier {
       inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
     }
     savedBills.insert(0, bill); _billItemsCache[bill.id] = bill.items; clearCart(); return bill;
+  }
+
+
+  Future<double> returnItem({
+    required Bill bill,
+    required BillItem item,
+    required int quantity,
+    required String reason,
+    required InventoryProvider inventory,
+  }) async {
+    if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
+    if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
+
+    Product? product = item.productId == null
+        ? null
+        : inventory.findById(item.productId!);
+    product ??= inventory.products.cast<Product?>().firstWhere(
+      (candidate) => candidate?.name.trim().toLowerCase() == item.productName.trim().toLowerCase(),
+      orElse: () => null,
+    );
+    if (product == null) {
+      throw StateError('The returned product is no longer in inventory: ${item.productName}');
+    }
+
+    final resolvedProduct = product;
+    final soldQuantity = bill.items.where((candidate) =>
+      candidate.productId == resolvedProduct.id ||
+      candidate.productName.trim().toLowerCase() == resolvedProduct.name.trim().toLowerCase()
+    ).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+    final db = await DBService.instance.database;
+    final refundAmount = bill.refundFor(item, quantity);
+    final returnId = _uuid.v4();
+    final returnedAt = DateTime.now();
+    final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
+    final returnSale = DailySale(
+      id: _uuid.v4(),
+      date: returnedAt,
+      billId: bill.id,
+      productId: resolvedProduct.id,
+      productName: resolvedProduct.name,
+      costPrice: -resolvedProduct.costPrice,
+      salePrice: -item.unitPrice * (1 - discountRatio),
+      quantity: quantity,
+      source: 'return',
+    );
+    final returnRow = <String, dynamic>{
+      'id': returnId,
+      'billId': bill.id,
+      'productId': resolvedProduct.id,
+      'productName': resolvedProduct.name,
+      'quantity': quantity,
+      'refundAmount': refundAmount,
+      'date': returnedAt.toIso8601String(),
+      'reason': reason.trim(),
+    };
+    late int newStock;
+    await db.transaction((txn) async {
+      final priorRows = await txn.rawQuery(
+        'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ?',
+        [bill.id, resolvedProduct.id],
+      );
+      final alreadyReturned = (priorRows.first['returnedQuantity'] as num).toInt();
+      if (quantity + alreadyReturned > soldQuantity) {
+        throw StateError('Only ${soldQuantity - alreadyReturned} unit(s) remain eligible for return.');
+      }
+      final stockRows = await txn.query(
+        'products',
+        columns: ['stockQuantity'],
+        where: 'id = ?',
+        whereArgs: [resolvedProduct.id],
+        limit: 1,
+      );
+      if (stockRows.isEmpty) throw StateError('Product not found in local database.');
+      newStock = (stockRows.first['stockQuantity'] as num).toInt() + quantity;
+      await txn.update('products', {'stockQuantity': newStock},
+          where: 'id = ?', whereArgs: [resolvedProduct.id]);
+      await txn.insert('bill_returns', returnRow);
+      await txn.insert('daily_sales', returnSale.toMap());
+    });
+
+    await SyncQueueService.instance.queueOperation(
+      operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
+    await SyncQueueService.instance.queueOperation(
+      operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
+    await SyncQueueService.instance.queueOperation(
+      operation: 'update',
+      tableName: 'products',
+      documentId: resolvedProduct.id,
+      data: Product(
+        id: resolvedProduct.id,
+        name: resolvedProduct.name,
+        category: resolvedProduct.category,
+        stockQuantity: newStock,
+        costPrice: resolvedProduct.costPrice,
+        sellingPrice: resolvedProduct.sellingPrice,
+        lowStockThreshold: resolvedProduct.lowStockThreshold,
+      ).toMap(),
+    );
+    inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
+    return refundAmount;
   }
 
   Future<void> loadHistory() async {

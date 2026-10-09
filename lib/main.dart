@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -14,6 +15,7 @@ import 'screens/profile/shop_profile_screen.dart';
 import 'screens/dashboard/home_screen.dart';
 import 'utils/theme.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +26,9 @@ void main() async {
         v.isNotEmpty && !v.startsWith('YOUR_') && !v.contains('YOUR_'));
     if (configured) {
       await Firebase.initializeApp(options: options);
+      await FirebaseAppCheck.instance.activate(
+        androidProvider: kReleaseMode ? AndroidProvider.playIntegrity : AndroidProvider.debug,
+      );
     } else {
       debugPrint('[Firebase] Placeholder configuration detected; running offline mode.');
     }

@@ -65,15 +65,17 @@ class _DailySalesScreenState extends State<DailySalesScreen> {
                     child: DataTable(
                       columns: const [
                         DataColumn(label: Text('Product Name')),
-                        DataColumn(label: Text('Cost Price'), numeric: true),
-                        DataColumn(label: Text('Sale Price'), numeric: true),
+                        DataColumn(label: Text('Qty'), numeric: true),
+                        DataColumn(label: Text('Cost Total'), numeric: true),
+                        DataColumn(label: Text('Sale Total'), numeric: true),
                         DataColumn(label: Text('Margin'), numeric: true),
                       ],
                       rows: today
                           .map((s) => DataRow(cells: [
                                 DataCell(Text(s.productName)),
-                                DataCell(Text(_currency.format(s.costPrice))),
-                                DataCell(Text(_currency.format(s.salePrice))),
+                                DataCell(Text('${s.quantity}')),
+                                DataCell(Text(_currency.format(s.costOfGoods))),
+                                DataCell(Text(_currency.format(s.revenue))),
                                 DataCell(Text(
                                   _currency.format(s.margin),
                                   style: TextStyle(
@@ -111,8 +113,19 @@ class _AddSaleRowSheetState extends State<_AddSaleRowSheet> {
   final _nameCtrl = TextEditingController();
   final _cpCtrl = TextEditingController();
   final _spCtrl = TextEditingController();
+  final _quantityCtrl = TextEditingController(text: '1');
 
-  double get _margin => (double.tryParse(_spCtrl.text) ?? 0) - (double.tryParse(_cpCtrl.text) ?? 0);
+  double get _margin => ((double.tryParse(_spCtrl.text) ?? 0) -
+      (double.tryParse(_cpCtrl.text) ?? 0)) * (int.tryParse(_quantityCtrl.text) ?? 1);
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _cpCtrl.dispose();
+    _spCtrl.dispose();
+    _quantityCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +138,13 @@ class _AddSaleRowSheetState extends State<_AddSaleRowSheet> {
           const Text('Log a Sale', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Product Name')),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _quantityCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Quantity'),
+            onChanged: (_) => setState(() {}),
+          ),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(
@@ -154,8 +174,9 @@ class _AddSaleRowSheetState extends State<_AddSaleRowSheet> {
               final name = _nameCtrl.text.trim();
               final cp = double.tryParse(_cpCtrl.text);
               final sp = double.tryParse(_spCtrl.text);
-              if (name.isEmpty || cp == null || sp == null) return;
-              await context.read<SalesProvider>().addRow(productName: name, costPrice: cp, salePrice: sp);
+              final quantity = int.tryParse(_quantityCtrl.text);
+              if (name.isEmpty || cp == null || sp == null || quantity == null || quantity <= 0) return;
+              await context.read<SalesProvider>().addRow(productName: name, costPrice: cp, salePrice: sp, quantity: quantity);
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Save Sale'),

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/shop_provider.dart';
+import '../../providers/sync_provider.dart';
+import '../dashboard/home_screen.dart';
+import '../profile/shop_profile_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
@@ -68,7 +72,22 @@ class _OtpScreenState extends State<OtpScreen> {
                             .confirmOtp(widget.phoneNumber, code);
                         if (!context.mounted) return;
                         if (ok) {
-                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          final authProvider = context.read<AuthProvider>();
+                          final shopProvider = context.read<ShopProvider>();
+                          await shopProvider.load();
+                          if (!context.mounted) return;
+                          final uid = authProvider.userUid;
+                          if (uid != null && uid.isNotEmpty && authProvider.firebaseAvailable) {
+                            await context.read<SyncProvider>().init(uid);
+                          }
+                          if (!context.mounted) return;
+                          final Widget destination = shopProvider.shop == null
+                              ? const ShopProfileScreen(isFirstSetup: true)
+                              : const HomeScreen();
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(builder: (_) => destination),
+                            (route) => false,
+                          );
                         } else {
                           setState(() => _error =
                               context.read<AuthProvider>().errorMessage ??

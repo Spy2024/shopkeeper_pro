@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
 import 'sync_queue_service.dart';
+import 'backup_restore_service.dart';
 
 class SyncService {
   SyncService._internal();
@@ -33,12 +35,18 @@ class SyncService {
   }
 
   Future<void> syncNow(String userId) async {
-    if (userId.trim().isEmpty || _isSyncing || !await _checkOnline()) return;
+    final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+    if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || _isSyncing || !await _checkOnline()) return;
     _isSyncing = true;
     try {
       await SyncQueueService.instance.syncPendingOperations(userId);
       await _pushLocal(userId);
       await syncFromCloud(userId, lockAlreadyHeld: true);
+      try {
+        await BackupRestoreService.instance.maybeCreateAutomaticCloudBackup(userId);
+      } catch (e) {
+        debugPrint('[SyncService] automatic cloud backup failed; it will retry on a later sync: $e');
+      }
     } catch (e) {
       debugPrint('[SyncService] sync error: $e');
       rethrow;
@@ -98,6 +106,7 @@ class SyncService {
       await _writeChildBatch(userId, 'supplier_orders', order['id'].toString(), 'items', await _maps(db, 'supplier_order_items', where: 'orderId = ?', args: [order['id']]));
     }
     await _writeBatch(userId, 'sales', await _maps(db, 'daily_sales'));
+    await _writeBatch(userId, 'returns', await _maps(db, 'bill_returns'));
     await _writeBatch(userId, 'expenses', await _maps(db, 'expenses'));
   }
 
@@ -112,7 +121,8 @@ class SyncService {
   }
 
   Future<void> syncFromCloud(String userId, {bool lockAlreadyHeld = false}) async {
-    if (userId.trim().isEmpty || (!lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
+    final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+    if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || (!lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
     final lockedHere = !lockAlreadyHeld;
     if (lockedHere) _isSyncing = true;
     try {
@@ -175,12 +185,16 @@ class SyncService {
         }
       }
 
-      for (final collection in ['sales', 'expenses']) {
+      for (final collection in ['sales', 'expenses', 'returns']) {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(db, doc.id)) continue;
           final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
-          final table = collection == 'sales' ? 'daily_sales' : 'expenses';
+          final table = collection == 'sales'
+              ? 'daily_sales'
+              : collection == 'returns'
+                  ? 'bill_returns'
+                  : 'expenses';
           await db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }

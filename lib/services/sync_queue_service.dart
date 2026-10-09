@@ -63,6 +63,8 @@ class SyncQueueService {
     }
   }
 
+  Future<void> reloadPendingQueue() => _loadPendingQueue();
+
   Future<void> _loadPendingQueue() async {
     final db = await DBService.instance.database;
     final rows = await db.query(
@@ -89,6 +91,8 @@ class SyncQueueService {
   }
 
   Future<void> syncPendingOperations(String userId) async {
+    // Never write local queued data to a different or unauthenticated account.
+    if (userId.trim().isEmpty || FirebaseAuth.instance.currentUser?.uid != userId || DBService.instance.activeUserId != userId) return;
     if (_isSyncing) return;
     if (_pendingQueue.isEmpty) await _loadPendingQueue();
     if (_pendingQueue.isEmpty) return;

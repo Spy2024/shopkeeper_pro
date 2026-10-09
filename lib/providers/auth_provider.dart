@@ -2,10 +2,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../services/firebase_auth_service.dart';
+import '../services/db_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool isLoggedIn = false;
   String? phoneNumber;
+  String? emailAddress;
   String? userUid;
   bool isLoading = false;
   String? errorMessage;
@@ -18,13 +20,23 @@ class AuthProvider extends ChangeNotifier {
       if (firebaseAvailable) {
         final service = FirebaseAuthService.instance;
         final user = service.currentUser;
+        if (user != null && user.email != null && !user.emailVerified) {
+          await AuthService.instance.clearSession();
+          return;
+        }
         if (user != null) {
+          emailAddress = user.email;
           phoneNumber = user.phoneNumber;
           userUid = user.uid;
+          await DBService.instance.configureForUser(user.uid);
           isLoggedIn = true;
           notifyListeners();
           return;
         }
+        // A configured Firebase app must not silently accept an old local demo
+        // session when there is no authenticated Firebase user.
+        await AuthService.instance.clearSession();
+        return;
       }
     } catch (e) {
       debugPrint('[Auth] Firebase session unavailable: $e');
@@ -35,6 +47,9 @@ class AuthProvider extends ChangeNotifier {
       phoneNumber = saved;
       userUid = await AuthService.instance.getUserUid();
       isLoggedIn = userUid != null;
+      if (userUid != null && userUid!.isNotEmpty) {
+        await DBService.instance.configureForUser(userUid!);
+      }
       notifyListeners();
     }
   }
@@ -47,7 +62,19 @@ class AuthProvider extends ChangeNotifier {
     try {
       if (firebaseAvailable) {
         await FirebaseAuthService.instance.sendOtp(phone);
+        // Android may verify automatically without presenting an SMS code.
+        final user = FirebaseAuthService.instance.currentUser;
+        if (user != null) {
+          phoneNumber = user.phoneNumber ?? phone;
+          userUid = user.uid;
+          isLoggedIn = true;
+          await DBService.instance.configureForUser(user.uid);
+          notifyListeners();
+        }
         return '';
+      }
+      if (!kDebugMode) {
+        throw StateError('Firebase is not configured. Demo OTP is disabled in release builds.');
       }
       final otp = await AuthService.instance.sendOtp(phone);
       demoOtp = otp;
@@ -73,6 +100,7 @@ class AuthProvider extends ChangeNotifier {
           phoneNumber = user?.phoneNumber ?? phone;
           userUid = user?.uid;
           isLoggedIn = user != null;
+          if (userUid != null) await DBService.instance.configureForUser(userUid!);
         }
         return ok;
       }
@@ -83,6 +111,7 @@ class AuthProvider extends ChangeNotifier {
         phoneNumber = phone;
         userUid = await AuthService.instance.getUserUid();
         isLoggedIn = true;
+        if (userUid != null) await DBService.instance.configureForUser(userUid!);
         demoOtp = null;
       }
       return ok;
@@ -95,6 +124,100 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+
+  Future<bool> registerWithEmail(String email, String password) async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      if (!firebaseAvailable) {
+        throw StateError('Configure Firebase before using email accounts.');
+      }
+      final user = await FirebaseAuthService.instance.createEmailAccount(
+        email: email,
+        password: password,
+      );
+      if (user == null) throw StateError('Account creation failed.');
+      emailAddress = user.email;
+      userUid = user.uid;
+      isLoggedIn = user.emailVerified;
+      if (isLoggedIn) await DBService.instance.configureForUser(user.uid);
+      if (!isLoggedIn) {
+        errorMessage = 'Verification email sent. Verify your email, then tap "I have verified".';
+      }
+      return isLoggedIn;
+    } catch (e) {
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> signInWithEmail(String email, String password) async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      if (!firebaseAvailable) {
+        throw StateError('Configure Firebase before using email accounts.');
+      }
+      final user = await FirebaseAuthService.instance.signInWithEmail(
+        email: email,
+        password: password,
+      );
+      if (user == null) throw StateError('Sign in failed.');
+      emailAddress = user.email;
+      userUid = user.uid;
+      isLoggedIn = user.emailVerified;
+      if (isLoggedIn) {
+        await DBService.instance.configureForUser(user.uid);
+      } else {
+        errorMessage = 'Email is not verified. A verification email has been sent.';
+      }
+      return isLoggedIn;
+    } catch (e) {
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> refreshEmailVerification() async {
+    isLoading = true;
+    errorMessage = null;
+    notifyListeners();
+    try {
+      final verified = await FirebaseAuthService.instance.refreshEmailVerification();
+      final user = FirebaseAuthService.instance.currentUser;
+      if (verified && user != null) {
+        emailAddress = user.email;
+        userUid = user.uid;
+        isLoggedIn = true;
+        await DBService.instance.configureForUser(user.uid);
+        return true;
+      }
+      errorMessage = 'Email is not verified yet. Please check your inbox and spam folder.';
+      return false;
+    } catch (e) {
+      errorMessage = e.toString().replaceFirst('Exception: ', '');
+      return false;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    if (!firebaseAvailable) {
+      throw StateError('Configure Firebase before resetting an email password.');
+    }
+    await FirebaseAuthService.instance.sendPasswordReset(email);
+  }
+
   Future<void> logout() async {
     try {
       if (firebaseAvailable) {
@@ -104,8 +227,10 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[Auth] Firebase logout unavailable: $e');
     }
     await AuthService.instance.clearSession();
+    await DBService.instance.clearActiveUser();
     isLoggedIn = false;
     phoneNumber = null;
+    emailAddress = null;
     userUid = null;
     demoOtp = null;
     notifyListeners();

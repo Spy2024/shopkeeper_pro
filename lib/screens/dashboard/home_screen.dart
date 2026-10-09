@@ -4,6 +4,7 @@ import '../inventory/inventory_screen.dart';
 import '../supplier/supplier_screen.dart';
 import '../sales/daily_sales_screen.dart';
 import 'financial_dashboard_screen.dart';
+import '../settings/settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
     DailySalesScreen(),
     SupplierScreen(),
     FinancialDashboardScreen(),
+    SettingsScreen(),
   ];
 
   @override
@@ -36,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(icon: Icon(Icons.trending_up_outlined), selectedIcon: Icon(Icons.trending_up), label: 'Sales'),
           NavigationDestination(icon: Icon(Icons.handshake_outlined), selectedIcon: Icon(Icons.handshake), label: 'Suppliers'),
           NavigationDestination(icon: Icon(Icons.pie_chart_outline), selectedIcon: Icon(Icons.pie_chart), label: 'Finance'),
+          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
     );

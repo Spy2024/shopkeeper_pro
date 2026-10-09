@@ -66,6 +66,55 @@ class FirebaseAuthService {
     }
   }
 
+
+  Future<User?> createEmailAccount({
+    required String email,
+    required String password,
+  }) async {
+    final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = credential.user;
+    if (user == null) throw StateError('Firebase did not return the new account.');
+    await user.sendEmailVerification();
+    await _secureStorage.write(key: 'session_email', value: user.email);
+    await _secureStorage.write(key: 'user_uid', value: user.uid);
+    return user;
+  }
+
+  Future<User?> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    final credential = await _firebaseAuth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = credential.user;
+    if (user != null) {
+      await _secureStorage.write(key: 'session_email', value: user.email);
+      await _secureStorage.write(key: 'user_uid', value: user.uid);
+      if (!user.emailVerified) await user.sendEmailVerification();
+    }
+    return user;
+  }
+
+  Future<bool> refreshEmailVerification() async {
+    await _firebaseAuth.currentUser?.reload();
+    final user = _firebaseAuth.currentUser;
+    if (user == null) return false;
+    if (user.emailVerified) {
+      await _secureStorage.write(key: 'session_email', value: user.email);
+      await _secureStorage.write(key: 'user_uid', value: user.uid);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> sendPasswordReset(String email) =>
+      _firebaseAuth.sendPasswordResetEmail(email: email.trim());
+
   Future<void> _persistCurrentUser() async {
     final user = _firebaseAuth.currentUser;
     if (user == null) return;
@@ -85,6 +134,7 @@ class FirebaseAuthService {
   Future<void> clearSession() async {
     await _firebaseAuth.signOut();
     await _secureStorage.delete(key: 'session_phone');
+    await _secureStorage.delete(key: 'session_email');
     await _secureStorage.delete(key: 'user_uid');
     _verificationId = null;
     _resendToken = null;
