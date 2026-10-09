@@ -147,7 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: const Text('Replace local shop data?'),
         content: const Text(
           'Restore will replace the current local shop records with records from this backup. '
-          'Make a fresh backup first. The backup must belong to the currently signed-in account.',
+          'Make a fresh backup first. Only restore a backup you own; it can be from a previous account if you are intentionally migrating your own shop data.',
         ),
         actions: [
           TextButton(
@@ -165,7 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _busy = true);
     try {
-      await BackupRestoreService.instance.restoreBackup(uid, File(selected.path));
+      await BackupRestoreService.instance.restoreBackup(uid, File(selected.path), allowDifferentAccount: true);
       if (!mounted) return;
       await Future.wait([
         context.read<ShopProvider>().load(),

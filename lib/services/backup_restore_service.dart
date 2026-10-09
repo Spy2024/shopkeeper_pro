@@ -118,7 +118,7 @@ class BackupRestoreService {
     }
   }
 
-  Future<void> restoreBackup(String userId, File file) async {
+  Future<void> restoreBackup(String userId, File file, {bool allowDifferentAccount = false}) async {
     await _requireOwner(userId);
     if (!await file.exists()) throw FileSystemException('Backup file does not exist.', file.path);
     if (await file.length() > 100 * 1024 * 1024) {
@@ -128,7 +128,7 @@ class BackupRestoreService {
     if (decoded is! Map<String, dynamic> ||
         decoded['format'] != 'shopkeeper-pro-backup' ||
         decoded['schemaVersion'] != 1 ||
-        decoded['userId'] != userId ||
+        (!allowDifferentAccount && decoded['userId'] != userId) ||
         decoded['tables'] is! Map<String, dynamic>) {
       throw const FormatException(
         'This backup is invalid, unsupported, or belongs to a different account.',
