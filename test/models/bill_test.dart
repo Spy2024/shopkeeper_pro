@@ -23,6 +23,13 @@ void main() {
       expect(bill.grandTotal, closeTo(468, 0.0001));
     });
 
+    test('bill defensively copies its item list', () {
+      final mutableItems = <BillItem>[items.first];
+      final bill = Bill(id: 'bill-copy', date: DateTime(2026), items: mutableItems);
+      mutableItems.clear();
+      expect(bill.items, hasLength(1));
+    });
+
     test('refund includes proportional discount and tax', () {
       final bill = Bill(
         id: 'bill-2',
@@ -37,15 +44,29 @@ void main() {
     });
 
     test('refund rejects zero, negative and over-sold quantities', () {
-      final bill = Bill(
-        id: 'bill-3',
-        date: DateTime(2026, 10, 9),
-        items: items,
-      );
-
+      final bill = Bill(id: 'bill-3', date: DateTime(2026, 10, 9), items: items);
       expect(() => bill.refundFor(items.first, 0), throwsArgumentError);
       expect(() => bill.refundFor(items.first, -1), throwsArgumentError);
       expect(() => bill.refundFor(items.first, 3), throwsArgumentError);
+    });
+
+    test('refund rejects an item not present on this bill', () {
+      final bill = Bill(id: 'bill-foreign', date: DateTime(2026), items: [items.first]);
+      final foreign = BillItem(productId: 'other', productName: 'Other', quantity: 1, unitPrice: 20);
+      expect(() => bill.refundFor(foreign, 1), throwsArgumentError);
+    });
+
+    test('bill item rejects invalid quantity, name and price', () {
+      expect(() => BillItem(productName: 'Tea', quantity: 0, unitPrice: 1), throwsArgumentError);
+      expect(() => BillItem(productName: ' ', quantity: 1, unitPrice: 1), throwsArgumentError);
+      expect(() => BillItem(productName: 'Tea', quantity: 1, unitPrice: double.nan), throwsArgumentError);
+      expect(() => BillItem(productName: 'Tea', quantity: 1, unitPrice: -1), throwsArgumentError);
+    });
+
+    test('bill rejects invalid tax and discount values', () {
+      expect(() => Bill(id: 'bad-tax', date: DateTime(2026), items: items, taxPercent: 101), throwsArgumentError);
+      expect(() => Bill(id: 'bad-discount', date: DateTime(2026), items: items, discount: -1), throwsArgumentError);
+      expect(() => Bill(id: 'bad-id', date: DateTime(2026), items: items, id: ' ', discount: 0), throwsArgumentError);
     });
 
     test('fully discounted bill never has a negative taxable subtotal', () {
@@ -59,6 +80,7 @@ void main() {
 
       expect(bill.taxableSubtotal, 0);
       expect(bill.grandTotal, 0);
+      expect(bill.refundFor(items.first, 1), 0);
     });
   });
 }
