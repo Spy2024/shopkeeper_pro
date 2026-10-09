@@ -243,7 +243,7 @@ class BackupRestoreService {
           ],
         ),
         pw.SizedBox(height: 16),
-        pw.Text('Recent Bills', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+        pw.Text('Recent Bills', style: const pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
           headers: ['Date', 'Bill ID', 'Total (Rs.)'],
           data: billRows.take(250).map((row) {
