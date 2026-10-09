@@ -74,15 +74,18 @@ class CustomerProvider extends ChangeNotifier {
   }
 
   Future<void> delete(String id) async {
+    if (id.trim().isEmpty) throw ArgumentError('Customer id is required.');
     final db = await DBService.instance.database;
-    final changed = await db.delete('customers', where: 'id = ?', whereArgs: [id]);
-    if (changed == 0) return;
+    final exists = await db.query('customers', columns: ['id'], where: 'id = ?', whereArgs: [id], limit: 1);
+    if (exists.isEmpty) return;
+
+    // Persist the tombstone before deleting locally. Otherwise, a cloud record
+    // could be downloaded again on the next sync and resurrect the deleted customer.
+    await SyncQueueService.instance.queueOperation(
+      operation: 'delete', tableName: 'customers', documentId: id, data: const {},
+    );
+    await db.delete('customers', where: 'id = ?', whereArgs: [id]);
     _customers.removeWhere((c) => c.id == id);
-    try {
-      await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'customers', documentId: id, data: const {});
-    } catch (_) {
-      // Local deletion remains available offline.
-    }
     notifyListeners();
   }
 }
