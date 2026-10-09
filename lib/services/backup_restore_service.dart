@@ -22,6 +22,7 @@ class BackupRestoreService {
   static const _tables = <String>[
     'shop',
     'products',
+    'customers',
     'bills',
     'bill_items',
     'bill_returns',
@@ -157,6 +158,7 @@ class BackupRestoreService {
         'daily_sales',
         'expenses',
         'products',
+        'customers',
         'suppliers',
         'shop',
         'sync_queue',
