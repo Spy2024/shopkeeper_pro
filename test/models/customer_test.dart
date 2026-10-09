@@ -16,7 +16,7 @@ void main() {
 
       final restored = Customer.fromMap(customer.toMap());
       expect(restored.id, 'customer-1');
-      expect(restored.name, '  Ayesha Khan  ');
+      expect(restored.name, 'Ayesha Khan');
       expect(restored.phone, '03001234567');
       expect(restored.email, 'ayesha@example.com');
       expect(restored.notes, 'Regular customer');
