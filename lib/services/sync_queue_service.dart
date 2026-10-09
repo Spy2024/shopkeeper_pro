@@ -54,6 +54,11 @@ class SyncQueueService {
       timestamp: now,
     );
     final db = await DBService.instance.database;
+    if (DBService.instance.activeUserId != activeUserId ||
+        (FirebaseAuth.instance.currentUser?.uid != null &&
+            FirebaseAuth.instance.currentUser?.uid != activeUserId)) {
+      throw StateError('The active account changed before the sync operation was saved.');
+    }
     await db.insert(
       queueTableName,
       {
@@ -93,12 +98,22 @@ class SyncQueueService {
       return;
     }
     final db = await DBService.instance.database;
+    if (DBService.instance.activeUserId != activeUserId) {
+      _pendingQueue.clear();
+      _loadedQueueUserId = null;
+      return;
+    }
     final rows = await db.query(
       queueTableName,
       where: 'synced = ?',
       whereArgs: [0],
       orderBy: 'timestamp ASC',
     );
+    if (DBService.instance.activeUserId != activeUserId) {
+      _pendingQueue.clear();
+      _loadedQueueUserId = null;
+      return;
+    }
     _pendingQueue
       ..clear()
       ..addAll(rows.map(SyncOperation.fromMap));
