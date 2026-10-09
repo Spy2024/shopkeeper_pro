@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../pos/pos_screen.dart';
 import '../inventory/inventory_screen.dart';
 import '../supplier/supplier_screen.dart';
+import '../customers/customers_screen.dart';
 import '../sales/daily_sales_screen.dart';
 import 'financial_dashboard_screen.dart';
 import '../settings/settings_screen.dart';
@@ -18,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final _screens = const [
     PosScreen(),
+    CustomersScreen(),
     InventoryScreen(),
     DailySalesScreen(),
     SupplierScreen(),
@@ -34,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.point_of_sale_outlined), selectedIcon: Icon(Icons.point_of_sale), label: 'Billing'),
+          NavigationDestination(icon: Icon(Icons.people_outline), selectedIcon: Icon(Icons.people), label: 'Customers'),
           NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Inventory'),
           NavigationDestination(icon: Icon(Icons.trending_up_outlined), selectedIcon: Icon(Icons.trending_up), label: 'Sales'),
           NavigationDestination(icon: Icon(Icons.handshake_outlined), selectedIcon: Icon(Icons.handshake), label: 'Suppliers'),
