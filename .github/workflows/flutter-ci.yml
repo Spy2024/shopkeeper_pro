@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - feature/production-ready-fixes
+  workflow_dispatch:
 
 concurrency:
   group: flutter-ci-${{ github.ref }}
