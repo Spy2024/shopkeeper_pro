@@ -66,7 +66,7 @@ void main() {
     test('bill rejects invalid tax and discount values', () {
       expect(() => Bill(id: 'bad-tax', date: DateTime(2026), items: items, taxPercent: 101), throwsArgumentError);
       expect(() => Bill(id: 'bad-discount', date: DateTime(2026), items: items, discount: -1), throwsArgumentError);
-      expect(() => Bill(id: 'bad-id', date: DateTime(2026), items: items, id: ' ', discount: 0), throwsArgumentError);
+      expect(() => Bill(id: ' ', date: DateTime(2026), items: items), throwsArgumentError);
     });
 
     test('fully discounted bill never has a negative taxable subtotal', () {
