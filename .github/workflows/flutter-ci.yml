@@ -13,6 +13,12 @@ on:
       - main
       - feature/production-ready-fixes
   workflow_dispatch:
+    inputs:
+      build_apk:
+        description: 'Build release APK only after feature verification is complete'
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
   group: flutter-ci-${{ github.ref }}
@@ -37,5 +43,6 @@ jobs:
         run: flutter analyze
       - name: Run automated tests
         run: flutter test
-      - name: Build release APK
+      - name: Build release APK (manual opt-in only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_apk }}
         run: flutter build apk --release
