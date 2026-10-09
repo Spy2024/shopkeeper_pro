@@ -220,7 +220,7 @@ class BackupRestoreService {
           (shop['name'] as String?)?.trim().isNotEmpty == true
               ? shop['name'] as String
               : 'Shopkeeper Pro Statement',
-          style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+          style: const pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
         ),
         if ((shop['address'] as String?)?.isNotEmpty == true)
           pw.Text(shop['address'] as String),
@@ -229,7 +229,7 @@ class BackupRestoreService {
         pw.SizedBox(height: 8),
         pw.Text('Generated: ${DateTime.now().toLocal().toString().substring(0, 16)}'),
         pw.Divider(),
-        pw.Text('Financial Summary', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+        pw.Text('Financial Summary', style: const pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
           headers: ['Metric', 'Amount / Count'],
           data: [
