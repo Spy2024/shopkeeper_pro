@@ -7,6 +7,7 @@ on:
       - feature/production-ready-fixes
       - feature/shopkeeper-production-hardening
       - fix/account-scoped-sync-queue
+      - fix/production-audit-2026-10
   pull_request:
     branches:
       - main
