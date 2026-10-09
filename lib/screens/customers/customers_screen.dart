@@ -177,7 +177,17 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                 ],
                               ),
                             );
-                            if (confirmed == true && context.mounted) await context.read<CustomerProvider>().delete(customer.id);
+                            if (confirmed == true && context.mounted) {
+                              try {
+                                await context.read<CustomerProvider>().delete(customer.id);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Customer was not deleted because sync could not be queued: $e')),
+                                  );
+                                }
+                              }
+                            }
                           }
                         },
                         itemBuilder: (_) => const [
