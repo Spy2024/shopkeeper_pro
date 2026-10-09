@@ -226,7 +226,7 @@ class BackupRestoreService {
           pw.Text(shop['address'] as String),
         if ((shop['phone'] as String?)?.isNotEmpty == true)
           pw.Text('Phone: ${shop['phone']}'),
-        const pw.SizedBox(height: 8),
+        pw.SizedBox(height: 8),
         pw.Text('Generated: ${DateTime.now().toLocal().toString().substring(0, 16)}'),
         pw.Divider(),
         pw.Text('Financial Summary', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
@@ -242,7 +242,7 @@ class BackupRestoreService {
             ['Products in inventory', '${productRows.length}'],
           ],
         ),
-        const pw.SizedBox(height: 16),
+        pw.SizedBox(height: 16),
         pw.Text('Recent Bills', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
         pw.TableHelper.fromTextArray(
           headers: ['Date', 'Bill ID', 'Total (Rs.)'],
@@ -260,7 +260,7 @@ class BackupRestoreService {
             ];
           }).toList(),
         ),
-        const pw.SizedBox(height: 12),
+        pw.SizedBox(height: 12),
         pw.Text('This statement is generated from records currently stored on this device. Verify figures before using it for tax or legal purposes.'),
       ],
     ));
