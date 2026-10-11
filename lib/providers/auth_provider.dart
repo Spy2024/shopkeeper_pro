@@ -127,16 +127,20 @@ class AuthProvider extends ChangeNotifier {
     try {
       if (firebaseAvailable) {
         final ok = await FirebaseAuthService.instance.verifyOtp(otp);
-        if (ok) {
-          final user = FirebaseAuthService.instance.currentUser;
-          if (user != null) {
-            await DBService.instance.configureForUser(user.uid);
-          }
-          phoneNumber = user?.phoneNumber ?? phone;
-          userUid = user?.uid;
-          isLoggedIn = user != null;
+        if (!ok) return false;
+        final user = FirebaseAuthService.instance.currentUser;
+        if (user == null) {
+          isLoggedIn = false;
+          userUid = null;
+          phoneNumber = null;
+          errorMessage = 'No authenticated session was created. Please request a new code and try again.';
+          return false;
         }
-        return ok;
+        await DBService.instance.configureForUser(user.uid);
+        phoneNumber = user.phoneNumber ?? phone;
+        userUid = user.uid;
+        isLoggedIn = true;
+        return true;
       }
 
       final ok = AuthService.instance.verifyOtp(phone, otp);
