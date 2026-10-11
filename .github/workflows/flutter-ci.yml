@@ -43,6 +43,14 @@ jobs:
         run: flutter analyze
       - name: Run automated tests
         run: flutter test
+      - name: Build Android debug APK
+        run: flutter build apk --debug
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopkeeper-pro-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
       - name: Build release APK (manual opt-in only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_apk }}
         run: flutter build apk --release
