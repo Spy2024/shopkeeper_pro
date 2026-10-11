@@ -172,6 +172,8 @@ class PosProvider extends ChangeNotifier {
         costPrice: product.costPrice,
         sellingPrice: product.sellingPrice,
         lowStockThreshold: product.lowStockThreshold,
+        barcode: product.barcode,
+        expiryDate: product.expiryDate,
       );
       inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
     }
@@ -195,6 +197,8 @@ class PosProvider extends ChangeNotifier {
         costPrice: product.costPrice,
         sellingPrice: product.sellingPrice,
         lowStockThreshold: product.lowStockThreshold,
+        barcode: product.barcode,
+        expiryDate: product.expiryDate,
       );
       await _queueSafely(
         operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
@@ -293,6 +297,8 @@ class PosProvider extends ChangeNotifier {
         costPrice: resolvedProduct.costPrice,
         sellingPrice: resolvedProduct.sellingPrice,
         lowStockThreshold: resolvedProduct.lowStockThreshold,
+        barcode: resolvedProduct.barcode,
+        expiryDate: resolvedProduct.expiryDate,
       ).toMap(),
     );
     return refundAmount;
