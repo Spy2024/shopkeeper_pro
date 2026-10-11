@@ -22,6 +22,12 @@ class AuthProvider extends ChangeNotifier {
         final user = service.currentUser;
         if (user != null && user.email != null && !user.emailVerified) {
           await AuthService.instance.clearSession();
+          await DBService.instance.clearActiveUser();
+          isLoggedIn = false;
+          phoneNumber = null;
+          emailAddress = null;
+          userUid = null;
+          notifyListeners();
           return;
         }
         if (user != null) {
@@ -34,8 +40,16 @@ class AuthProvider extends ChangeNotifier {
           return;
         }
         // A configured Firebase app must not silently accept an old local demo
-        // session when there is no authenticated Firebase user.
+        // session when there is no authenticated Firebase user. Clear any
+        // in-memory database connection too, in case this check runs after a
+        // session was previously active in the same process.
         await AuthService.instance.clearSession();
+        await DBService.instance.clearActiveUser();
+        isLoggedIn = false;
+        phoneNumber = null;
+        emailAddress = null;
+        userUid = null;
+        notifyListeners();
         return;
       }
     } catch (e) {
@@ -44,6 +58,11 @@ class AuthProvider extends ChangeNotifier {
       // demo/local session after a Firebase error could expose another local
       // account while the real authenticated identity is unavailable.
       if (firebaseAvailable) {
+        try {
+          await DBService.instance.clearActiveUser();
+        } catch (closeError) {
+          debugPrint('[Auth] Could not close the previous local database: $closeError');
+        }
         isLoggedIn = false;
         phoneNumber = null;
         emailAddress = null;
