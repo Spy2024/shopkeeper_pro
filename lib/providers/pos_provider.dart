@@ -7,6 +7,30 @@ import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 import 'inventory_provider.dart';
 
+/// Resolves bill items to inventory records without silently switching product
+/// identity. Name-based lookup is retained only for legacy items without an ID.
+Product? resolveProductForBillItem(BillItem item, List<Product> products) {
+  final productId = item.productId;
+  if (productId != null) {
+    for (final product in products) {
+      if (product.id == productId) return product;
+    }
+    return null;
+  }
+
+  // Older/manual cart entries sometimes stored the product ID in the name field.
+  final legacyValue = item.productName.trim();
+  for (final product in products) {
+    if (product.id == legacyValue) return product;
+  }
+
+  final normalizedName = legacyValue.toLowerCase();
+  for (final product in products) {
+    if (product.name.trim().toLowerCase() == normalizedName) return product;
+  }
+  return null;
+}
+
 class PosProvider extends ChangeNotifier {
   final List<BillItem> cart = [];
   double discount = 0;
@@ -72,16 +96,7 @@ class PosProvider extends ChangeNotifier {
     final quantitiesById = <String, int>{};
     final itemProducts = <BillItem, Product>{};
     for (final item in cart) {
-      Product? product = item.productId == null ? null : inventory.findById(item.productId!);
-      // Support older/manual cart entries where the product id was stored in the name field.
-      if (product == null && item.productId == null) {
-        product = inventory.findById(item.productName.trim());
-      }
-      if (product == null) {
-        for (final candidate in inventory.products) {
-          if (candidate.name.trim().toLowerCase() == item.productName.trim().toLowerCase()) { product = candidate; break; }
-        }
-      }
+      final product = resolveProductForBillItem(item, inventory.products);
       if (product == null) throw StateError('Product not found: ${item.productName}');
       if (item.quantity <= 0 || item.unitPrice <= 0) throw StateError('Invalid quantity or price');
       productsById[product.id] = product;
@@ -185,22 +200,21 @@ class PosProvider extends ChangeNotifier {
     if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
     if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
 
-    Product? product = item.productId == null
-        ? null
-        : inventory.findById(item.productId!);
-    product ??= inventory.products.cast<Product?>().firstWhere(
-      (candidate) => candidate?.name.trim().toLowerCase() == item.productName.trim().toLowerCase(),
-      orElse: () => null,
-    );
+    final product = resolveProductForBillItem(item, inventory.products);
     if (product == null) {
       throw StateError('The returned product is no longer in inventory: ${item.productName}');
     }
 
     final resolvedProduct = product;
-    final soldQuantity = bill.items.where((candidate) =>
-      candidate.productId == resolvedProduct.id ||
-      candidate.productName.trim().toLowerCase() == resolvedProduct.name.trim().toLowerCase()
-    ).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+    final soldQuantity = bill.items.where((candidate) {
+      if (candidate.productId != null) {
+        return candidate.productId == resolvedProduct.id;
+      }
+      // Legacy bills have no stable product ID, so retain name matching only
+      // for those historical rows.
+      return candidate.productName.trim().toLowerCase() ==
+          resolvedProduct.name.trim().toLowerCase();
+    }).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
