@@ -175,33 +175,29 @@ class PosProvider extends ChangeNotifier {
       );
       inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
     }
-    try {
-      await SyncQueueService.instance.queueOperation(
-        operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
-      for (var i = 0; i < bill.items.length; i++) {
-        await SyncQueueService.instance.queueOperation(
-          operation: 'create',
-          tableName: 'bills/${bill.id}/items',
-          documentId: itemCloudIds[i],
-          data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id},
-        );
-      }
-      for (final entry in newQuantities.entries) {
-        final product = productsById[entry.key]!;
-        final updated = Product(
-          id: product.id,
-          name: product.name,
-          category: product.category,
-          stockQuantity: entry.value,
-          costPrice: product.costPrice,
-          sellingPrice: product.sellingPrice,
-          lowStockThreshold: product.lowStockThreshold,
-        );
-        await SyncQueueService.instance.queueOperation(
-          operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
-      }
-    } catch (e) {
-      debugPrint('[PosProvider] Checkout saved locally; sync queue will reconcile on the next sync: $e');
+    await _queueSafely(
+      operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
+    for (var i = 0; i < bill.items.length; i++) {
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'bills/${bill.id}/items',
+        documentId: itemCloudIds[i],
+        data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id},
+      );
+    }
+    for (final entry in newQuantities.entries) {
+      final product = productsById[entry.key]!;
+      final updated = Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: entry.value,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        lowStockThreshold: product.lowStockThreshold,
+      );
+      await _queueSafely(
+        operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
     }
     savedBills.insert(0, bill); _billItemsCache[bill.id] = bill.items; clearCart(); return bill;
   }
@@ -281,29 +277,45 @@ class PosProvider extends ChangeNotifier {
     });
 
     inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
+    await _queueSafely(
+      operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
+    await _queueSafely(
+      operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
+    await _queueSafely(
+      operation: 'update',
+      tableName: 'products',
+      documentId: resolvedProduct.id,
+      data: Product(
+        id: resolvedProduct.id,
+        name: resolvedProduct.name,
+        category: resolvedProduct.category,
+        stockQuantity: newStock,
+        costPrice: resolvedProduct.costPrice,
+        sellingPrice: resolvedProduct.sellingPrice,
+        lowStockThreshold: resolvedProduct.lowStockThreshold,
+      ).toMap(),
+    );
+    return refundAmount;
+  }
+
+  Future<void> _queueSafely({
+    required String operation,
+    required String tableName,
+    required String documentId,
+    required Map<String, dynamic> data,
+  }) async {
     try {
       await SyncQueueService.instance.queueOperation(
-        operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
-      await SyncQueueService.instance.queueOperation(
-        operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
-      await SyncQueueService.instance.queueOperation(
-        operation: 'update',
-        tableName: 'products',
-        documentId: resolvedProduct.id,
-        data: Product(
-          id: resolvedProduct.id,
-          name: resolvedProduct.name,
-          category: resolvedProduct.category,
-          stockQuantity: newStock,
-          costPrice: resolvedProduct.costPrice,
-          sellingPrice: resolvedProduct.sellingPrice,
-          lowStockThreshold: resolvedProduct.lowStockThreshold,
-        ).toMap(),
+        operation: operation,
+        tableName: tableName,
+        documentId: documentId,
+        data: data,
       );
     } catch (e) {
-      debugPrint('[PosProvider] Return saved locally; sync queue will reconcile on the next sync: $e');
+      // Do not let one failed queue insert prevent later records from being
+      // queued. Local checkout/return data remains committed in SQLite.
+      debugPrint('[PosProvider] Could not queue $tableName/$documentId; next full sync should reconcile it: $e');
     }
-    return refundAmount;
   }
 
   Future<void> loadHistory() async {
