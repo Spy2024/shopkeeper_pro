@@ -2,6 +2,14 @@ import 'dart:io';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
+class LegacyDatabaseMigrationRequired implements Exception {
+  const LegacyDatabaseMigrationRequired();
+
+  @override
+  String toString() =>
+      'An older local database was found. Confirm that this data belongs to this account before importing it.';
+}
+
 class DBService {
   DBService._internal();
   static final DBService instance = DBService._internal();
@@ -11,8 +19,8 @@ class DBService {
   String? get activeUserId => _activeUserId;
 
   /// Selects a separate local database for each authenticated account.
-  /// Existing installs are migrated to the first account that signs in; the
-  /// legacy file is retained only if the scoped destination already exists.
+  /// Never assigns an unscoped legacy database to an account without explicit
+  /// confirmation from the user.
   Future<void> configureForUser(String userId) async {
     final cleanId = userId.trim();
     if (cleanId.isEmpty) throw ArgumentError('A non-empty user ID is required.');
@@ -31,14 +39,75 @@ class DBService {
     final legacyFile = File(legacyPath);
     final userFile = File(userPath);
     if (!await userFile.exists() && await legacyFile.exists()) {
-      await legacyFile.rename(userPath);
-      for (final suffix in ['-wal', '-shm']) {
-        final sidecar = File('$legacyPath$suffix');
-        if (await sidecar.exists()) {
-          await sidecar.rename('$userPath$suffix');
-        }
-      }
+      throw const LegacyDatabaseMigrationRequired();
     }
+    final openedDb = await _openAt(userPath);
+    _db = openedDb;
+    _activeUserId = cleanId;
+  }
+
+  /// Imports the old unscoped database only after the signed-in user explicitly
+  /// confirms ownership. The original legacy file is copied, not moved, so it
+  /// remains available for recovery if the imported database needs inspection.
+  Future<void> migrateLegacyDatabaseForUser(
+    String userId, {
+    required bool confirmOwnership,
+  }) async {
+    final cleanId = userId.trim();
+    if (cleanId.isEmpty) {
+      throw ArgumentError('A non-empty user ID is required.');
+    }
+    if (!confirmOwnership) {
+      throw StateError('Legacy database import requires explicit ownership confirmation.');
+    }
+    if (_activeUserId != null && _activeUserId != cleanId) {
+      await clearActiveUser();
+    } else if (_db != null) {
+      await clearActiveUser();
+    }
+
+    final dbPath = await getDatabasesPath();
+    final legacyPath = join(dbPath, 'shopkeeper_pro.db');
+    final safeId = cleanId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
+    final legacyFile = File(legacyPath);
+    final userFile = File(userPath);
+
+    if (!await userFile.exists()) {
+      if (!await legacyFile.exists()) {
+        throw StateError('The old local database could not be found. No data was imported.');
+      }
+      // The database connection is closed before copying. Copy sidecars too in
+      // case a platform still has SQLite WAL data waiting to be checkpointed.
+      await legacyFile.copy(userPath);
+      try {
+        for (final suffix in ['-wal', '-shm']) {
+          final source = File('$legacyPath$suffix');
+          if (await source.exists()) {
+            await source.copy('$userPath$suffix');
+          }
+        }
+        final imported = await _openAt(userPath);
+        _db = imported;
+        _activeUserId = cleanId;
+      } catch (_) {
+        _db = null;
+        _activeUserId = null;
+        for (final suffix in ['', '-wal', '-shm']) {
+          final copied = File('$userPath$suffix');
+          if (await copied.exists()) {
+            try {
+              await copied.delete();
+            } catch (_) {
+              // Preserve the original legacy database even if cleanup fails.
+            }
+          }
+        }
+        rethrow;
+      }
+      return;
+    }
+
     final openedDb = await _openAt(userPath);
     _db = openedDb;
     _activeUserId = cleanId;
