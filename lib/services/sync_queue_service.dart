@@ -60,7 +60,8 @@ class SyncQueueService {
       timestamp: now,
     );
     final db = await DBService.instance.database;
-    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final currentUid =
+        firebaseConfigured ? FirebaseAuth.instance.currentUser?.uid : null;
     if (DBService.instance.activeUserId != activeUserId ||
         (firebaseConfigured && currentUid != activeUserId) ||
         (currentUid != null && currentUid != activeUserId)) {
