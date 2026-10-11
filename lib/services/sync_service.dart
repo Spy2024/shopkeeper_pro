@@ -57,7 +57,31 @@ class SyncService {
 
   Future<void> syncNow(String userId) async {
     final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-    if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || _isSyncing || !await _checkOnline()) return;
+    if (userId.trim().isEmpty ||
+        authenticatedUid != userId ||
+        DBService.instance.activeUserId != userId ||
+        _isSyncing ||
+        !await _checkOnline()) {
+      return;
+    }
+
+    // A restored snapshot must be reconciled before ordinary bidirectional sync;
+    // otherwise cloud-only records could be downloaded and resurrected.
+    final db = await DBService.instance.database;
+    final pendingRestore = await db.query(
+      'sync_metadata',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['cloud_restore_pending'],
+      limit: 1,
+    );
+    if (pendingRestore.isNotEmpty) {
+      if (pendingRestore.first['value'] != userId) {
+        throw StateError('Pending restore belongs to a different account; refusing to sync.');
+      }
+      await replaceCloudWithLocalSnapshot(userId);
+    }
+    if (_isSyncing) return;
     _isSyncing = true;
     try {
       await SyncQueueService.instance.syncPendingOperations(userId);
@@ -110,6 +134,31 @@ class SyncService {
   /// Replaces this account's managed cloud data with the current local
   /// snapshot. Use only for an explicit restore; normal sync must merge first
   /// so cloud-only records are not accidentally deleted.
+  /// Retries a previously restored local snapshot when connectivity returns.
+  /// Returns false when reconciliation is still pending because the device is offline.
+  Future<bool> reconcilePendingRestoreIfOnline(String userId) async {
+    if (userId.trim().isEmpty ||
+        FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId) {
+      throw StateError('Sign in with the account that owns this data before syncing restored records.');
+    }
+    final db = await DBService.instance.database;
+    final pending = await db.query(
+      'sync_metadata',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['cloud_restore_pending'],
+      limit: 1,
+    );
+    if (pending.isEmpty) return true;
+    if (pending.first['value'] != userId) {
+      throw StateError('Pending restore belongs to a different account; refusing to sync.');
+    }
+    if (!await _checkOnline()) return false;
+    await replaceCloudWithLocalSnapshot(userId);
+    return true;
+  }
+
   Future<void> replaceCloudWithLocalSnapshot(String userId) async {
     await ensureCloudRestoreReady(userId);
     // Claim the lock before the first await in the destructive phase. If any
@@ -168,6 +217,11 @@ class SyncService {
       if (shopRows.isEmpty) {
         await shopRef.delete();
       }
+      await db.delete(
+        'sync_metadata',
+        where: 'key = ? AND value = ?',
+        whereArgs: ['cloud_restore_pending', userId],
+      );
     } finally {
       _isSyncing = false;
     }
