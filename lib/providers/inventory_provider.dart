@@ -11,6 +11,9 @@ class InventoryProvider extends ChangeNotifier {
   List<Product> get products => List.unmodifiable(_products);
   List<Product> get lowOrOutOfStock =>
       _products.where((p) => p.isLowStock || p.isOutOfStock).toList();
+  List<Product> get expiredProducts => _products.where((p) => p.isExpired).toList();
+  List<Product> get expiringSoonProducts =>
+      _products.where((p) => p.expiresWithin30Days).toList();
 
   Future<void> load() async {
     final db = await DBService.instance.database;
@@ -32,14 +35,17 @@ class InventoryProvider extends ChangeNotifier {
     final current = _products[index];
     _products[index] = Product(id: current.id, name: current.name, category: current.category,
       stockQuantity: stockQuantity, costPrice: current.costPrice, sellingPrice: current.sellingPrice,
-      lowStockThreshold: current.lowStockThreshold);
+      lowStockThreshold: current.lowStockThreshold, barcode: current.barcode,
+      expiryDate: current.expiryDate);
     notifyListeners();
   }
 
   Future<void> addProduct({required String name, required String category, required int stockQuantity,
-      required double costPrice, required double sellingPrice, int lowStockThreshold = 5}) async {
+      required double costPrice, required double sellingPrice, int lowStockThreshold = 5,
+      String? barcode, DateTime? expiryDate}) async {
     final cleanName = name.trim();
     final cleanCategory = category.trim();
+    final cleanBarcode = barcode?.trim().isEmpty == true ? null : barcode?.trim();
     if (cleanName.isEmpty) throw ArgumentError('Product name is required');
     if (stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
     if (costPrice < 0 || sellingPrice < 0) throw ArgumentError('Prices cannot be negative');
@@ -47,8 +53,12 @@ class InventoryProvider extends ChangeNotifier {
     if (_products.any((p) => p.name.trim().toLowerCase() == cleanName.toLowerCase())) {
       throw StateError('A product with this name already exists');
     }
+    if (cleanBarcode != null && _products.any((p) => p.barcode == cleanBarcode)) {
+      throw StateError('A product with this barcode already exists');
+    }
     final product = Product(id: _uuid.v4(), name: cleanName, category: cleanCategory,
-      stockQuantity: stockQuantity, costPrice: costPrice, sellingPrice: sellingPrice, lowStockThreshold: lowStockThreshold);
+      stockQuantity: stockQuantity, costPrice: costPrice, sellingPrice: sellingPrice,
+      lowStockThreshold: lowStockThreshold, barcode: cleanBarcode, expiryDate: expiryDate);
     final db = await DBService.instance.database;
     await db.insert('products', product.toMap());
     await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'products',
@@ -66,9 +76,13 @@ class InventoryProvider extends ChangeNotifier {
     if (_products.any((p) => p.id != product.id && p.name.trim().toLowerCase() == cleanName.toLowerCase())) {
       throw StateError('A product with this name already exists');
     }
+    final cleanBarcode = product.barcode?.trim().isEmpty == true ? null : product.barcode?.trim();
+    if (cleanBarcode != null && _products.any((p) => p.id != product.id && p.barcode == cleanBarcode)) {
+      throw StateError('A product with this barcode already exists');
+    }
     final updated = Product(id: product.id, name: cleanName, category: product.category.trim(),
       stockQuantity: product.stockQuantity, costPrice: product.costPrice, sellingPrice: product.sellingPrice,
-      lowStockThreshold: product.lowStockThreshold);
+      lowStockThreshold: product.lowStockThreshold, barcode: cleanBarcode, expiryDate: product.expiryDate);
     final db = await DBService.instance.database;
     final changed = await db.update('products', updated.toMap(), where: 'id = ?', whereArgs: [updated.id]);
     if (changed != 1) throw StateError('Product not found');
@@ -96,13 +110,15 @@ class InventoryProvider extends ChangeNotifier {
     if (product.stockQuantity < quantitySold) throw StateError('Insufficient stock');
     final updated = Product(id: product.id, name: product.name, category: product.category,
       stockQuantity: product.stockQuantity - quantitySold, costPrice: product.costPrice,
-      sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
+      sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold,
+      barcode: product.barcode, expiryDate: product.expiryDate);
     await updateProduct(updated);
   }
 
   List<Product> search(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return products;
-    return _products.where((p) => p.name.toLowerCase().contains(q)).toList();
+    return _products.where((p) => p.name.toLowerCase().contains(q) ||
+        (p.barcode?.toLowerCase().contains(q) ?? false)).toList();
   }
 }
