@@ -5,6 +5,7 @@ class Shop {
   String phone;
   String? taxNumber;
   String? logoPath;
+  String businessType;
 
   Shop({
     required this.id,
@@ -13,6 +14,7 @@ class Shop {
     required this.phone,
     this.taxNumber,
     this.logoPath,
+    this.businessType = 'general_retail',
   });
 
   Map<String, dynamic> toMap() => {
@@ -22,6 +24,7 @@ class Shop {
         'phone': phone,
         'taxNumber': taxNumber,
         'logoPath': logoPath,
+        'businessType': businessType,
       };
 
   factory Shop.fromMap(Map<String, dynamic> map) => Shop(
@@ -31,5 +34,6 @@ class Shop {
         phone: (map['phone'] as String?) ?? '',
         taxNumber: map['taxNumber'] as String?,
         logoPath: map['logoPath'] as String?,
+        businessType: (map['businessType'] as String?) ?? 'general_retail',
       );
 }
