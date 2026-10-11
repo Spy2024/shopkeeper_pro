@@ -6,6 +6,7 @@ import 'package:shopkeeper_pro/models/supplier.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 import 'package:shopkeeper_pro/providers/supplier_provider.dart';
 import 'package:shopkeeper_pro/services/backup_restore_service.dart';
+import 'package:shopkeeper_pro/services/sync_service.dart';
 
 void main() {
   group('Shopkeeper business-flow tests', () {
@@ -281,6 +282,36 @@ void main() {
         ),
         throwsStateError,
       );
+    });
+
+    test('cloud child rows do not reuse device-local SQLite IDs', () {
+      final cloudRow = prepareChildRowForCloud({
+        'id': 47,
+        'cloudId': 'stable-child-id',
+        'billId': 'bill-1',
+        'productId': 'tea-id',
+        'quantity': 2,
+      }, 'stable-child-id');
+
+      expect(cloudRow.containsKey('id'), isFalse);
+      expect(cloudRow['cloudId'], 'stable-child-id');
+      expect(cloudRow['billId'], 'bill-1');
+      expect(cloudRow['quantity'], 2);
+    });
+
+    test('pulled child rows get a stable cloud ID and a fresh local key', () {
+      final localRow = prepareChildRowForLocal({
+        'id': 47,
+        'cloudId': 'old-cloud-id',
+        'billId': 'bill-1',
+        'quantity': 2,
+        'updatedAt': 'server-timestamp',
+      }, 'stable-cloud-id');
+
+      expect(localRow.containsKey('id'), isFalse);
+      expect(localRow['cloudId'], 'stable-cloud-id');
+      expect(localRow.containsKey('updatedAt'), isFalse);
+      expect(localRow['billId'], 'bill-1');
     });
 
     test('supplier balance cannot be negative conceptually', () {
