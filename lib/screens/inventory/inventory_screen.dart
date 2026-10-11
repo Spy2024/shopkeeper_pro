@@ -334,7 +334,7 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                'Could not save product: ${e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', '')}',
+                                "Could not save product: ${e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', '')}",
                               ),
                             ),
                           );
