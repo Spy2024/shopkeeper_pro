@@ -341,6 +341,17 @@ class SyncService {
     return rows.isNotEmpty;
   }
 
+  Future<bool> _hasPendingForTable(Database db, String tableName) async {
+    final rows = await db.query(
+      'sync_queue',
+      columns: ['id'],
+      where: 'synced = 0 AND tableName = ?',
+      whereArgs: [tableName],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
   Future<void> syncFromCloud(String userId, {bool lockAlreadyHeld = false}) async {
     final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
     if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || (!lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
@@ -368,7 +379,8 @@ class SyncService {
         final bill = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('bills', bill, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
-        if (await _hasPending(db, doc.id, 'bills')) continue;
+        // Do not replace local child rows while offline bill-item edits are queued.
+        if (await _hasPendingForTable(db, 'bills/${doc.id}/items')) continue;
         await db.delete('bill_items', where: 'billId = ?', whereArgs: [doc.id]);
         for (final item in items.docs) {
           final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
@@ -411,7 +423,8 @@ class SyncService {
         final order = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('supplier_orders', order, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
-        if (await _hasPending(db, doc.id, 'supplier_orders')) continue;
+        // Preserve locally edited order items until their queued writes succeed.
+        if (await _hasPendingForTable(db, 'supplier_orders/${doc.id}/items')) continue;
         await db.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [doc.id]);
         for (final item in items.docs) {
           final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
