@@ -10,6 +10,7 @@
 - [x] Business-type selector and persistent business type on shop profile (initial foundation).
 - [ ] Selectable module enable/disable controls with module dependencies and per-business defaults.
 - [ ] Business types: general retail/general store, supermarket, wholesale/distribution, clothing/garments, shoes/footwear, mobile/electronics, pharmacy/medical store, cosmetics, hardware/building materials, restaurant/cafe, car showroom/dealership, motorcycle showroom, vehicle workshop/service center, trucking/fleet, passenger transport, goods/cargo transport, rent-a-car, public service office, private services/agency, repair/maintenance, salon/spa, school/academy, clinic/healthcare, agriculture/farm supplies, construction/contractor, and other/custom.
+- [x] Spare-parts business type catalog entries: all-purpose spare parts, bike/motorcycle, car/auto, truck/bus/heavy vehicle, mobile phone, computer/laptop, home appliances, electrical/electronics, industrial machinery, tractor/agricultural machinery, generator/engine, plumbing/sanitary fittings, and other spare parts.
 - [ ] Common platform behavior: offline-first where practical, clear sync state, conflict handling, audit history, data export, accessibility, responsive layouts, localization, and safe upgrades.
 - [ ] Role and entitlement checks must be enforced in providers/services and backend rules, not only by hiding UI.
 
@@ -97,17 +98,27 @@
 - [ ] Customer KYC fields only when legally necessary, protected by role access and retention policy.
 - [ ] Commission, deal costs, warranty/service history, vehicle margin and showroom stock reports.
 
-### 8.5 Workshop/service center/repair
+#### 8.6 Spare-parts shops
+- [ ] Part master: internal SKU, manufacturer/OEM part number, alternate/cross-reference part numbers, barcode(s), brand, category, description, unit/pack size, purchase cost, retail/wholesale prices, tax, supplier, bin/rack location, minimum stock, current stock, images, active status and audit timestamps.
+- [ ] Fitment/compatibility: vehicle/device/machine type, make, model, model year, variant, engine/capacity, side/position, connector/specification and compatible part references; allow one part to fit multiple models and one model to have multiple equivalent parts.
+- [ ] Motorcycle/bike, car, truck/bus/heavy vehicle, mobile, computer/laptop, home appliance, electrical/electronics, industrial machinery, tractor/agricultural machinery, generator/engine, plumbing/sanitary and custom parts categories.
+- [ ] Fast part-number search, barcode lookup, aliases, OEM/aftermarket distinction, compatible alternatives, superseded parts and duplicate-part warnings.
+- [ ] Purchase receiving, supplier returns, sales, customer returns, stock adjustments, reserved stock, multi-location bins and a complete immutable stock movement ledger.
+- [ ] Warranty duration/terms, serial or batch tracking where appropriate, defective/returned part handling and warranty claim history.
+- [ ] Reports: stock by part/category/brand/fitment, low stock, dead/slow-moving parts, purchase-price changes, gross margin and stock valuation.
+- [ ] Prevent selling a part that does not match the selected vehicle/device when compatibility is known; permit an explicit authorized override with an audit reason.
+
+## 8.7 Workshop/service center/repair
 - [ ] Job card: customer, vehicle/device, serial/IMEI, reported issue, inspection, estimate, approval, assigned technician, labour, parts, status, promised date and sign-off.
 - [ ] Service catalogue, labour rates, parts consumption, warranty jobs, subcontracting, customer updates, final invoice and service history.
 - [ ] Appointment calendar, technician workload, turnaround time and job profitability.
 
-### 8.6 Public/private service office and other services
+### 8.8 Public/private service office and other services
 - [ ] Service catalogue, request/case number, applicant/customer, required documents, appointments/queue, assigned staff, status, fee/quote, receipts, SLA/deadline, notes and audit history.
 - [ ] Public-sector deployments must not imply government affiliation; configure legal notices, data minimization, access control and retention requirements.
 - [ ] Agency/project work: proposals, milestones, timesheets, deliverables, invoices, deposits, expenses and project profitability.
 
-### 8.7 Other verticals
+### 8.9 Other verticals
 - [ ] Restaurant: menu/recipes, tables, kitchen orders, modifiers, wastage, ingredient stock and delivery.
 - [ ] Clothing/shoes: size/color variants, exchange workflow and seasonal stock.
 - [ ] Pharmacy: batches, expiry, supplier traceability and jurisdiction-specific safeguards.
@@ -166,6 +177,6 @@
 
 ## Current implementation notes
 
-- Business type selection is being added to shop setup/profile; the list of default modules is a configuration catalog, not yet a promise that each vertical's workflows are functional.
+- Business type selection is present in shop setup/profile. The catalog now includes dedicated spare-parts categories; these are configuration options only, not proof that part fitment, cross-reference search or spare-parts workflows are operational.
 - A local branches table is a schema foundation only; branch CRUD, transfer ledger, permissions, cloud sync and consolidated reports remain pending.
 - CI passing proves only the automated checks included in that run. It does not prove production Firebase, printer, device, web or release readiness.
