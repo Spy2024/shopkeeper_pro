@@ -192,6 +192,10 @@ class AuthProvider extends ChangeNotifier {
       if (user == null) throw StateError('Account creation failed.');
       if (user.emailVerified) {
         await DBService.instance.configureForUser(user.uid);
+      } else {
+        // Never leave a previous account's local database active while the
+        // newly created Firebase account is still unverified.
+        await DBService.instance.clearActiveUser();
       }
       emailAddress = user.email;
       userUid = user.uid;
@@ -224,6 +228,10 @@ class AuthProvider extends ChangeNotifier {
       if (user == null) throw StateError('Sign in failed.');
       if (user.emailVerified) {
         await DBService.instance.configureForUser(user.uid);
+      } else {
+        // Signing in to an unverified account must not retain another user's
+        // previously active local database connection.
+        await DBService.instance.clearActiveUser();
       }
       emailAddress = user.email;
       userUid = user.uid;
