@@ -3,6 +3,7 @@ import 'package:shopkeeper_pro/models/bill.dart';
 import 'package:shopkeeper_pro/models/daily_sale.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/models/supplier.dart';
+import 'package:shopkeeper_pro/providers/pos_provider.dart';
 
 void main() {
   group('Shopkeeper business-flow tests', () {
@@ -14,6 +15,22 @@ void main() {
       final p = Product(id: 'p1', name: 'Tea', category: 'Grocery',
         stockQuantity: 50, costPrice: 80, sellingPrice: 120);
       expect(p.stockQuantity - 2, 48);
+    });
+
+    test('checkout validation blocks expired products but allows valid stock', () {
+      final expired = Product(
+        id: 'expired', name: 'Expired milk', category: 'Dairy',
+        stockQuantity: 4, costPrice: 80, sellingPrice: 120,
+        expiryDate: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      expect(() => validateProductCanBeSold(expired), throwsStateError);
+
+      final valid = Product(
+        id: 'valid', name: 'Fresh milk', category: 'Dairy',
+        stockQuantity: 4, costPrice: 80, sellingPrice: 120,
+        expiryDate: DateTime.now().add(const Duration(days: 1)),
+      );
+      expect(() => validateProductCanBeSold(valid), returnsNormally);
     });
 
     test('product barcode and expiry survive map round-trip', () {
