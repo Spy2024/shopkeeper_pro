@@ -111,6 +111,35 @@ void main() {
       expect(provider.grandTotal, 0);
     });
   });
+  group('Return inventory linkage', () {
+    test('rejects manual bill-only lines from the stock return flow', () {
+      final item = BillItem(
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 100,
+      );
+
+      expect(
+        () => validateReturnItemIsInventoryLinked(item),
+        throwsStateError,
+      );
+    });
+
+    test('allows returns for bill lines linked to an inventory product', () {
+      final item = BillItem(
+        productId: 'tea-1',
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 100,
+      );
+
+      expect(
+        () => validateReturnItemIsInventoryLinked(item),
+        returnsNormally,
+      );
+    });
+  });
+
   group('Return line quantity isolation', () {
     final product = Product(
       id: 'tea-1',
