@@ -6,6 +6,38 @@ import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 import 'inventory_provider.dart';
 
+/// Resolves order lines to stable product IDs and sums duplicate lines.
+Map<String, int> aggregatePurchaseOrderQuantities({
+  required List<SupplierOrderItem> items,
+  required List<Product> products,
+}) {
+  if (items.isEmpty) throw StateError('Cannot receive an empty purchase order');
+  final quantitiesByProductId = <String, int>{};
+  for (final item in items) {
+    if (item.requiredQuantity <= 0 ||
+        !item.estimatedPrice.isFinite ||
+        item.estimatedPrice < 0) {
+      throw StateError('Purchase order contains an invalid quantity or price');
+    }
+    final normalizedName = item.productName.trim().toLowerCase();
+    final matches = products.where(
+      (p) => p.name.trim().toLowerCase() == normalizedName,
+    );
+    if (normalizedName.isEmpty || matches.length != 1) {
+      throw StateError(
+        matches.isEmpty
+            ? 'Product not found: ${item.productName}'
+            : 'Product name is ambiguous: ${item.productName}',
+      );
+    }
+    final productId = matches.single.id;
+    final nextQuantity = (quantitiesByProductId[productId] ?? 0) + item.requiredQuantity;
+    if (nextQuantity <= 0) throw StateError('Purchase quantity overflow');
+    quantitiesByProductId[productId] = nextQuantity;
+  }
+  return quantitiesByProductId;
+}
+
 class SupplierProvider extends ChangeNotifier {
   final List<Supplier> _suppliers = [];
   final List<SupplierOrder> _orders = [];
@@ -119,36 +151,16 @@ class SupplierProvider extends ChangeNotifier {
       throw StateError('Purchase order total is invalid');
     }
 
-    // Resolve and aggregate before touching SQLite. Multiple order lines for
-    // one product must add together rather than overwrite one another using
-    // the same stale in-memory stock value.
-    final quantitiesByProductId = <String, int>{};
-    final productsById = <String, Product>{};
-    for (final item in order.items) {
-      if (item.requiredQuantity <= 0 ||
-          !item.estimatedPrice.isFinite ||
-          item.estimatedPrice < 0) {
-        throw StateError('Purchase order contains an invalid quantity or price');
-      }
-      final normalizedName = item.productName.trim().toLowerCase();
-      final matches = inventory.products.where(
-        (p) => p.name.trim().toLowerCase() == normalizedName,
-      );
-      if (normalizedName.isEmpty || matches.length != 1) {
-        throw StateError(
-          matches.isEmpty
-              ? 'Product not found: ${item.productName}'
-              : 'Product name is ambiguous: ${item.productName}',
-        );
-      }
-      final product = matches.single;
-      productsById[product.id] = product;
-      quantitiesByProductId.update(
-        product.id,
-        (quantity) => quantity + item.requiredQuantity,
-        ifAbsent: () => item.requiredQuantity,
-      );
-    }
+    // Aggregate duplicate order lines so each product stock row is updated
+    // once using the current database quantity.
+    final quantitiesByProductId = aggregatePurchaseOrderQuantities(
+      items: order.items,
+      products: inventory.products,
+    );
+    final productsById = <String, Product>{
+      for (final product in inventory.products)
+        if (quantitiesByProductId.containsKey(product.id)) product.id: product,
+    };
 
     final db = await DBService.instance.database;
     final newStockByProductId = <String, int>{};
