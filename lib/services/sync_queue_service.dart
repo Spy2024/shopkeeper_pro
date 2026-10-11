@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
@@ -37,8 +38,13 @@ class SyncQueueService {
     if (activeUserId == null || activeUserId.trim().isEmpty) {
       throw StateError('Sign in before adding operations to the sync queue.');
     }
-    final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-    if (authenticatedUid != null && authenticatedUid != activeUserId) {
+    // Demo/local-only sessions have no Firebase app. When Firebase is
+    // configured, however, an absent or different auth UID must fail closed.
+    final firebaseConfigured = Firebase.apps.isNotEmpty;
+    final authenticatedUid =
+        firebaseConfigured ? FirebaseAuth.instance.currentUser?.uid : null;
+    if ((firebaseConfigured && authenticatedUid != activeUserId) ||
+        (authenticatedUid != null && authenticatedUid != activeUserId)) {
       throw StateError('The active database does not belong to the authenticated account.');
     }
     if (_loadedQueueUserId != activeUserId) {
