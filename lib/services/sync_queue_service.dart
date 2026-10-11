@@ -187,9 +187,27 @@ class SyncQueueService {
   }
 
   Future<void> clearFailedOperations() async {
+    final activeUserId = DBService.instance.activeUserId;
+    final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+    if (activeUserId == null ||
+        activeUserId.isEmpty ||
+        authenticatedUid != activeUserId) {
+      throw StateError('Sign in with the account that owns this sync queue before clearing pending operations.');
+    }
+
     final db = await DBService.instance.database;
+    // Recheck ownership after awaiting database access to avoid clearing a
+    // queue if the active account changed while the database was opening.
+    if (DBService.instance.activeUserId != activeUserId ||
+        FirebaseAuth.instance.currentUser?.uid != activeUserId) {
+      throw StateError('The active account changed; pending operations were not cleared.');
+    }
     await db.delete(queueTableName, where: 'synced = 0');
-    _pendingQueue.clear();
+    if (_loadedQueueUserId == activeUserId) {
+      _pendingQueue.clear();
+    } else {
+      await _loadPendingQueue(expectedUserId: activeUserId);
+    }
   }
 }
 
