@@ -5,7 +5,7 @@ import 'package:shopkeeper_pro/models/shop.dart';
 
 void main() {
   group('BusinessTypes catalog', () {
-    test('contains the agreed retail, transport, showroom and service types', () {
+    test('contains the agreed retail, transport, showroom, service and spare-parts types', () {
       final ids = BusinessTypes.all.map((type) => type.id).toSet();
 
       expect(ids.length, BusinessTypes.all.length);
@@ -20,6 +20,19 @@ void main() {
         'public_services',
         'private_services',
         'vehicle_workshop',
+        'spare_parts',
+        'motorcycle_spare_parts',
+        'car_spare_parts',
+        'heavy_vehicle_spare_parts',
+        'mobile_spare_parts',
+        'computer_spare_parts',
+        'home_appliance_spare_parts',
+        'electrical_electronics_parts',
+        'industrial_machinery_parts',
+        'agricultural_machinery_parts',
+        'generator_engine_parts',
+        'plumbing_sanitary_parts',
+        'other_spare_parts',
         'other',
       ]));
     });
@@ -31,6 +44,25 @@ void main() {
         expect(type.defaultModules.toSet().length, type.defaultModules.length,
             reason: 'Duplicate default module in ${type.id}');
       }
+    });
+
+    test('spare-parts types include part catalog and fitment-related modules', () {
+      final types = BusinessTypes.all.where((type) => type.id.contains('spare_parts'));
+      expect(types, isNotEmpty);
+      for (final type in types) {
+        expect(type.defaultModules, contains('part_catalog'), reason: type.id);
+        expect(type.defaultModules, contains('inventory'), reason: type.id);
+        expect(type.defaultModules, contains('purchases'), reason: type.id);
+        expect(type.defaultModules, contains('stock_ledger'), reason: type.id);
+      }
+      expect(
+        BusinessTypes.byId('mobile_spare_parts').defaultModules,
+        contains('device_model_compatibility'),
+      );
+      expect(
+        BusinessTypes.byId('car_spare_parts').defaultModules,
+        contains('fitment_compatibility'),
+      );
     });
 
     test('unknown business type falls back safely to general retail', () {
