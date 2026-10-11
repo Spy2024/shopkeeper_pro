@@ -57,10 +57,15 @@ class FinancialStatementTotals {
     });
     final refunds = returnRows.fold<double>(
       0, (sum, row) => sum + number(row['refundAmount']));
-    // Only POS/return rows match billed transactions. Manual sales are not
-    // included here because they do not contribute to the bill totals above.
-    final costOfGoods = dailySalesRows.fold<double>(
-      0, (sum, row) => sum + number(row['costPrice']) * number(row['quantity']));
+    // Bill totals above represent POS bills only. Include COGS for POS sales
+    // and their returns, but exclude manually entered sales to avoid reducing
+    // profit for revenue that is not part of billedSales.
+    final costOfGoods = dailySalesRows
+        .where((row) => row['source'] == 'pos' || row['source'] == 'return')
+        .fold<double>(
+          0,
+          (sum, row) => sum + number(row['costPrice']) * number(row['quantity']),
+        );
     final expenses = expenseRows.fold<double>(
       0, (sum, row) => sum + number(row['amount']));
     final stockValue = productRows.fold<double>(
