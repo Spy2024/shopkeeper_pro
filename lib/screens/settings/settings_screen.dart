@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../providers/auth_provider.dart';
+import 'branches_screen.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/inventory_provider.dart';
 import '../../providers/pos_provider.dart';
@@ -279,6 +280,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: _busy ? null : () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ShopProfileScreen()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: const Text('Branch management'),
+              subtitle: const Text('Create and manage local branch records; transaction assignment and cloud sync are still being built.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _busy ? null : () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BranchesScreen()),
               ),
             ),
           ),
