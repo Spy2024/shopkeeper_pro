@@ -116,6 +116,7 @@ class SyncService {
   }
 
   Future<void> _writeBatch(String userId, String collectionName, List<Map<String, dynamic>> rows) async {
+    _ensureActiveAccount(userId);
     for (var start = 0; start < rows.length; start += 400) {
       final end = ((start + 400) > rows.length) ? rows.length : start + 400;
       final batch = _dbFirestore.batch();
@@ -126,11 +127,13 @@ class SyncService {
         row['updatedAt'] ??= FieldValue.serverTimestamp();
         batch.set(_collection(userId, collectionName).doc(id), row, SetOptions(merge: true));
       }
+      _ensureActiveAccount(userId);
       await batch.commit();
     }
   }
 
   Future<void> _writeChildBatch(String userId, String parentCollection, String parentId, String childCollection, List<Map<String, dynamic>> rows) async {
+    _ensureActiveAccount(userId);
     for (var start = 0; start < rows.length; start += 400) {
       final end = ((start + 400) > rows.length) ? rows.length : start + 400;
       final batch = _dbFirestore.batch();
@@ -142,6 +145,7 @@ class SyncService {
         row['updatedAt'] ??= FieldValue.serverTimestamp();
         batch.set(parent.collection(childCollection).doc(id), row, SetOptions(merge: true));
       }
+      _ensureActiveAccount(userId);
       await batch.commit();
     }
   }
@@ -181,11 +185,14 @@ class SyncService {
     _isSyncing = true;
     try {
       final db = await DBService.instance.database;
+      _ensureActiveAccount(userId);
       final shopRows = await db.query('shop', limit: 1);
+      _ensureActiveAccount(userId);
 
       // Phase 1: upsert the complete local snapshot. Do not delete anything
       // until every local collection and child collection has been uploaded.
       await _pushLocal(userId);
+      _ensureActiveAccount(userId);
 
       // Phase 2: remove only cloud records absent from the restored snapshot.
       // Reconcile child collections before deleting parent documents because
@@ -314,8 +321,11 @@ class SyncService {
 
   Future<void> _pushLocal(String userId) async {
     final db = await DBService.instance.database;
+    _ensureActiveAccount(userId);
     final shopRows = await db.query('shop', limit: 1);
+    _ensureActiveAccount(userId);
     if (shopRows.isNotEmpty) {
+      _ensureActiveAccount(userId);
       await _collection(userId, 'shop').doc('profile').set({...Map<String, dynamic>.from(shopRows.first), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
     }
     await _writeBatch(userId, 'products', await _maps(db, 'products'));
