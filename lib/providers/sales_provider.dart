@@ -4,6 +4,22 @@ import '../models/daily_sale.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 
+void validateManualSaleInput({
+  required String productName,
+  required double costPrice,
+  required double salePrice,
+  required int quantity,
+}) {
+  if (productName.trim().isEmpty ||
+      !costPrice.isFinite ||
+      !salePrice.isFinite ||
+      costPrice < 0 ||
+      salePrice < 0 ||
+      quantity <= 0) {
+    throw ArgumentError('Invalid sale');
+  }
+}
+
 class SalesProvider extends ChangeNotifier {
   final List<DailySale> _sales = [];
   final _uuid = const Uuid();
@@ -21,14 +37,12 @@ class SalesProvider extends ChangeNotifier {
 
   Future<void> addRow({required String productName, required double costPrice, required double salePrice, int quantity = 1, DateTime? date}) async {
     final cleanName = productName.trim();
-    if (cleanName.isEmpty ||
-        !costPrice.isFinite ||
-        !salePrice.isFinite ||
-        costPrice < 0 ||
-        salePrice < 0 ||
-        quantity <= 0) {
-      throw ArgumentError('Invalid sale');
-    }
+    validateManualSaleInput(
+      productName: cleanName,
+      costPrice: costPrice,
+      salePrice: salePrice,
+      quantity: quantity,
+    );
     final db = await DBService.instance.database;
     final sale = DailySale(id: _uuid.v4(), date: date ?? DateTime.now(), productName: cleanName,
       costPrice: costPrice, salePrice: salePrice, quantity: quantity, source: 'manual');
