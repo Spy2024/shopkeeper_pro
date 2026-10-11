@@ -128,23 +128,34 @@ class BackupRestoreService {
     'expenses',
   ];
 
-  Future<void> _requireOwner(String userId) async {
+  void _ensureOwnerStillActive(String userId) {
     if (userId.trim().isEmpty || DBService.instance.activeUserId != userId) {
       throw StateError('The active local database does not belong to this account.');
     }
   }
 
+  Future<void> _requireOwner(String userId) async {
+    _ensureOwnerStillActive(userId);
+  }
+
   Future<File> createBackup(String userId) async {
     await _requireOwner(userId);
     final db = await DBService.instance.database;
+    await _requireOwner(userId);
     final tables = <String, List<Map<String, dynamic>>>{};
     // Read every table from one SQLite transaction so a concurrent checkout
     // cannot produce a backup with bills from one moment and stock from another.
+    // Recheck ownership inside the transaction: a sign-out/account switch must
+    // not let rows from the previous database be exported under another user ID.
     await db.transaction((txn) async {
+      _ensureOwnerStillActive(userId);
       for (final table in _tables) {
+        _ensureOwnerStillActive(userId);
         tables[table] = await txn.query(table);
       }
+      _ensureOwnerStillActive(userId);
     });
+    await _requireOwner(userId);
     final now = DateTime.now().toUtc();
     final payload = <String, dynamic>{
       'format': 'shopkeeper-pro-backup',
@@ -274,7 +285,9 @@ class BackupRestoreService {
     }
 
     final db = await DBService.instance.database;
+    await _requireOwner(userId);
     await db.transaction((txn) async {
+      _ensureOwnerStillActive(userId);
       for (final table in [
         'bill_returns',
         'bill_items',
@@ -291,13 +304,17 @@ class BackupRestoreService {
         'shop',
         'sync_queue',
       ]) {
+        _ensureOwnerStillActive(userId);
         await txn.delete(table);
       }
       for (final table in _tables) {
+        _ensureOwnerStillActive(userId);
         for (final row in rowsByTable[table]!) {
+          _ensureOwnerStillActive(userId);
           await txn.insert(table, row, conflictAlgorithm: ConflictAlgorithm.abort);
         }
       }
+      _ensureOwnerStillActive(userId);
       // Persist reconciliation intent in the same SQLite transaction as the
       // restored rows, so an app interruption cannot silently skip cloud cleanup.
       await txn.insert(
@@ -306,6 +323,7 @@ class BackupRestoreService {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     });
+    await _requireOwner(userId);
     await SyncQueueService.instance.reloadPendingQueue();
     debugPrint('[Backup] Restore completed for account $userId');
   }
