@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/bill.dart';
 import '../models/shop.dart';
 import '../models/supplier.dart';
+import '../models/daily_sale.dart';
 
 class PdfService {
   static final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
@@ -135,6 +136,128 @@ class PdfService {
 
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/purchase_order_$orderId.pdf');
+    await file.writeAsBytes(await doc.save());
+    return file;
+  }
+
+
+  /// Creates an A4 sales-and-expenses statement for the selected inclusive date range.
+  /// This report is based on recorded daily sales and expenses; it does not yet
+  /// reconcile customer credit balances, supplier payables, or recorded returns.
+  static Future<File> generateFinancialStatement({
+    required DateTime startDate,
+    required DateTime endDate,
+    required List<DailySale> sales,
+    required List<Expense> expenses,
+    Shop? shop,
+  }) async {
+    final start = DateTime(startDate.year, startDate.month, startDate.day);
+    final endExclusive = DateTime(endDate.year, endDate.month, endDate.day).add(const Duration(days: 1));
+    if (!start.isBefore(endExclusive)) {
+      throw ArgumentError('Start date must be on or before end date.');
+    }
+
+    final reportSales = sales.where((sale) {
+      return !sale.date.isBefore(start) && sale.date.isBefore(endExclusive);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    final reportExpenses = expenses.where((expense) {
+      return !expense.date.isBefore(start) && expense.date.isBefore(endExclusive);
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    final revenue = reportSales.fold<double>(0, (sum, sale) => sum + sale.revenue);
+    final cogs = reportSales.fold<double>(0, (sum, sale) => sum + sale.costOfGoods);
+    final expenseTotal = reportExpenses.fold<double>(0, (sum, expense) => sum + expense.amount);
+    final grossProfit = revenue - cogs;
+    final netProfit = grossProfit - expenseTotal;
+    final doc = pw.Document();
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          pw.Text(shop?.name.trim().isNotEmpty == true ? shop!.name : 'Shopkeeper Pro',
+              style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
+          if (shop?.address.trim().isNotEmpty == true) pw.Text(shop!.address),
+          if (shop?.phone.trim().isNotEmpty == true) pw.Text('Phone: ${shop!.phone}'),
+          pw.SizedBox(height: 12),
+          pw.Text('Financial Statement',
+              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          pw.Text('Period: ${DateFormat('dd MMM yyyy').format(start)} - ${DateFormat('dd MMM yyyy').format(endExclusive.subtract(const Duration(days: 1)))}'),
+          pw.SizedBox(height: 16),
+          pw.TableHelper.fromTextArray(
+            headers: const ['Summary', 'Amount'],
+            data: [
+              ['Sales revenue', _currency.format(revenue)],
+              ['Cost of goods sold (COGS)', _currency.format(cogs)],
+              ['Gross profit / (loss)', _currency.format(grossProfit)],
+              ['Operating expenses', _currency.format(expenseTotal)],
+              ['Net profit / (loss)', _currency.format(netProfit)],
+            ],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            cellAlignment: pw.Alignment.centerLeft,
+            cellAlignments: {1: pw.Alignment.centerRight},
+          ),
+          pw.SizedBox(height: 20),
+          pw.Text('Sales Detail',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 6),
+          if (reportSales.isEmpty)
+            pw.Text('No sales recorded for this period.')
+          else
+            pw.TableHelper.fromTextArray(
+              headers: const ['Date', 'Item', 'Qty', 'Revenue', 'COGS'],
+              data: reportSales.map((sale) => [
+                DateFormat('dd MMM yy').format(sale.date),
+                sale.productName,
+                sale.quantity.toString(),
+                _currency.format(sale.revenue),
+                _currency.format(sale.costOfGoods),
+              ]).toList(),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              cellAlignment: pw.Alignment.centerLeft,
+              cellAlignments: {
+                2: pw.Alignment.centerRight,
+                3: pw.Alignment.centerRight,
+                4: pw.Alignment.centerRight,
+              },
+            ),
+          pw.SizedBox(height: 20),
+          pw.Text('Expense Detail',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 6),
+          if (reportExpenses.isEmpty)
+            pw.Text('No expenses recorded for this period.')
+          else
+            pw.TableHelper.fromTextArray(
+              headers: const ['Date', 'Expense', 'Amount'],
+              data: reportExpenses.map((expense) => [
+                DateFormat('dd MMM yy').format(expense.date),
+                expense.label,
+                _currency.format(expense.amount),
+              ]).toList(),
+              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              cellAlignment: pw.Alignment.centerLeft,
+              cellAlignments: {2: pw.Alignment.centerRight},
+            ),
+          pw.SizedBox(height: 16),
+          pw.Text(
+            'Note: This statement is calculated from saved daily sales and expense records. '
+            'Returns/refunds, customer credit balances, supplier balances, taxes, and opening/closing cash '
+            'are not reconciled in this report.',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+          ),
+          pw.SizedBox(height: 8),
+          pw.Text('Generated: ${_dateFmt.format(DateTime.now())}',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+        ],
+      ),
+    );
+
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/financial_statement_${DateFormat('yyyyMMdd').format(start)}_${DateFormat('yyyyMMdd').format(endExclusive.subtract(const Duration(days: 1)))}.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
   }
