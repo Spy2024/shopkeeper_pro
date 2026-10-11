@@ -63,11 +63,12 @@ class DBService {
     final dbPath = await getDatabasesPath();
     final safeId = expectedUserId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
     final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
-    if (_db != null) {
-      await _db!.close();
-      _db = null;
-    }
+    final previousDb = _db;
+    _db = null;
     _activeUserId = null;
+    if (previousDb != null) {
+      await previousDb.close();
+    }
     for (final suffix in ['', '-wal', '-shm']) {
       final file = File('$userPath$suffix');
       if (await file.exists()) await file.delete();
