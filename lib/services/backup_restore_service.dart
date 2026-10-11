@@ -257,6 +257,7 @@ class BackupRestoreService {
         'products',
         'customers',
         'suppliers',
+        'branches',
         'shop',
         'sync_queue',
       ]) {
