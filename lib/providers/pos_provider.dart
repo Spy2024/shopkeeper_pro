@@ -72,7 +72,13 @@ class PosProvider extends ChangeNotifier {
 
   void addItem(String productName, int quantity, double unitPrice, {String? productId}) {
     final cleanName = productName.trim();
-    if (cleanName.isEmpty || quantity <= 0 || unitPrice <= 0) throw ArgumentError('Invalid cart item');
+    if (cleanName.isEmpty ||
+        quantity <= 0 ||
+        !unitPrice.isFinite ||
+        unitPrice <= 0 ||
+        !(quantity * unitPrice).isFinite) {
+      throw ArgumentError('Cart item must have a name, positive quantity, and finite positive price and total.');
+    }
     final existingIndex = productId == null ? -1 : cart.indexWhere((item) => item.productId == productId);
     if (existingIndex >= 0) {
       final existing = cart[existingIndex];
@@ -91,13 +97,17 @@ class PosProvider extends ChangeNotifier {
   }
 
   void setDiscount(double value) {
-    if (value < 0) throw ArgumentError('Discount cannot be negative');
+    if (!value.isFinite || value < 0) {
+      throw ArgumentError('Discount must be a finite, non-negative amount.');
+    }
     discount = value > subtotal ? subtotal : value;
     notifyListeners();
   }
 
   void setTax(double percent) {
-    if (percent < 0 || percent > 100) throw ArgumentError('Tax must be between 0 and 100');
+    if (!percent.isFinite || percent < 0 || percent > 100) {
+      throw ArgumentError('Tax must be a finite percentage between 0 and 100.');
+    }
     taxPercent = percent;
     notifyListeners();
   }
@@ -114,8 +124,15 @@ class PosProvider extends ChangeNotifier {
 
   Future<Bill> checkout(InventoryProvider inventory) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
-    if (discount < 0 || discount > subtotal) throw StateError('Invalid discount');
-    if (taxPercent < 0 || taxPercent > 100) throw StateError('Invalid tax');
+    if (!subtotal.isFinite || !grandTotal.isFinite) {
+      throw StateError('Cart total is outside the supported amount range.');
+    }
+    if (!discount.isFinite || discount < 0 || discount > subtotal) {
+      throw StateError('Invalid discount');
+    }
+    if (!taxPercent.isFinite || taxPercent < 0 || taxPercent > 100) {
+      throw StateError('Invalid tax');
+    }
 
     final productsById = <String, Product>{};
     final quantitiesById = <String, int>{};
