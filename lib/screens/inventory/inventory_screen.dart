@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/inventory_provider.dart';
 import '../../models/product.dart';
+import '../barcode_scanner_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -180,6 +181,15 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
     super.dispose();
   }
 
+  Future<void> _scanBarcode() async {
+    final scanned = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (scanned != null && mounted) {
+      setState(() => _barcodeCtrl.text = scanned);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
@@ -213,10 +223,15 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _barcodeCtrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Barcode (optional)',
-                prefixIcon: Icon(Icons.qr_code_2),
-                helperText: 'A handheld scanner can type directly into this field.',
+                prefixIcon: const Icon(Icons.qr_code_2),
+                helperText: 'Use the camera or a handheld barcode scanner.',
+                suffixIcon: IconButton(
+                  tooltip: 'Scan barcode with camera',
+                  onPressed: _scanBarcode,
+                  icon: const Icon(Icons.document_scanner_outlined),
+                ),
               ),
             ),
             const SizedBox(height: 8),
