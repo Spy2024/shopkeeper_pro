@@ -1,8 +1,8 @@
 /// Business types supported by the Shopkeeper Pro setup selector.
 ///
-/// This catalog describes the intended module defaults for each business type.
-/// A catalog entry is not proof that every listed operational workflow is
-/// implemented; module readiness is tracked in docs/MASTER_PRODUCT_SCOPE.md.
+/// This catalog describes intended module defaults. A catalog entry is not
+/// proof that every listed operational workflow is implemented; readiness is
+/// tracked in docs/MASTER_PRODUCT_SCOPE.md.
 class BusinessTypeOption {
   final String id;
   final String label;
@@ -44,6 +44,23 @@ class BusinessTypes {
     BusinessTypeOption(id: 'clinic', label: 'Clinic / Healthcare Practice', defaultModules: ['patients', 'appointments', 'services', 'invoices', 'expenses', 'reports']),
     BusinessTypeOption(id: 'agriculture', label: 'Agriculture / Farm Supplies', defaultModules: ['inventory', 'purchases', 'harvests', 'inputs', 'customers', 'reports']),
     BusinessTypeOption(id: 'construction', label: 'Construction / Contractor', defaultModules: ['projects', 'estimates', 'materials', 'workers', 'payments', 'expenses', 'reports']),
+
+    // Spare-parts businesses share the core POS/inventory foundation but need
+    // fitment, cross-reference and part-number capabilities in their workflow.
+    BusinessTypeOption(id: 'spare_parts', label: 'Spare Parts (All Types)', defaultModules: ['pos', 'inventory', 'part_catalog', 'fitment_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'motorcycle_spare_parts', label: 'Bike / Motorcycle Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'fitment_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'car_spare_parts', label: 'Car / Auto Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'fitment_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'heavy_vehicle_spare_parts', label: 'Truck / Bus / Heavy Vehicle Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'fitment_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'mobile_spare_parts', label: 'Mobile Phone Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'device_model_compatibility', 'serial_numbers', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'computer_spare_parts', label: 'Computer / Laptop Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'device_model_compatibility', 'serial_numbers', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'home_appliance_spare_parts', label: 'Home Appliance Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'brand_model_compatibility', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'electrical_electronics_parts', label: 'Electrical / Electronics Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'specifications', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'warranty', 'reports']),
+    BusinessTypeOption(id: 'industrial_machinery_parts', label: 'Industrial Machinery Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'machine_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'reports']),
+    BusinessTypeOption(id: 'agricultural_machinery_parts', label: 'Tractor / Agricultural Machinery Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'machine_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'reports']),
+    BusinessTypeOption(id: 'generator_engine_parts', label: 'Generator / Engine Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'engine_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'reports']),
+    BusinessTypeOption(id: 'plumbing_sanitary_parts', label: 'Plumbing / Sanitary Fittings & Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'sizes_dimensions', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'reports']),
+    BusinessTypeOption(id: 'other_spare_parts', label: 'Other Spare Parts', defaultModules: ['pos', 'inventory', 'part_catalog', 'fitment_compatibility', 'cross_reference', 'barcode', 'purchases', 'suppliers', 'stock_ledger', 'reports']),
+
     BusinessTypeOption(id: 'other', label: 'Other Business', defaultModules: ['pos', 'inventory', 'customers', 'suppliers', 'expenses', 'reports']),
   ];
 
