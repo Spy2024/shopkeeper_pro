@@ -67,6 +67,30 @@ void main() {
       expect(product.expiresWithin30Days, isFalse);
     });
 
+    test('cart keeps different prices for the same product on separate lines', () {
+      final pos = PosProvider();
+      pos.addItem('Tea', 2, 100, productId: 'tea-id');
+      pos.addItem('Tea', 1, 120, productId: 'tea-id');
+
+      expect(pos.cart, hasLength(2));
+      expect(pos.cart[0].quantity, 2);
+      expect(pos.cart[0].unitPrice, 100);
+      expect(pos.cart[1].quantity, 1);
+      expect(pos.cart[1].unitPrice, 120);
+      expect(pos.subtotal, 320);
+    });
+
+    test('cart merges same product only when the unit price matches', () {
+      final pos = PosProvider();
+      pos.addItem('Tea', 2, 100, productId: 'tea-id');
+      pos.addItem('Tea', 3, 100, productId: 'tea-id');
+
+      expect(pos.cart, hasLength(1));
+      expect(pos.cart.single.quantity, 5);
+      expect(pos.cart.single.unitPrice, 100);
+      expect(pos.subtotal, 500);
+    });
+
     test('POS bill calculation', () {
       final bill = Bill(id: 'b1', date: DateTime.now(),
         items: [BillItem(productId: 'p1', productName: 'Tea', quantity: 2, unitPrice: 150),
