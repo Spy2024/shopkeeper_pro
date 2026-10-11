@@ -157,6 +157,8 @@ class AuthProvider extends ChangeNotifier {
         demoOtp = null;
       }
       return ok;
+    } on LegacyDatabaseMigrationRequired {
+      rethrow;
     } catch (e) {
       errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
@@ -247,6 +249,8 @@ class AuthProvider extends ChangeNotifier {
       }
       errorMessage = 'Email is not verified yet. Please check your inbox and spam folder.';
       return false;
+    } on LegacyDatabaseMigrationRequired {
+      rethrow;
     } catch (e) {
       errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
@@ -254,6 +258,36 @@ class AuthProvider extends ChangeNotifier {
       isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Called only after the UI asks the signed-in user to confirm ownership of
+  /// an older local database. It imports a copy and leaves the source intact.
+  Future<void> migrateLegacyDatabaseForCurrentUser() async {
+    String? uid;
+    if (firebaseAvailable) {
+      uid = FirebaseAuthService.instance.currentUser?.uid;
+    } else {
+      uid = await AuthService.instance.getUserUid();
+    }
+    if (uid == null || uid.trim().isEmpty) {
+      throw StateError('Sign in again before importing the old local database.');
+    }
+
+    await DBService.instance.migrateLegacyDatabaseForUser(
+      uid,
+      confirmOwnership: true,
+    );
+
+    userUid = uid;
+    if (firebaseAvailable) {
+      final user = FirebaseAuthService.instance.currentUser;
+      emailAddress = user?.email;
+      phoneNumber = user?.phoneNumber;
+    } else {
+      phoneNumber = await AuthService.instance.getSession();
+    }
+    isLoggedIn = true;
+    notifyListeners();
   }
 
   Future<void> sendPasswordReset(String email) async {
