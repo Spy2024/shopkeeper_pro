@@ -295,6 +295,7 @@ class SyncService {
         for (final child in stale.sublist(start, end)) {
           batch.delete(child.reference);
         }
+        _ensureActiveAccount(userId);
         await batch.commit();
       }
     }
@@ -323,6 +324,7 @@ class SyncService {
       for (final doc in stale.sublist(start, end)) {
         batch.delete(doc.reference);
       }
+      _ensureActiveAccount(userId);
       await batch.commit();
     }
   }
