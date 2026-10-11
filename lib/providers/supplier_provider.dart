@@ -105,8 +105,6 @@ class SupplierProvider extends ChangeNotifier {
   /// Records a payment made to a supplier (reduces the remaining balance).
   Future<void> recordPayment(String supplierId, double amount) async {
     validateSupplierAmount(amount);
-    final s = _suppliers.firstWhere((s) => s.id == supplierId);
-    if (amount > s.remainingBalance) throw StateError('Payment exceeds outstanding balance');
     await _adjustSupplier(supplierId, paymentDelta: amount);
   }
 
@@ -120,33 +118,61 @@ class SupplierProvider extends ChangeNotifier {
         paymentDelta < 0) {
       throw ArgumentError('Amounts must be finite and non-negative');
     }
-    final current = _suppliers[idx];
-    final newStockReceived = current.totalStockReceivedValue + stockDelta;
-    final newPaymentsMade = current.totalPaymentsMade + paymentDelta;
-    if (!newStockReceived.isFinite || !newPaymentsMade.isFinite) {
-      throw ArgumentError('Supplier totals exceed the supported amount range');
-    }
-    final updated = Supplier(
-      id: current.id, name: current.name, phone: current.phone,
-      totalStockReceivedValue: newStockReceived,
-      totalPaymentsMade: newPaymentsMade);
     final db = await DBService.instance.database;
+    late Supplier updated;
     await db.transaction((txn) async {
-      await txn.update('suppliers', updated.toMap(),
-          where: 'id = ?', whereArgs: [current.id]);
+      final rows = await txn.query(
+        'suppliers',
+        where: 'id = ?',
+        whereArgs: [supplierId],
+        limit: 1,
+      );
+      if (rows.isEmpty) throw StateError('Supplier no longer exists');
+      final current = Supplier.fromMap(rows.single);
+      final newStockReceived = current.totalStockReceivedValue + stockDelta;
+      final newPaymentsMade = current.totalPaymentsMade + paymentDelta;
+      if (!newStockReceived.isFinite || !newPaymentsMade.isFinite) {
+        throw ArgumentError('Supplier totals exceed the supported amount range');
+      }
+      if (paymentDelta > 0 && paymentDelta > newStockReceived - current.totalPaymentsMade) {
+        throw StateError('Payment exceeds outstanding balance');
+      }
+      updated = Supplier(
+        id: current.id,
+        name: current.name,
+        phone: current.phone,
+        totalStockReceivedValue: newStockReceived,
+        totalPaymentsMade: newPaymentsMade,
+      );
+      final changed = await txn.update(
+        'suppliers',
+        updated.toMap(),
+        where: 'id = ?',
+        whereArgs: [current.id],
+      );
+      if (changed != 1) throw StateError('Supplier no longer exists');
       if (stockDelta > 0) {
         await txn.insert('supplier_transactions', {
-          'id': _uuid.v4(), 'supplierId': current.id, 'type': 'stock_received',
-          'amount': stockDelta, 'date': DateTime.now().toIso8601String()});
+          'id': _uuid.v4(),
+          'supplierId': current.id,
+          'type': 'stock_received',
+          'amount': stockDelta,
+          'date': DateTime.now().toIso8601String(),
+        });
       }
       if (paymentDelta > 0) {
         await txn.insert('supplier_transactions', {
-          'id': _uuid.v4(), 'supplierId': current.id, 'type': 'payment',
-          'amount': paymentDelta, 'date': DateTime.now().toIso8601String()});
+          'id': _uuid.v4(),
+          'supplierId': current.id,
+          'type': 'payment',
+          'amount': paymentDelta,
+          'date': DateTime.now().toIso8601String(),
+        });
       }
     });
-    // The local transaction has committed; update the provider before
-    // best-effort queue persistence so a sync outage cannot leave stale UI.
+
+    // The transaction is the source of truth; reflect its exact totals before
+    // best-effort queue persistence so concurrent payments cannot use stale state.
     _suppliers[idx] = updated;
     notifyListeners();
     try {
