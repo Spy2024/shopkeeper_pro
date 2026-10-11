@@ -372,35 +372,86 @@ class SupplierProvider extends ChangeNotifier {
 
   Future<SupplierOrder> createOrder(
       String supplierId, String supplierName, List<SupplierOrderItem> items) async {
+    if (supplierId.trim().isEmpty || supplierName.trim().isEmpty) {
+      throw ArgumentError('A supplier ID and name are required.');
+    }
+    if (items.isEmpty) {
+      throw ArgumentError('A purchase order must contain at least one item.');
+    }
+    for (final item in items) {
+      if (item.productName.trim().isEmpty ||
+          item.requiredQuantity <= 0 ||
+          !item.estimatedPrice.isFinite ||
+          item.estimatedPrice < 0) {
+        throw ArgumentError('Purchase order contains an invalid item.');
+      }
+    }
+
     final db = await DBService.instance.database;
     final order = SupplierOrder(
       id: _uuid.v4(),
       supplierId: supplierId,
       supplierName: supplierName,
       date: DateTime.now(),
-      items: items,
+      items: List.unmodifiable(items),
     );
-    await db.insert('supplier_orders', {
-      'id': order.id,
-      'supplierId': order.supplierId,
-      'supplierName': order.supplierName,
-      'date': order.date.toIso8601String(),
-      'status': order.status,
-    });
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'supplier_orders', documentId: order.id, data: {'id': order.id, 'supplierId': order.supplierId, 'supplierName': order.supplierName, 'date': order.date.toIso8601String(), 'status': order.status});
-    for (final item in items) {
-      final itemId = await db.insert('supplier_order_items', {
-        'orderId': order.id,
-        'productName': item.productName,
-        'requiredQuantity': item.requiredQuantity,
-        'estimatedPrice': item.estimatedPrice,
+    final childRows = <Map<String, dynamic>>[];
+
+    // Keep the order and all child rows atomic locally. Each child gets a
+    // stable cloud ID before commit, so a restart/offline period can be
+    // recovered by the full-table sync even if queue insertion later fails.
+    await db.transaction((txn) async {
+      await txn.insert('supplier_orders', {
+        'id': order.id,
+        'supplierId': order.supplierId,
+        'supplierName': order.supplierName,
+        'date': order.date.toIso8601String(),
+        'status': order.status,
       });
-      final cloudId = _uuid.v4();
-      await db.update('supplier_order_items', {'cloudId': cloudId}, where: 'id = ?', whereArgs: [itemId]);
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'supplier_orders/${order.id}/items', documentId: cloudId, data: {'cloudId': cloudId, 'orderId': order.id, 'productName': item.productName, 'requiredQuantity': item.requiredQuantity, 'estimatedPrice': item.estimatedPrice});
+      for (final item in items) {
+        final cloudId = _uuid.v4();
+        await txn.insert('supplier_order_items', {
+          'orderId': order.id,
+          'productName': item.productName.trim(),
+          'requiredQuantity': item.requiredQuantity,
+          'estimatedPrice': item.estimatedPrice,
+          'cloudId': cloudId,
+        });
+        childRows.add({
+          'cloudId': cloudId,
+          'orderId': order.id,
+          'productName': item.productName.trim(),
+          'requiredQuantity': item.requiredQuantity,
+          'estimatedPrice': item.estimatedPrice,
+        });
+      }
+    });
+
+    // SQLite is authoritative. A queue error must not make a committed order
+    // appear to fail; the next full sync uploads the saved order and children.
+    await _queueSafely(
+      operation: 'create',
+      tableName: 'supplier_orders',
+      documentId: order.id,
+      data: {
+        'id': order.id,
+        'supplierId': order.supplierId,
+        'supplierName': order.supplierName,
+        'date': order.date.toIso8601String(),
+        'status': order.status,
+      },
+    );
+    for (final child in childRows) {
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'supplier_orders/${order.id}/items',
+        documentId: child['cloudId'] as String,
+        data: child,
+      );
     }
+
     _orders.insert(0, order);
-    _orderItemsCache[order.id] = items;
+    _orderItemsCache[order.id] = List.unmodifiable(items);
     notifyListeners();
     return order;
   }
