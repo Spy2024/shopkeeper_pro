@@ -92,13 +92,17 @@ class SupplierProvider extends ChangeNotifier {
 
   /// Records new stock received from a supplier (increases what's owed).
   Future<void> recordStockReceived(String supplierId, double value) async {
-    if (value <= 0) throw ArgumentError('Amount must be positive');
+    if (!value.isFinite || value <= 0) {
+      throw ArgumentError('Amount must be a finite positive number');
+    }
     await _adjustSupplier(supplierId, stockDelta: value);
   }
 
   /// Records a payment made to a supplier (reduces the remaining balance).
   Future<void> recordPayment(String supplierId, double amount) async {
-    if (amount <= 0) throw ArgumentError('Amount must be positive');
+    if (!amount.isFinite || amount <= 0) {
+      throw ArgumentError('Amount must be a finite positive number');
+    }
     final s = _suppliers.firstWhere((s) => s.id == supplierId);
     if (amount > s.remainingBalance) throw StateError('Payment exceeds outstanding balance');
     await _adjustSupplier(supplierId, paymentDelta: amount);
@@ -108,12 +112,22 @@ class SupplierProvider extends ChangeNotifier {
       {double stockDelta = 0, double paymentDelta = 0}) async {
     final idx = _suppliers.indexWhere((s) => s.id == supplierId);
     if (idx == -1) throw StateError('Supplier not found');
-    if (stockDelta < 0 || paymentDelta < 0) throw ArgumentError('Amounts cannot be negative');
+    if (!stockDelta.isFinite ||
+        !paymentDelta.isFinite ||
+        stockDelta < 0 ||
+        paymentDelta < 0) {
+      throw ArgumentError('Amounts must be finite and non-negative');
+    }
     final current = _suppliers[idx];
+    final newStockReceived = current.totalStockReceivedValue + stockDelta;
+    final newPaymentsMade = current.totalPaymentsMade + paymentDelta;
+    if (!newStockReceived.isFinite || !newPaymentsMade.isFinite) {
+      throw ArgumentError('Supplier totals exceed the supported amount range');
+    }
     final updated = Supplier(
       id: current.id, name: current.name, phone: current.phone,
-      totalStockReceivedValue: current.totalStockReceivedValue + stockDelta,
-      totalPaymentsMade: current.totalPaymentsMade + paymentDelta);
+      totalStockReceivedValue: newStockReceived,
+      totalPaymentsMade: newPaymentsMade);
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
       await txn.update('suppliers', updated.toMap(),
@@ -129,11 +143,20 @@ class SupplierProvider extends ChangeNotifier {
           'amount': paymentDelta, 'date': DateTime.now().toIso8601String()});
       }
     });
-    await SyncQueueService.instance.queueOperation(
-      operation: 'update', tableName: 'suppliers', documentId: updated.id,
-      data: updated.toMap());
+    // The local transaction has committed; update the provider before
+    // best-effort queue persistence so a sync outage cannot leave stale UI.
     _suppliers[idx] = updated;
     notifyListeners();
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update',
+        tableName: 'suppliers',
+        documentId: updated.id,
+        data: updated.toMap(),
+      );
+    } catch (error) {
+      debugPrint('[SupplierProvider] Supplier totals saved locally; queue insert failed: $error');
+    }
   }
 
   Future<void> receiveOrder(String orderId, InventoryProvider inventory) async {
@@ -164,11 +187,15 @@ class SupplierProvider extends ChangeNotifier {
 
     final db = await DBService.instance.database;
     final newStockByProductId = <String, int>{};
+    final newStockReceivedTotal = supplier.totalStockReceivedValue + total;
+    if (!newStockReceivedTotal.isFinite) {
+      throw StateError('Supplier total exceeds the supported amount range');
+    }
     final updatedSupplier = Supplier(
       id: supplier.id,
       name: supplier.name,
       phone: supplier.phone,
-      totalStockReceivedValue: supplier.totalStockReceivedValue + total,
+      totalStockReceivedValue: newStockReceivedTotal,
       totalPaymentsMade: supplier.totalPaymentsMade,
     );
 
