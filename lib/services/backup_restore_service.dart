@@ -84,6 +84,7 @@ class BackupRestoreService {
 
   static const _tables = <String>[
     'shop',
+    'branches',
     'products',
     'customers',
     'bills',
@@ -231,7 +232,8 @@ class BackupRestoreService {
       final rows = sourceTables[table] ??
           ((table == 'bill_returns' ||
                   table == 'customers' ||
-                  table == 'supplier_order_items')
+                  table == 'supplier_order_items' ||
+                  table == 'branches')
               ? <dynamic>[]
               : null);
       if (rows is! List) throw FormatException('Backup is missing table: $table');
