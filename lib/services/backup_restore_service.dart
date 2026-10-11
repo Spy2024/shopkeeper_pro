@@ -104,7 +104,7 @@ class BackupRestoreService {
     await uploadBackupToCloud(userId);
   }
 
-  Future<void> restoreLatestCloudBackup(String userId) async {
+  Future<bool> restoreLatestCloudBackup(String userId) async {
     await _requireOwner(userId);
     if (FirebaseAuth.instance.currentUser?.uid != userId) {
       throw StateError('Sign in with this account before restoring a cloud backup.');
@@ -117,10 +117,15 @@ class BackupRestoreService {
     await tempFile.writeAsBytes(bytes, flush: true);
     try {
       await restoreBackup(userId, tempFile);
-      // Explicit cloud-backup restore means this local snapshot is authoritative.
-      // Remove stale cloud-only documents before pushing restored rows, otherwise
-      // the next bidirectional sync could resurrect records absent from the backup.
-      await SyncService.instance.replaceCloudWithLocalSnapshot(userId);
+      // The restored local snapshot is authoritative. If reconciliation fails,
+      // keep the durable pending marker so a later sync retries before pulling cloud.
+      try {
+        await SyncService.instance.replaceCloudWithLocalSnapshot(userId);
+        return true;
+      } catch (e) {
+        debugPrint('[Backup] Local restore succeeded; cloud reconciliation remains pending: $e');
+        return false;
+      }
     } finally {
       if (await tempFile.exists()) await tempFile.delete();
     }
