@@ -74,6 +74,8 @@ class BackupRestoreService {
       throw StateError('Sign in with this account before uploading a cloud backup.');
     }
     final file = await createBackup(userId);
+    // Fail before touching the local database if cloud reconciliation cannot start.
+    await SyncService.instance.ensureCloudRestoreReady(userId);
     final ref = FirebaseStorage.instance.ref().child('users/$userId/backups/latest.json');
     await ref.putFile(
       file,
