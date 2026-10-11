@@ -37,6 +37,9 @@ void main() {
       expect(() => provider.addItem('Tea', -1, 10), throwsArgumentError);
       expect(() => provider.addItem('Tea', 1, 0), throwsArgumentError);
       expect(() => provider.addItem('Tea', 1, -10), throwsArgumentError);
+      expect(() => provider.addItem('Tea', 1, double.nan), throwsArgumentError);
+      expect(() => provider.addItem('Tea', 1, double.infinity), throwsArgumentError);
+      expect(() => provider.addItem('Tea', 2, double.maxFinite), throwsArgumentError);
       expect(provider.cart, isEmpty);
     });
 
@@ -60,11 +63,15 @@ void main() {
       expect(provider.discount, 100);
       expect(provider.grandTotal, 0);
       expect(() => provider.setDiscount(-1), throwsArgumentError);
+      expect(() => provider.setDiscount(double.nan), throwsArgumentError);
+      expect(() => provider.setDiscount(double.infinity), throwsArgumentError);
     });
 
     test('tax accepts only percentages from zero through one hundred', () {
       expect(() => provider.setTax(-0.1), throwsArgumentError);
       expect(() => provider.setTax(100.1), throwsArgumentError);
+      expect(() => provider.setTax(double.nan), throwsArgumentError);
+      expect(() => provider.setTax(double.infinity), throwsArgumentError);
 
       provider.setTax(17);
       expect(provider.taxPercent, 17);
