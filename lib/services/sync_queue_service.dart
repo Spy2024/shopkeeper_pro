@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
@@ -37,8 +38,13 @@ class SyncQueueService {
     if (activeUserId == null || activeUserId.trim().isEmpty) {
       throw StateError('Sign in before adding operations to the sync queue.');
     }
-    final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-    if (authenticatedUid != null && authenticatedUid != activeUserId) {
+    // Demo/local-only sessions have no Firebase app. When Firebase is
+    // configured, however, an absent or different auth UID must fail closed.
+    final firebaseConfigured = Firebase.apps.isNotEmpty;
+    final authenticatedUid =
+        firebaseConfigured ? FirebaseAuth.instance.currentUser?.uid : null;
+    if ((firebaseConfigured && authenticatedUid != activeUserId) ||
+        (authenticatedUid != null && authenticatedUid != activeUserId)) {
       throw StateError('The active database does not belong to the authenticated account.');
     }
     if (_loadedQueueUserId != activeUserId) {
@@ -145,13 +151,30 @@ class SyncQueueService {
     } else if (_pendingQueue.isEmpty) {
       await _loadPendingQueue(expectedUserId: userId);
     }
-    if (_pendingQueue.isEmpty) return;
+    if (FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId ||
+        _pendingQueue.isEmpty ||
+        _isSyncing) {
+      return;
+    }
 
+    // Another caller may have finished loading the queue while this caller
+    // was awaiting it; only one sync loop may acknowledge pending operations.
     _isSyncing = true;
     try {
       final db = await DBService.instance.database;
+      if (FirebaseAuth.instance.currentUser?.uid != userId ||
+          DBService.instance.activeUserId != userId) {
+        return;
+      }
       for (final op in List<SyncOperation>.from(_pendingQueue)) {
         try {
+          // Account state can change while an earlier network write is in
+          // flight. Stop before sending or acknowledging another account's work.
+          if (FirebaseAuth.instance.currentUser?.uid != userId ||
+              DBService.instance.activeUserId != userId) {
+            return;
+          }
           final ref = _documentRef(userId, op.tableName, op.documentId);
           if (op.operation == 'delete') {
             await ref.delete();
@@ -160,6 +183,11 @@ class SyncQueueService {
               op.data,
               SetOptions(merge: op.operation == 'update'),
             );
+          }
+          if (FirebaseAuth.instance.currentUser?.uid != userId ||
+              DBService.instance.activeUserId != userId) {
+            // Leave the operation pending so the owning account can retry it.
+            return;
           }
           await db.update(
             queueTableName,
@@ -187,9 +215,27 @@ class SyncQueueService {
   }
 
   Future<void> clearFailedOperations() async {
+    final activeUserId = DBService.instance.activeUserId;
+    final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+    if (activeUserId == null ||
+        activeUserId.isEmpty ||
+        authenticatedUid != activeUserId) {
+      throw StateError('Sign in with the account that owns this sync queue before clearing pending operations.');
+    }
+
     final db = await DBService.instance.database;
+    // Recheck ownership after awaiting database access to avoid clearing a
+    // queue if the active account changed while the database was opening.
+    if (DBService.instance.activeUserId != activeUserId ||
+        FirebaseAuth.instance.currentUser?.uid != activeUserId) {
+      throw StateError('The active account changed; pending operations were not cleared.');
+    }
     await db.delete(queueTableName, where: 'synced = 0');
-    _pendingQueue.clear();
+    if (_loadedQueueUserId == activeUserId) {
+      _pendingQueue.clear();
+    } else {
+      await _loadPendingQueue(expectedUserId: activeUserId);
+    }
   }
 }
 

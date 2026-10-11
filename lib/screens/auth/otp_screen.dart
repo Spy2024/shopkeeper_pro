@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../services/db_service.dart';
 import '../dashboard/home_screen.dart';
 import '../profile/shop_profile_screen.dart';
+import 'legacy_database_migration_dialog.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
@@ -22,6 +24,25 @@ class _OtpScreenState extends State<OtpScreen> {
   void dispose() {
     _otpController.dispose();
     super.dispose();
+  }
+
+  Future<void> _continueAfterAuth() async {
+    final authProvider = context.read<AuthProvider>();
+    final shopProvider = context.read<ShopProvider>();
+    await shopProvider.load();
+    if (!mounted) return;
+    final uid = authProvider.userUid;
+    if (uid != null && uid.isNotEmpty && authProvider.firebaseAvailable) {
+      await context.read<SyncProvider>().init(uid);
+    }
+    if (!mounted) return;
+    final Widget destination = shopProvider.shop == null
+        ? const ShopProfileScreen(isFirstSetup: true)
+        : const HomeScreen();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => destination),
+      (route) => false,
+    );
   }
 
   @override
@@ -67,27 +88,20 @@ class _OtpScreenState extends State<OtpScreen> {
                           setState(() => _error = 'Enter the 6-digit OTP.');
                           return;
                         }
-                        final ok = await context
-                            .read<AuthProvider>()
-                            .confirmOtp(widget.phoneNumber, code);
+                        bool ok;
+                        try {
+                          ok = await context
+                              .read<AuthProvider>()
+                              .confirmOtp(widget.phoneNumber, code);
+                        } on LegacyDatabaseMigrationRequired {
+                          if (!context.mounted) return;
+                          final imported = await confirmLegacyDatabaseImport(context);
+                          if (imported) await _continueAfterAuth();
+                          return;
+                        }
                         if (!context.mounted) return;
                         if (ok) {
-                          final authProvider = context.read<AuthProvider>();
-                          final shopProvider = context.read<ShopProvider>();
-                          await shopProvider.load();
-                          if (!context.mounted) return;
-                          final uid = authProvider.userUid;
-                          if (uid != null && uid.isNotEmpty && authProvider.firebaseAvailable) {
-                            await context.read<SyncProvider>().init(uid);
-                          }
-                          if (!context.mounted) return;
-                          final Widget destination = shopProvider.shop == null
-                              ? const ShopProfileScreen(isFirstSetup: true)
-                              : const HomeScreen();
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => destination),
-                            (route) => false,
-                          );
+                          await _continueAfterAuth();
                         } else {
                           setState(() => _error =
                               context.read<AuthProvider>().errorMessage ??

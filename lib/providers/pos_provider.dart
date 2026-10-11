@@ -7,6 +7,55 @@ import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 import 'inventory_provider.dart';
 
+/// Resolves bill items to inventory records without silently switching product
+/// identity. Name-based lookup is retained only for legacy items without an ID.
+Product? resolveProductForBillItem(BillItem item, List<Product> products) {
+  final productId = item.productId;
+  if (productId != null) {
+    for (final product in products) {
+      if (product.id == productId) return product;
+    }
+    return null;
+  }
+
+  // Older/manual cart entries sometimes stored the product ID in the name field.
+  final legacyValue = item.productName.trim();
+  for (final product in products) {
+    if (product.id == legacyValue) return product;
+  }
+
+  final normalizedName = legacyValue.toLowerCase();
+  for (final product in products) {
+    if (product.name.trim().toLowerCase() == normalizedName) return product;
+  }
+  return null;
+}
+
+/// Refuses to sell products that are past their expiry date.
+/// The check is intentionally shared by checkout and unit tests.
+void validateProductCanBeSold(Product product) {
+  if (product.isExpired) {
+    throw StateError('Cannot sell expired product: ${product.name}');
+  }
+}
+
+/// Sums only the sold quantity for the selected product and unit-price line.
+/// This prevents a more expensive line for the same product from being
+/// refunded repeatedly using quantities sold at a lower price.
+int soldQuantityForReturnLine({
+  required Bill bill,
+  required BillItem item,
+  required Product product,
+}) {
+  return bill.items.where((candidate) {
+    final sameProduct = candidate.productId != null
+        ? candidate.productId == product.id
+        : candidate.productName.trim().toLowerCase() ==
+            product.name.trim().toLowerCase();
+    return sameProduct && candidate.unitPrice == item.unitPrice;
+  }).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+}
+
 class PosProvider extends ChangeNotifier {
   final List<BillItem> cart = [];
   double discount = 0;
@@ -23,14 +72,34 @@ class PosProvider extends ChangeNotifier {
 
   void addItem(String productName, int quantity, double unitPrice, {String? productId}) {
     final cleanName = productName.trim();
-    if (cleanName.isEmpty || quantity <= 0 || unitPrice <= 0) throw ArgumentError('Invalid cart item');
-    final existingIndex = productId == null ? -1 : cart.indexWhere((item) => item.productId == productId);
+    if (cleanName.isEmpty ||
+        quantity <= 0 ||
+        !unitPrice.isFinite ||
+        unitPrice <= 0 ||
+        !(quantity * unitPrice).isFinite) {
+      throw ArgumentError('Cart item must have a name, positive quantity, and finite positive price and total.');
+    }
+    // Only merge identical product/price lines. If a cashier changes a price
+    // mid-cart, preserve the earlier line price for correct totals and refunds.
+    final existingIndex = productId == null
+        ? -1
+        : cart.indexWhere((item) =>
+            item.productId == productId && item.unitPrice == unitPrice);
     if (existingIndex >= 0) {
       final existing = cart[existingIndex];
-      cart[existingIndex] = BillItem(productId: existing.productId, productName: existing.productName,
-        quantity: existing.quantity + quantity, unitPrice: unitPrice);
+      cart[existingIndex] = BillItem(
+        productId: existing.productId,
+        productName: existing.productName,
+        quantity: existing.quantity + quantity,
+        unitPrice: existing.unitPrice,
+      );
     } else {
-      cart.add(BillItem(productId: productId, productName: cleanName, quantity: quantity, unitPrice: unitPrice));
+      cart.add(BillItem(
+        productId: productId,
+        productName: cleanName,
+        quantity: quantity,
+        unitPrice: unitPrice,
+      ));
     }
     notifyListeners();
   }
@@ -42,13 +111,17 @@ class PosProvider extends ChangeNotifier {
   }
 
   void setDiscount(double value) {
-    if (value < 0) throw ArgumentError('Discount cannot be negative');
+    if (!value.isFinite || value < 0) {
+      throw ArgumentError('Discount must be a finite, non-negative amount.');
+    }
     discount = value > subtotal ? subtotal : value;
     notifyListeners();
   }
 
   void setTax(double percent) {
-    if (percent < 0 || percent > 100) throw ArgumentError('Tax must be between 0 and 100');
+    if (!percent.isFinite || percent < 0 || percent > 100) {
+      throw ArgumentError('Tax must be a finite percentage between 0 and 100.');
+    }
     taxPercent = percent;
     notifyListeners();
   }
@@ -65,25 +138,31 @@ class PosProvider extends ChangeNotifier {
 
   Future<Bill> checkout(InventoryProvider inventory) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
-    if (discount < 0 || discount > subtotal) throw StateError('Invalid discount');
-    if (taxPercent < 0 || taxPercent > 100) throw StateError('Invalid tax');
+    if (!subtotal.isFinite || !grandTotal.isFinite) {
+      throw StateError('Cart total is outside the supported amount range.');
+    }
+    if (!discount.isFinite || discount < 0 || discount > subtotal) {
+      throw StateError('Invalid discount');
+    }
+    if (!taxPercent.isFinite || taxPercent < 0 || taxPercent > 100) {
+      throw StateError('Invalid tax');
+    }
 
     final productsById = <String, Product>{};
     final quantitiesById = <String, int>{};
     final itemProducts = <BillItem, Product>{};
     for (final item in cart) {
-      Product? product = item.productId == null ? null : inventory.findById(item.productId!);
-      // Support older/manual cart entries where the product id was stored in the name field.
-      if (product == null && item.productId == null) {
-        product = inventory.findById(item.productName.trim());
+      if (item.quantity <= 0 || !item.unitPrice.isFinite || item.unitPrice <= 0) {
+        throw StateError('Invalid quantity or price');
       }
-      if (product == null) {
-        for (final candidate in inventory.products) {
-          if (candidate.name.trim().toLowerCase() == item.productName.trim().toLowerCase()) { product = candidate; break; }
-        }
-      }
+
+      // Manually entered bill lines have no productId. They are bill-only
+      // items and must not require a catalogue record or change stock.
+      if (item.productId == null) continue;
+
+      final product = resolveProductForBillItem(item, inventory.products);
       if (product == null) throw StateError('Product not found: ${item.productName}');
-      if (item.quantity <= 0 || item.unitPrice <= 0) throw StateError('Invalid quantity or price');
+      validateProductCanBeSold(product);
       productsById[product.id] = product;
       quantitiesById[product.id] = (quantitiesById[product.id] ?? 0) + item.quantity;
       itemProducts[item] = product;
@@ -93,11 +172,16 @@ class PosProvider extends ChangeNotifier {
       if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ${product.name}');
     }
 
-    // Store resolved inventory IDs and canonical names, including legacy cart entries.
+    // Catalogue-linked lines use canonical product identity. Manual lines
+    // remain in the bill with a null productId and no stock deduction.
     final normalizedItems = cart.map((item) {
-      final product = itemProducts[item]!;
-      return BillItem(productId: product.id, productName: product.name,
-        quantity: item.quantity, unitPrice: item.unitPrice);
+      final product = itemProducts[item];
+      return BillItem(
+        productId: product?.id,
+        productName: product?.name ?? item.productName.trim(),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      );
     }).toList(growable: false);
 
     final db = await DBService.instance.database;
@@ -113,33 +197,86 @@ class PosProvider extends ChangeNotifier {
       }
       for (final entry in quantitiesById.entries) {
         final product = productsById[entry.key]!;
-        final newQty = product.stockQuantity - entry.value;
-        final changed = await txn.update('products', {'stockQuantity': newQty},
-          where: 'id = ? AND stockQuantity >= ?', whereArgs: [product.id, entry.value]);
-        if (changed != 1) throw StateError('Stock changed. Please retry checkout.');
-        newQuantities[product.id] = newQty;
+        // Decrement the database's current value atomically. Calculating from
+        // the provider cache could overwrite a concurrent stock receipt/edit.
+        final changed = await txn.rawUpdate(
+          'UPDATE products SET stockQuantity = stockQuantity - ? '
+          'WHERE id = ? AND stockQuantity >= ?',
+          [entry.value, product.id, entry.value],
+        );
+        if (changed != 1) {
+          throw StateError('Stock changed or is insufficient for ${product.name}. Please retry checkout.');
+        }
+        final stockRows = await txn.query(
+          'products',
+          columns: ['stockQuantity'],
+          where: 'id = ?',
+          whereArgs: [product.id],
+          limit: 1,
+        );
+        if (stockRows.isEmpty) throw StateError('Product not found after stock update.');
+        newQuantities[product.id] = (stockRows.single['stockQuantity'] as num).toInt();
       }
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
-        final product = productsById[item.productId]!;
-        await txn.insert('daily_sales', DailySale(id: _uuid.v4(), date: bill.date, billId: bill.id,
-          productId: product.id, productName: product.name, costPrice: product.costPrice,
-          salePrice: item.unitPrice * (1 - discountRatio), quantity: item.quantity, source: 'pos').toMap());
+        final product = item.productId == null ? null : productsById[item.productId];
+        await txn.insert('daily_sales', DailySale(
+          id: _uuid.v4(),
+          date: bill.date,
+          billId: bill.id,
+          productId: product?.id,
+          productName: product?.name ?? item.productName,
+          // Manual bill-only lines have no inventory cost record.
+          costPrice: product?.costPrice ?? 0,
+          salePrice: item.unitPrice * (1 - discountRatio),
+          quantity: item.quantity,
+          source: 'pos',
+        ).toMap());
       }
     });
 
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
+    // The SQLite transaction is the source of truth. A cloud-queue failure must
+    // never report a committed checkout as failed; the next full sync can reconcile it.
+    for (final entry in newQuantities.entries) {
+      final product = productsById[entry.key]!;
+      final updated = Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: entry.value,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        lowStockThreshold: product.lowStockThreshold,
+        barcode: product.barcode,
+        expiryDate: product.expiryDate,
+      );
+      inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
+    }
+    await _queueSafely(
+      operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
     for (var i = 0; i < bill.items.length; i++) {
-      await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'bills/${bill.id}/items',
-        documentId: itemCloudIds[i], data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id});
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'bills/${bill.id}/items',
+        documentId: itemCloudIds[i],
+        data: {...bill.items[i].toMap(), 'cloudId': itemCloudIds[i], 'billId': bill.id},
+      );
     }
     for (final entry in newQuantities.entries) {
-      final product = inventory.findById(entry.key);
-      if (product == null) continue;
-      final updated = Product(id: product.id, name: product.name, category: product.category, stockQuantity: entry.value,
-        costPrice: product.costPrice, sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
-      await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
-      inventory.applyStockAfterTransaction(updated.id, updated.stockQuantity);
+      final product = productsById[entry.key]!;
+      final updated = Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: entry.value,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        lowStockThreshold: product.lowStockThreshold,
+        barcode: product.barcode,
+        expiryDate: product.expiryDate,
+      );
+      await _queueSafely(
+        operation: 'update', tableName: 'products', documentId: updated.id, data: updated.toMap());
     }
     savedBills.insert(0, bill); _billItemsCache[bill.id] = bill.items; clearCart(); return bill;
   }
@@ -155,22 +292,17 @@ class PosProvider extends ChangeNotifier {
     if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
     if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
 
-    Product? product = item.productId == null
-        ? null
-        : inventory.findById(item.productId!);
-    product ??= inventory.products.cast<Product?>().firstWhere(
-      (candidate) => candidate?.name.trim().toLowerCase() == item.productName.trim().toLowerCase(),
-      orElse: () => null,
-    );
+    final product = resolveProductForBillItem(item, inventory.products);
     if (product == null) {
       throw StateError('The returned product is no longer in inventory: ${item.productName}');
     }
 
     final resolvedProduct = product;
-    final soldQuantity = bill.items.where((candidate) =>
-      candidate.productId == resolvedProduct.id ||
-      candidate.productName.trim().toLowerCase() == resolvedProduct.name.trim().toLowerCase()
-    ).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+    final soldQuantity = soldQuantityForReturnLine(
+      bill: bill,
+      item: item,
+      product: resolvedProduct,
+    );
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
@@ -192,6 +324,7 @@ class PosProvider extends ChangeNotifier {
       'billId': bill.id,
       'productId': resolvedProduct.id,
       'productName': resolvedProduct.name,
+      'unitPrice': item.unitPrice,
       'quantity': quantity,
       'refundAmount': refundAmount,
       'date': returnedAt.toIso8601String(),
@@ -200,8 +333,8 @@ class PosProvider extends ChangeNotifier {
     late int newStock;
     await db.transaction((txn) async {
       final priorRows = await txn.rawQuery(
-        'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ?',
-        [bill.id, resolvedProduct.id],
+        'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ? AND (unitPrice = ? OR unitPrice = 0)',
+        [bill.id, resolvedProduct.id, item.unitPrice],
       );
       final alreadyReturned = (priorRows.first['returnedQuantity'] as num).toInt();
       if (quantity + alreadyReturned > soldQuantity) {
@@ -222,11 +355,12 @@ class PosProvider extends ChangeNotifier {
       await txn.insert('daily_sales', returnSale.toMap());
     });
 
-    await SyncQueueService.instance.queueOperation(
+    inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
+    await _queueSafely(
       operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
-    await SyncQueueService.instance.queueOperation(
+    await _queueSafely(
       operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
-    await SyncQueueService.instance.queueOperation(
+    await _queueSafely(
       operation: 'update',
       tableName: 'products',
       documentId: resolvedProduct.id,
@@ -238,10 +372,31 @@ class PosProvider extends ChangeNotifier {
         costPrice: resolvedProduct.costPrice,
         sellingPrice: resolvedProduct.sellingPrice,
         lowStockThreshold: resolvedProduct.lowStockThreshold,
+        barcode: resolvedProduct.barcode,
+        expiryDate: resolvedProduct.expiryDate,
       ).toMap(),
     );
-    inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
     return refundAmount;
+  }
+
+  Future<void> _queueSafely({
+    required String operation,
+    required String tableName,
+    required String documentId,
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: operation,
+        tableName: tableName,
+        documentId: documentId,
+        data: data,
+      );
+    } catch (e) {
+      // Do not let one failed queue insert prevent later records from being
+      // queued. Local checkout/return data remains committed in SQLite.
+      debugPrint('[PosProvider] Could not queue $tableName/$documentId; next full sync should reconcile it: $e');
+    }
   }
 
   Future<void> loadHistory() async {

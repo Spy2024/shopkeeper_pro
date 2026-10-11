@@ -22,6 +22,12 @@ class AuthProvider extends ChangeNotifier {
         final user = service.currentUser;
         if (user != null && user.email != null && !user.emailVerified) {
           await AuthService.instance.clearSession();
+          await DBService.instance.clearActiveUser();
+          isLoggedIn = false;
+          phoneNumber = null;
+          emailAddress = null;
+          userUid = null;
+          notifyListeners();
           return;
         }
         if (user != null) {
@@ -34,12 +40,50 @@ class AuthProvider extends ChangeNotifier {
           return;
         }
         // A configured Firebase app must not silently accept an old local demo
-        // session when there is no authenticated Firebase user.
+        // session when there is no authenticated Firebase user. Clear any
+        // in-memory database connection too, in case this check runs after a
+        // session was previously active in the same process.
         await AuthService.instance.clearSession();
+        await DBService.instance.clearActiveUser();
+        isLoggedIn = false;
+        phoneNumber = null;
+        emailAddress = null;
+        userUid = null;
+        notifyListeners();
         return;
       }
     } catch (e) {
       debugPrint('[Auth] Firebase session unavailable: $e');
+      // Fail closed when Firebase is configured. Falling back to a cached
+      // demo/local session after a Firebase error could expose another local
+      // account while the real authenticated identity is unavailable.
+      if (firebaseAvailable) {
+        try {
+          await DBService.instance.clearActiveUser();
+        } catch (closeError) {
+          debugPrint('[Auth] Could not close the previous local database: $closeError');
+        }
+        isLoggedIn = false;
+        phoneNumber = null;
+        emailAddress = null;
+        userUid = null;
+        notifyListeners();
+        return;
+      }
+    }
+
+    // Local demo sessions are only permitted in debug builds. If Firebase
+    // failed to initialize in a release build, never trust a cached local UID
+    // as proof of identity; otherwise a stale account could bypass auth.
+    if (!kDebugMode) {
+      await AuthService.instance.clearSession();
+      await DBService.instance.clearActiveUser();
+      isLoggedIn = false;
+      phoneNumber = null;
+      emailAddress = null;
+      userUid = null;
+      notifyListeners();
+      return;
     }
 
     final saved = await AuthService.instance.getSession();
@@ -48,7 +92,15 @@ class AuthProvider extends ChangeNotifier {
       userUid = await AuthService.instance.getUserUid();
       isLoggedIn = userUid != null;
       if (userUid != null && userUid!.isNotEmpty) {
-        await DBService.instance.configureForUser(userUid!);
+        try {
+          await DBService.instance.configureForUser(userUid!);
+        } on LegacyDatabaseMigrationRequired {
+          // Keep the user signed out of the data area. They can confirm import
+          // through the normal sign-in flow instead of silently assigning data.
+          isLoggedIn = false;
+          notifyListeners();
+          return;
+        }
       }
       notifyListeners();
     }
@@ -65,10 +117,12 @@ class AuthProvider extends ChangeNotifier {
         // Android may verify automatically without presenting an SMS code.
         final user = FirebaseAuthService.instance.currentUser;
         if (user != null) {
+          // Do not expose the authenticated app state until the account-scoped
+          // local database has opened successfully.
+          await DBService.instance.configureForUser(user.uid);
           phoneNumber = user.phoneNumber ?? phone;
           userUid = user.uid;
           isLoggedIn = true;
-          await DBService.instance.configureForUser(user.uid);
           notifyListeners();
         }
         return '';
@@ -95,26 +149,38 @@ class AuthProvider extends ChangeNotifier {
     try {
       if (firebaseAvailable) {
         final ok = await FirebaseAuthService.instance.verifyOtp(otp);
-        if (ok) {
-          final user = FirebaseAuthService.instance.currentUser;
-          phoneNumber = user?.phoneNumber ?? phone;
-          userUid = user?.uid;
-          isLoggedIn = user != null;
-          if (userUid != null) await DBService.instance.configureForUser(userUid!);
+        if (!ok) return false;
+        final user = FirebaseAuthService.instance.currentUser;
+        if (user == null) {
+          isLoggedIn = false;
+          userUid = null;
+          phoneNumber = null;
+          errorMessage = 'No authenticated session was created. Please request a new code and try again.';
+          return false;
         }
-        return ok;
+        await DBService.instance.configureForUser(user.uid);
+        phoneNumber = user.phoneNumber ?? phone;
+        userUid = user.uid;
+        isLoggedIn = true;
+        return true;
       }
 
       final ok = AuthService.instance.verifyOtp(phone, otp);
       if (ok) {
         await AuthService.instance.persistSession(phone);
+        final verifiedUserId = await AuthService.instance.getUserUid();
+        if (verifiedUserId == null || verifiedUserId.trim().isEmpty) {
+          throw StateError('Local account identity is unavailable.');
+        }
+        await DBService.instance.configureForUser(verifiedUserId);
         phoneNumber = phone;
-        userUid = await AuthService.instance.getUserUid();
+        userUid = verifiedUserId;
         isLoggedIn = true;
-        if (userUid != null) await DBService.instance.configureForUser(userUid!);
         demoOtp = null;
       }
       return ok;
+    } on LegacyDatabaseMigrationRequired {
+      rethrow;
     } catch (e) {
       errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
@@ -138,10 +204,16 @@ class AuthProvider extends ChangeNotifier {
         password: password,
       );
       if (user == null) throw StateError('Account creation failed.');
+      if (user.emailVerified) {
+        await DBService.instance.configureForUser(user.uid);
+      } else {
+        // Never leave a previous account's local database active while the
+        // newly created Firebase account is still unverified.
+        await DBService.instance.clearActiveUser();
+      }
       emailAddress = user.email;
       userUid = user.uid;
       isLoggedIn = user.emailVerified;
-      if (isLoggedIn) await DBService.instance.configureForUser(user.uid);
       if (!isLoggedIn) {
         errorMessage = 'Verification email sent. Verify your email, then tap "I have verified".';
       }
@@ -168,12 +240,17 @@ class AuthProvider extends ChangeNotifier {
         password: password,
       );
       if (user == null) throw StateError('Sign in failed.');
+      if (user.emailVerified) {
+        await DBService.instance.configureForUser(user.uid);
+      } else {
+        // Signing in to an unverified account must not retain another user's
+        // previously active local database connection.
+        await DBService.instance.clearActiveUser();
+      }
       emailAddress = user.email;
       userUid = user.uid;
       isLoggedIn = user.emailVerified;
-      if (isLoggedIn) {
-        await DBService.instance.configureForUser(user.uid);
-      } else {
+      if (!isLoggedIn) {
         errorMessage = 'Email is not verified. A verification email has been sent.';
       }
       return isLoggedIn;
@@ -194,14 +271,16 @@ class AuthProvider extends ChangeNotifier {
       final verified = await FirebaseAuthService.instance.refreshEmailVerification();
       final user = FirebaseAuthService.instance.currentUser;
       if (verified && user != null) {
+        await DBService.instance.configureForUser(user.uid);
         emailAddress = user.email;
         userUid = user.uid;
         isLoggedIn = true;
-        await DBService.instance.configureForUser(user.uid);
         return true;
       }
       errorMessage = 'Email is not verified yet. Please check your inbox and spam folder.';
       return false;
+    } on LegacyDatabaseMigrationRequired {
+      rethrow;
     } catch (e) {
       errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
@@ -209,6 +288,36 @@ class AuthProvider extends ChangeNotifier {
       isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Called only after the UI asks the signed-in user to confirm ownership of
+  /// an older local database. It imports a copy and leaves the source intact.
+  Future<void> migrateLegacyDatabaseForCurrentUser() async {
+    String? uid;
+    if (firebaseAvailable) {
+      uid = FirebaseAuthService.instance.currentUser?.uid;
+    } else {
+      uid = await AuthService.instance.getUserUid();
+    }
+    if (uid == null || uid.trim().isEmpty) {
+      throw StateError('Sign in again before importing the old local database.');
+    }
+
+    await DBService.instance.migrateLegacyDatabaseForUser(
+      uid,
+      confirmOwnership: true,
+    );
+
+    userUid = uid;
+    if (firebaseAvailable) {
+      final user = FirebaseAuthService.instance.currentUser;
+      emailAddress = user?.email;
+      phoneNumber = user?.phoneNumber;
+    } else {
+      phoneNumber = await AuthService.instance.getSession();
+    }
+    isLoggedIn = true;
+    notifyListeners();
   }
 
   Future<void> sendPasswordReset(String email) async {

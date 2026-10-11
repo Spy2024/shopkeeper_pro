@@ -20,20 +20,54 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> addExpense(String label, double amount, {DateTime? date}) async {
-    if (label.trim().isEmpty || amount <= 0) throw ArgumentError('Invalid expense');
+    final cleanLabel = label.trim();
+    if (cleanLabel.isEmpty || !amount.isFinite || amount <= 0) {
+      throw ArgumentError('Expense label and a finite positive amount are required.');
+    }
     final db = await DBService.instance.database;
-    final expense = Expense(id: _uuid.v4(), date: date ?? DateTime.now(), label: label, amount: amount);
+    final expense = Expense(
+      id: _uuid.v4(),
+      date: date ?? DateTime.now(),
+      label: cleanLabel,
+      amount: amount,
+    );
     await db.insert('expenses', expense.toMap());
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'expenses', documentId: expense.id, data: expense.toMap());
     _expenses.insert(0, expense);
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create',
+        tableName: 'expenses',
+        documentId: expense.id,
+        data: expense.toMap(),
+      );
+    } catch (error) {
+      // The expense is already safely stored locally; leave it available offline.
+      debugPrint('[Finance] Expense saved locally; sync queueing failed: $error');
+    }
     notifyListeners();
   }
 
   Future<void> deleteExpense(String id) async {
+    if (id.trim().isEmpty) throw ArgumentError('Expense id is required.');
     final db = await DBService.instance.database;
+    final rows = await db.query(
+      'expenses',
+      columns: ['id'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    // Queue the tombstone first so an offline sync cannot re-create a deleted expense.
+    await SyncQueueService.instance.queueOperation(
+      operation: 'delete',
+      tableName: 'expenses',
+      documentId: id,
+      data: const {},
+    );
     await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
-    await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'expenses', documentId: id, data: {});
-    _expenses.removeWhere((e) => e.id == id);
+    _expenses.removeWhere((expense) => expense.id == id);
     notifyListeners();
   }
 

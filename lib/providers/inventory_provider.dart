@@ -4,6 +4,24 @@ import '../models/product.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 
+void validateProductValues({
+  required int stockQuantity,
+  required double costPrice,
+  required double sellingPrice,
+  required int lowStockThreshold,
+}) {
+  if (stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
+  if (!costPrice.isFinite || !sellingPrice.isFinite) {
+    throw ArgumentError('Prices must be finite numbers');
+  }
+  if (costPrice < 0 || sellingPrice < 0) {
+    throw ArgumentError('Prices cannot be negative');
+  }
+  if (lowStockThreshold < 0) {
+    throw ArgumentError('Low-stock threshold cannot be negative');
+  }
+}
+
 class InventoryProvider extends ChangeNotifier {
   final List<Product> _products = [];
   final _uuid = const Uuid();
@@ -11,6 +29,9 @@ class InventoryProvider extends ChangeNotifier {
   List<Product> get products => List.unmodifiable(_products);
   List<Product> get lowOrOutOfStock =>
       _products.where((p) => p.isLowStock || p.isOutOfStock).toList();
+  List<Product> get expiredProducts => _products.where((p) => p.isExpired).toList();
+  List<Product> get expiringSoonProducts =>
+      _products.where((p) => p.expiresWithin30Days).toList();
 
   Future<void> load() async {
     final db = await DBService.instance.database;
@@ -32,27 +53,47 @@ class InventoryProvider extends ChangeNotifier {
     final current = _products[index];
     _products[index] = Product(id: current.id, name: current.name, category: current.category,
       stockQuantity: stockQuantity, costPrice: current.costPrice, sellingPrice: current.sellingPrice,
-      lowStockThreshold: current.lowStockThreshold);
+      lowStockThreshold: current.lowStockThreshold, barcode: current.barcode,
+      expiryDate: current.expiryDate);
     notifyListeners();
   }
 
   Future<void> addProduct({required String name, required String category, required int stockQuantity,
-      required double costPrice, required double sellingPrice, int lowStockThreshold = 5}) async {
+      required double costPrice, required double sellingPrice, int lowStockThreshold = 5,
+      String? barcode, DateTime? expiryDate}) async {
     final cleanName = name.trim();
     final cleanCategory = category.trim();
+    final cleanBarcode = barcode?.trim().isEmpty == true ? null : barcode?.trim();
     if (cleanName.isEmpty) throw ArgumentError('Product name is required');
-    if (stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
-    if (costPrice < 0 || sellingPrice < 0) throw ArgumentError('Prices cannot be negative');
-    if (lowStockThreshold < 0) throw ArgumentError('Low-stock threshold cannot be negative');
+    validateProductValues(
+      stockQuantity: stockQuantity,
+      costPrice: costPrice,
+      sellingPrice: sellingPrice,
+      lowStockThreshold: lowStockThreshold,
+    );
     if (_products.any((p) => p.name.trim().toLowerCase() == cleanName.toLowerCase())) {
       throw StateError('A product with this name already exists');
     }
+    if (cleanBarcode != null && _products.any((p) => p.barcode == cleanBarcode)) {
+      throw StateError('A product with this barcode already exists');
+    }
     final product = Product(id: _uuid.v4(), name: cleanName, category: cleanCategory,
-      stockQuantity: stockQuantity, costPrice: costPrice, sellingPrice: sellingPrice, lowStockThreshold: lowStockThreshold);
+      stockQuantity: stockQuantity, costPrice: costPrice, sellingPrice: sellingPrice,
+      lowStockThreshold: lowStockThreshold, barcode: cleanBarcode, expiryDate: expiryDate);
     final db = await DBService.instance.database;
     await db.insert('products', product.toMap());
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'products',
-      documentId: product.id, data: product.toMap());
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create',
+        tableName: 'products',
+        documentId: product.id,
+        data: product.toMap(),
+      );
+    } catch (e) {
+      // Keep the committed local change visible. The next full sync can upload
+      // this product from SQLite even if the queue insert temporarily fails.
+      debugPrint('[InventoryProvider] Product saved locally; queue insert failed: $e');
+    }
     _products.add(product);
     notifyListeners();
   }
@@ -60,20 +101,36 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> updateProduct(Product product) async {
     final cleanName = product.name.trim();
     if (cleanName.isEmpty) throw ArgumentError('Product name is required');
-    if (product.stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
-    if (product.costPrice < 0 || product.sellingPrice < 0) throw ArgumentError('Prices cannot be negative');
-    if (product.lowStockThreshold < 0) throw ArgumentError('Low-stock threshold cannot be negative');
+    validateProductValues(
+      stockQuantity: product.stockQuantity,
+      costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice,
+      lowStockThreshold: product.lowStockThreshold,
+    );
     if (_products.any((p) => p.id != product.id && p.name.trim().toLowerCase() == cleanName.toLowerCase())) {
       throw StateError('A product with this name already exists');
     }
+    final cleanBarcode = product.barcode?.trim().isEmpty == true ? null : product.barcode?.trim();
+    if (cleanBarcode != null && _products.any((p) => p.id != product.id && p.barcode == cleanBarcode)) {
+      throw StateError('A product with this barcode already exists');
+    }
     final updated = Product(id: product.id, name: cleanName, category: product.category.trim(),
       stockQuantity: product.stockQuantity, costPrice: product.costPrice, sellingPrice: product.sellingPrice,
-      lowStockThreshold: product.lowStockThreshold);
+      lowStockThreshold: product.lowStockThreshold, barcode: cleanBarcode, expiryDate: product.expiryDate);
     final db = await DBService.instance.database;
     final changed = await db.update('products', updated.toMap(), where: 'id = ?', whereArgs: [updated.id]);
     if (changed != 1) throw StateError('Product not found');
-    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'products',
-      documentId: updated.id, data: updated.toMap());
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update',
+        tableName: 'products',
+        documentId: updated.id,
+        data: updated.toMap(),
+      );
+    } catch (e) {
+      // SQLite is the source of truth; a later full sync can upload this row.
+      debugPrint('[InventoryProvider] Product updated locally; queue insert failed: $e');
+    }
     final idx = _products.indexWhere((p) => p.id == updated.id);
     if (idx != -1) _products[idx] = updated;
     notifyListeners();
@@ -82,9 +139,20 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> deleteProduct(String id) async {
     if (id.trim().isEmpty) throw ArgumentError('Product id is required');
     final db = await DBService.instance.database;
+    // Queue the delete before removing the local row so a queue persistence
+    // failure cannot silently leave a cloud-only product that later reappears.
+    await SyncQueueService.instance.queueOperation(
+      operation: 'delete',
+      tableName: 'products',
+      documentId: id,
+      data: {},
+    );
     final changed = await db.delete('products', where: 'id = ?', whereArgs: [id]);
-    if (changed == 0) return;
-    await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'products', documentId: id, data: {});
+    if (changed == 0) {
+      _products.removeWhere((p) => p.id == id);
+      notifyListeners();
+      return;
+    }
     _products.removeWhere((p) => p.id == id);
     notifyListeners();
   }
@@ -96,13 +164,15 @@ class InventoryProvider extends ChangeNotifier {
     if (product.stockQuantity < quantitySold) throw StateError('Insufficient stock');
     final updated = Product(id: product.id, name: product.name, category: product.category,
       stockQuantity: product.stockQuantity - quantitySold, costPrice: product.costPrice,
-      sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
+      sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold,
+      barcode: product.barcode, expiryDate: product.expiryDate);
     await updateProduct(updated);
   }
 
   List<Product> search(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return products;
-    return _products.where((p) => p.name.toLowerCase().contains(q)).toList();
+    return _products.where((p) => p.name.toLowerCase().contains(q) ||
+        (p.barcode?.toLowerCase().contains(q) ?? false)).toList();
   }
 }
