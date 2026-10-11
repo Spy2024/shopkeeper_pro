@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'providers/shop_provider.dart';
+import 'providers/branch_provider.dart';
 import 'providers/inventory_provider.dart';
 import 'providers/pos_provider.dart';
 import 'providers/supplier_provider.dart';
@@ -48,6 +49,7 @@ class ShopkeeperProApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ShopProvider()),
+        ChangeNotifierProvider(create: (_) => BranchProvider()),
         ChangeNotifierProvider(create: (_) => InventoryProvider()),
         ChangeNotifierProvider(create: (_) => PosProvider()),
         ChangeNotifierProvider(create: (_) => SupplierProvider()),
