@@ -74,8 +74,8 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     final sales = context.watch<SalesProvider>();
     final now = DateTime.now();
     final monthlySales = sales.sales.where((s) => s.date.year == now.year && s.date.month == now.month).toList();
-    final revenue = monthlySales.fold(0.0, (sum, s) => sum + s.salePrice);
-    final cogs = monthlySales.fold(0.0, (sum, s) => sum + s.costPrice);
+    final revenue = monthlySales.fold(0.0, (sum, s) => sum + s.revenue);
+    final cogs = monthlySales.fold(0.0, (sum, s) => sum + s.costOfGoods);
     final expensesTotal = finance.totalExpensesForMonth(now.year, now.month);
     final netProfit = finance.calculateNetProfit(monthlySales, now.year, now.month);
 
