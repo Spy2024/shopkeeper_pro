@@ -15,6 +15,68 @@ import 'db_service.dart';
 import 'sync_queue_service.dart';
 import 'sync_service.dart';
 
+/// Reconciled totals for the financial statement. POS returns are stored as
+/// negative daily-sales rows, so returned stock cost offsets the original COGS.
+class FinancialStatementTotals {
+  final double billedSales;
+  final double refunds;
+  final double costOfGoods;
+  final double expenses;
+  final double currentStockValue;
+  final int billCount;
+  final int productCount;
+
+  const FinancialStatementTotals({
+    required this.billedSales,
+    required this.refunds,
+    required this.costOfGoods,
+    required this.expenses,
+    required this.currentStockValue,
+    required this.billCount,
+    required this.productCount,
+  });
+
+  double get netSales => billedSales - refunds;
+  double get grossProfit => netSales - costOfGoods;
+  double get netProfit => grossProfit - expenses;
+
+  static FinancialStatementTotals fromRecords({
+    required List<Map<String, Object?>> billRows,
+    required List<Map<String, Object?>> expenseRows,
+    required List<Map<String, Object?>> returnRows,
+    required List<Map<String, Object?>> productRows,
+    required List<Map<String, Object?>> dailySalesRows,
+  }) {
+    double number(Object? value) => (value as num?)?.toDouble() ?? 0.0;
+    final billedSales = billRows.fold<double>(0, (sum, row) {
+      final subtotal = number(row['subtotal']);
+      final discount = number(row['discount']);
+      final taxPercent = number(row['taxPercent']);
+      final taxable = (subtotal - discount).clamp(0.0, double.infinity).toDouble();
+      return sum + taxable + taxable * taxPercent / 100;
+    });
+    final refunds = returnRows.fold<double>(
+      0, (sum, row) => sum + number(row['refundAmount']));
+    // Only POS/return rows match billed transactions. Manual sales are not
+    // included here because they do not contribute to the bill totals above.
+    final costOfGoods = dailySalesRows.fold<double>(
+      0, (sum, row) => sum + number(row['costPrice']) * number(row['quantity']));
+    final expenses = expenseRows.fold<double>(
+      0, (sum, row) => sum + number(row['amount']));
+    final stockValue = productRows.fold<double>(
+      0, (sum, row) => sum + number(row['stockQuantity']) * number(row['costPrice']));
+    return FinancialStatementTotals(
+      billedSales: billedSales,
+      refunds: refunds,
+      costOfGoods: costOfGoods,
+      expenses: expenses,
+      currentStockValue: stockValue,
+      billCount: billRows.length,
+      productCount: productRows.length,
+    );
+  }
+}
+
 class BackupRestoreService {
   BackupRestoreService._();
   static final BackupRestoreService instance = BackupRestoreService._();
@@ -223,27 +285,16 @@ class BackupRestoreService {
     final expenseRows = await db.query('expenses', orderBy: 'date DESC');
     final returnRows = await db.query('bill_returns');
     final productRows = await db.query('products');
-    var salesTotal = 0.0;
-    for (final row in billRows) {
-      final subtotal = (row['subtotal'] as num).toDouble();
-      final discount = (row['discount'] as num?)?.toDouble() ?? 0;
-      final taxPercent = (row['taxPercent'] as num?)?.toDouble() ?? 0;
-      final taxable = (subtotal - discount).clamp(0.0, double.infinity).toDouble();
-      salesTotal += taxable + taxable * taxPercent / 100;
-    }
-    final expensesTotal = expenseRows.fold<double>(
-      0,
-      (sum, row) => sum + (row['amount'] as num).toDouble(),
+    final dailySalesRows = await db.query(
+      'daily_sales',
+      where: "source IN ('pos', 'return')",
     );
-    final refundsTotal = returnRows.fold<double>(
-      0,
-      (sum, row) => sum + (row['refundAmount'] as num).toDouble(),
-    );
-    final stockValue = productRows.fold<double>(
-      0,
-      (sum, row) => sum +
-          (row['stockQuantity'] as num).toDouble() *
-              (row['costPrice'] as num).toDouble(),
+    final totals = FinancialStatementTotals.fromRecords(
+      billRows: billRows,
+      expenseRows: expenseRows,
+      returnRows: returnRows,
+      productRows: productRows,
+      dailySalesRows: dailySalesRows,
     );
 
     final document = pw.Document();
@@ -267,13 +318,16 @@ class BackupRestoreService {
         pw.TableHelper.fromTextArray(
           headers: ['Metric', 'Amount / Count'],
           data: [
-            ['Total billed sales (before returns)', 'Rs. ${salesTotal.toStringAsFixed(2)}'],
-            ['Recorded refunds', 'Rs. ${refundsTotal.toStringAsFixed(2)}'],
-            ['Net sales after returns', 'Rs. ${(salesTotal - refundsTotal).toStringAsFixed(2)}'],
-            ['Recorded expenses', 'Rs. ${expensesTotal.toStringAsFixed(2)}'],
-            ['Current inventory cost value', 'Rs. ${stockValue.toStringAsFixed(2)}'],
-            ['Bills recorded', '${billRows.length}'],
-            ['Products in inventory', '${productRows.length}'],
+            ['Total billed sales (tax included)', 'Rs. ${totals.billedSales.toStringAsFixed(2)}'],
+            ['Recorded refunds', 'Rs. ${totals.refunds.toStringAsFixed(2)}'],
+            ['Net sales after returns', 'Rs. ${totals.netSales.toStringAsFixed(2)}'],
+            ['Cost of goods sold (net of returned cost)', 'Rs. ${totals.costOfGoods.toStringAsFixed(2)}'],
+            ['Gross profit after returns', 'Rs. ${totals.grossProfit.toStringAsFixed(2)}'],
+            ['Recorded expenses', 'Rs. ${totals.expenses.toStringAsFixed(2)}'],
+            ['Net operating profit / loss', 'Rs. ${totals.netProfit.toStringAsFixed(2)}'],
+            ['Current inventory cost value', 'Rs. ${totals.currentStockValue.toStringAsFixed(2)}'],
+            ['Bills recorded', '${totals.billCount}'],
+            ['Products in inventory', '${totals.productCount}'],
           ],
         ),
         pw.SizedBox(height: 16),
@@ -295,7 +349,7 @@ class BackupRestoreService {
           }).toList(),
         ),
         pw.SizedBox(height: 12),
-        pw.Text('This statement is generated from records currently stored on this device. Verify figures before using it for tax or legal purposes.'),
+        pw.Text('This statement is generated from records currently stored on this device. Sales are tax-inclusive; profit is an operational estimate based on recorded POS cost rows and expenses, not a tax filing or audited financial statement. Verify figures before official use.'),
       ],
     ));
     final documents = await getApplicationDocumentsDirectory();
