@@ -40,6 +40,17 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[Auth] Firebase session unavailable: $e');
+      // Fail closed when Firebase is configured. Falling back to a cached
+      // demo/local session after a Firebase error could expose another local
+      // account while the real authenticated identity is unavailable.
+      if (firebaseAvailable) {
+        isLoggedIn = false;
+        phoneNumber = null;
+        emailAddress = null;
+        userUid = null;
+        notifyListeners();
+        return;
+      }
     }
 
     final saved = await AuthService.instance.getSession();
