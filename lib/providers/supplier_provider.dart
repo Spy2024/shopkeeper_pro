@@ -38,6 +38,12 @@ Map<String, int> aggregatePurchaseOrderQuantities({
   return quantitiesByProductId;
 }
 
+void validateSupplierAmount(double amount) {
+  if (!amount.isFinite || amount <= 0) {
+    throw ArgumentError('Amount must be a finite positive number');
+  }
+}
+
 class SupplierProvider extends ChangeNotifier {
   final List<Supplier> _suppliers = [];
   final List<SupplierOrder> _orders = [];
@@ -92,17 +98,13 @@ class SupplierProvider extends ChangeNotifier {
 
   /// Records new stock received from a supplier (increases what's owed).
   Future<void> recordStockReceived(String supplierId, double value) async {
-    if (!value.isFinite || value <= 0) {
-      throw ArgumentError('Amount must be a finite positive number');
-    }
+    validateSupplierAmount(value);
     await _adjustSupplier(supplierId, stockDelta: value);
   }
 
   /// Records a payment made to a supplier (reduces the remaining balance).
   Future<void> recordPayment(String supplierId, double amount) async {
-    if (!amount.isFinite || amount <= 0) {
-      throw ArgumentError('Amount must be a finite positive number');
-    }
+    validateSupplierAmount(amount);
     final s = _suppliers.firstWhere((s) => s.id == supplierId);
     if (amount > s.remainingBalance) throw StateError('Payment exceeds outstanding balance');
     await _adjustSupplier(supplierId, paymentDelta: amount);
