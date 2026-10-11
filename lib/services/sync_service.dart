@@ -142,6 +142,11 @@ class SyncService {
         final row = Map<String, dynamic>.from(raw);
         final id = (row['cloudId'] ?? row['id'])?.toString();
         if (id == null || id.isEmpty) continue;
+        // SQLite's integer primary key is device-local, not a cloud identity.
+        // Keep the stable cloud document ID but never reuse another device's
+        // local integer ID when this child row is downloaded.
+        row.remove('id');
+        row['cloudId'] = id;
         row['updatedAt'] ??= FieldValue.serverTimestamp();
         batch.set(parent.collection(childCollection).doc(id), row, SetOptions(merge: true));
       }
@@ -440,6 +445,8 @@ class SyncService {
           await txn.delete('bill_items', where: 'billId = ?', whereArgs: [doc.id]);
           for (final item in items.docs) {
             final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
+            // The SQLite autoincrement key belongs to the source device only.
+            data.remove('id');
             data['cloudId'] = item.id;
             await txn.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
           }
@@ -489,6 +496,8 @@ class SyncService {
           await txn.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [doc.id]);
           for (final item in items.docs) {
             final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
+            // Allocate a fresh local SQLite integer key on this device.
+            data.remove('id');
             data['cloudId'] = item.id;
             await txn.insert('supplier_order_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
           }
