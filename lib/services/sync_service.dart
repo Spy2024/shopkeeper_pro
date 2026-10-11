@@ -34,6 +34,14 @@ class SyncService {
     return _isOnline;
   }
 
+  void _ensureActiveAccount(String userId) {
+    if (userId.trim().isEmpty ||
+        FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId) {
+      throw StateError('The active account changed during sync; refusing to access another account\'s data.');
+    }
+  }
+
   /// Checks all non-destructive preconditions before a cloud backup restore
   /// replaces the local database. The destructive operation rechecks these
   /// conditions immediately before changing cloud data.
@@ -49,6 +57,7 @@ class SyncService {
     if (!await _checkOnline()) {
       throw StateError('An internet connection is required to restore and reconcile cloud data.');
     }
+    _ensureActiveAccount(userId);
     // Connectivity checks are asynchronous; recheck the lock after awaiting.
     if (_isSyncing) {
       throw StateError('Sync started while preparing restore. Wait for it to finish and retry.');
@@ -60,14 +69,19 @@ class SyncService {
     if (userId.trim().isEmpty ||
         authenticatedUid != userId ||
         DBService.instance.activeUserId != userId ||
-        _isSyncing ||
-        !await _checkOnline()) {
+        _isSyncing) {
       return;
     }
+    if (!await _checkOnline()) return;
+    // The connectivity check yields to other async work; ownership may have
+    // changed while it was in flight.
+    _ensureActiveAccount(userId);
+    if (_isSyncing) return;
 
     // A restored snapshot must be reconciled before ordinary bidirectional sync;
     // otherwise cloud-only records could be downloaded and resurrected.
     final db = await DBService.instance.database;
+    _ensureActiveAccount(userId);
     final pendingRestore = await db.query(
       'sync_metadata',
       columns: ['value'],
@@ -75,6 +89,7 @@ class SyncService {
       whereArgs: ['cloud_restore_pending'],
       limit: 1,
     );
+    _ensureActiveAccount(userId);
     if (pendingRestore.isNotEmpty) {
       if (pendingRestore.first['value'] != userId) {
         throw StateError('Pending restore belongs to a different account; refusing to sync.');
