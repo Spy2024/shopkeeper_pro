@@ -207,13 +207,13 @@ class PosProvider extends ChangeNotifier {
 
     final resolvedProduct = product;
     final soldQuantity = bill.items.where((candidate) {
-      if (candidate.productId != null) {
-        return candidate.productId == resolvedProduct.id;
-      }
-      // Legacy bills have no stable product ID, so retain name matching only
-      // for those historical rows.
-      return candidate.productName.trim().toLowerCase() ==
-          resolvedProduct.name.trim().toLowerCase();
+      final sameProduct = candidate.productId != null
+          ? candidate.productId == resolvedProduct.id
+          : candidate.productName.trim().toLowerCase() ==
+              resolvedProduct.name.trim().toLowerCase();
+      // Different sale-price lines for the same product must keep separate
+      // return limits so a higher-priced line cannot be refunded repeatedly.
+      return sameProduct && candidate.unitPrice == item.unitPrice;
     }).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
@@ -236,6 +236,7 @@ class PosProvider extends ChangeNotifier {
       'billId': bill.id,
       'productId': resolvedProduct.id,
       'productName': resolvedProduct.name,
+      'unitPrice': item.unitPrice,
       'quantity': quantity,
       'refundAmount': refundAmount,
       'date': returnedAt.toIso8601String(),
@@ -244,8 +245,8 @@ class PosProvider extends ChangeNotifier {
     late int newStock;
     await db.transaction((txn) async {
       final priorRows = await txn.rawQuery(
-        'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ?',
-        [bill.id, resolvedProduct.id],
+        'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ? AND (unitPrice = ? OR unitPrice = 0)',
+        [bill.id, resolvedProduct.id, item.unitPrice],
       );
       final alreadyReturned = (priorRows.first['returnedQuantity'] as num).toInt();
       if (quantity + alreadyReturned > soldQuantity) {
