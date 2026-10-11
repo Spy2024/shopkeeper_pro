@@ -227,11 +227,26 @@ class SupplierProvider extends ChangeNotifier {
       }
     });
 
-    // Reflect the committed database values in memory and queue one cloud
-    // update per affected product, even when the order repeats a product line.
+    // Reflect the committed database transaction in memory first. Queue
+    // persistence is best-effort here: it must not make a committed receipt
+    // look like a failed operation or leave the UI in the pre-receipt state.
     for (final entry in newStockByProductId.entries) {
       final product = productsById[entry.key]!;
       inventory.applyStockAfterTransaction(product.id, entry.value);
+    }
+    _suppliers[supplierIndex] = updatedSupplier;
+    _orders[orderIndex] = SupplierOrder(
+      id: order.id,
+      supplierId: order.supplierId,
+      supplierName: order.supplierName,
+      date: order.date,
+      items: order.items,
+      status: 'received',
+    );
+    notifyListeners();
+
+    for (final entry in newStockByProductId.entries) {
+      final product = productsById[entry.key]!;
       final updatedProduct = Product(
         id: product.id,
         name: product.name,
@@ -243,24 +258,14 @@ class SupplierProvider extends ChangeNotifier {
         barcode: product.barcode,
         expiryDate: product.expiryDate,
       );
-      await SyncQueueService.instance.queueOperation(
+      await _queueSafely(
         operation: 'update',
         tableName: 'products',
         documentId: product.id,
         data: updatedProduct.toMap(),
       );
     }
-
-    _suppliers[supplierIndex] = updatedSupplier;
-    _orders[orderIndex] = SupplierOrder(
-      id: order.id,
-      supplierId: order.supplierId,
-      supplierName: order.supplierName,
-      date: order.date,
-      items: order.items,
-      status: 'received',
-    );
-    await SyncQueueService.instance.queueOperation(
+    await _queueSafely(
       operation: 'update',
       tableName: 'supplier_orders',
       documentId: order.id,
@@ -272,13 +277,32 @@ class SupplierProvider extends ChangeNotifier {
         'status': 'received',
       },
     );
-    await SyncQueueService.instance.queueOperation(
+    await _queueSafely(
       operation: 'update',
       tableName: 'suppliers',
       documentId: updatedSupplier.id,
       data: updatedSupplier.toMap(),
     );
-    notifyListeners();
+  }
+
+  Future<void> _queueSafely({
+    required String operation,
+    required String tableName,
+    required String documentId,
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: operation,
+        tableName: tableName,
+        documentId: documentId,
+        data: data,
+      );
+    } catch (error) {
+      // The local SQLite transaction already committed. A future full sync
+      // can upload current rows; never report the receipt as rolled back.
+      debugPrint('[SupplierProvider] Local receipt committed; queue failed: $error');
+    }
   }
 
   Future<SupplierOrder> createOrder(
