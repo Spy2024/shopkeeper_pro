@@ -45,11 +45,14 @@ class DBService {
   }
 
   Future<void> clearActiveUser() async {
-    if (_db != null) {
-      await _db!.close();
-      _db = null;
-    }
+    // Drop the active reference before awaiting close. Even if SQLite reports
+    // a close error, callers must not keep using the previous account context.
+    final previousDb = _db;
+    _db = null;
     _activeUserId = null;
+    if (previousDb != null) {
+      await previousDb.close();
+    }
   }
 
 
