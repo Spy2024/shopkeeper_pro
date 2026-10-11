@@ -198,6 +198,7 @@ class SyncService {
         'bills': 'bills',
         'supplier_orders': 'supplier_orders',
         'products': 'products',
+        'branches': 'branches',
         'customers': 'customers',
         'suppliers': 'suppliers',
         'supplier_transactions': 'supplier_transactions',
@@ -303,6 +304,7 @@ class SyncService {
       await _collection(userId, 'shop').doc('profile').set({...Map<String, dynamic>.from(shopRows.first), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
     }
     await _writeBatch(userId, 'products', await _maps(db, 'products'));
+    await _writeBatch(userId, 'branches', await _maps(db, 'branches'));
     await _writeBatch(userId, 'customers', await _maps(db, 'customers'));
     final bills = await _maps(db, 'bills');
     await _writeBatch(userId, 'bills', bills);
@@ -365,6 +367,13 @@ class SyncService {
           data['cloudId'] = item.id;
           await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
+      }
+
+      final branches = await _collection(userId, 'branches').get();
+      for (final doc in branches.docs) {
+        if (await _hasPending(db, doc.id)) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('branches', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       final customers = await _collection(userId, 'customers').get();
