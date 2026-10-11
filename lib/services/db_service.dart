@@ -86,7 +86,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 10,
+      version: 11,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -138,6 +138,12 @@ class DBService {
         if (oldVersion < 10) {
           await db.execute('CREATE TABLE IF NOT EXISTS sync_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
         }
+        if (oldVersion < 11) {
+          await db.execute('ALTER TABLE products ADD COLUMN barcode TEXT');
+          await db.execute('ALTER TABLE products ADD COLUMN expiryDate TEXT');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_products_expiryDate ON products(expiryDate)');
+        }
       },
     );
   }
@@ -158,7 +164,7 @@ class DBService {
 
   Future<void> _createSchema(Database db) async {
     await db.execute('CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT, taxNumber TEXT, logoPath TEXT)');
-    await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5)');
+    await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5, barcode TEXT, expiryDate TEXT)');
     await db.execute('CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, notes TEXT, createdAt TEXT NOT NULL)');
     await db.execute('CREATE INDEX idx_customers_name ON customers(name)');
     await db.execute('CREATE TABLE bills (id TEXT PRIMARY KEY, date TEXT NOT NULL, customerName TEXT, discount REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0)');
@@ -175,6 +181,8 @@ class DBService {
     await db.execute('CREATE TABLE supplier_transactions (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, referenceId TEXT, FOREIGN KEY (supplierId) REFERENCES suppliers(id) ON DELETE CASCADE)');
     await db.execute('CREATE INDEX idx_supplier_transactions_supplier ON supplier_transactions(supplierId, date)');
     await db.execute('CREATE INDEX idx_products_name ON products(name)');
+    await db.execute('CREATE INDEX idx_products_barcode ON products(barcode)');
+    await db.execute('CREATE INDEX idx_products_expiryDate ON products(expiryDate)');
     await db.execute('CREATE INDEX idx_bill_items_billId ON bill_items(billId)');
     await db.execute('CREATE INDEX idx_sales_date ON daily_sales(date)');
     await db.execute('CREATE INDEX idx_sales_billId ON daily_sales(billId)');
