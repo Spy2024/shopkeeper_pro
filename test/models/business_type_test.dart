@@ -78,7 +78,7 @@ void main() {
     });
 
     test('rejects blank, short, long and unsupported characters', () {
-      for (final code in ['', 'A', 'BRANCH CODE', 'A/B', 'X' * 21]) {
+      for (final code in ['', 'A', 'BRANCH CODE', 'A/B', List.filled(21, 'X').join()]) {
         expect(() => normalizeBranchCode(code), throwsArgumentError, reason: code);
       }
     });
