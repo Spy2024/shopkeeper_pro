@@ -13,6 +13,7 @@ import '../../providers/sales_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../providers/supplier_provider.dart';
 import '../../services/backup_restore_service.dart';
+import '../../services/sync_service.dart';
 import '../../services/account_deletion_service.dart';
 import '../auth/phone_entry_screen.dart';
 import '../profile/shop_profile_screen.dart';
@@ -98,7 +99,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     try {
-      await BackupRestoreService.instance.restoreLatestCloudBackup(uid);
+      final cloudReconciled =
+          await BackupRestoreService.instance.restoreLatestCloudBackup(uid);
       if (!mounted) return;
       await Future.wait([
         context.read<ShopProvider>().load(),
@@ -108,7 +110,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context.read<SalesProvider>().load(),
         context.read<FinanceProvider>().load(),
       ]);
-      _message('Latest cloud backup restored.');
+      _message(cloudReconciled
+          ? 'Cloud backup restored and reconciled successfully.'
+          : 'Backup restored locally; cloud reconciliation is pending. Sync again when connected.');
     } catch (e) {
       _message('Cloud restore failed: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
@@ -164,7 +168,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _busy = true);
     try {
-      await BackupRestoreService.instance.restoreBackup(uid, File(selected.path), allowDifferentAccount: true);
+      await BackupRestoreService.instance.restoreBackup(
+        uid,
+        File(selected.path),
+        allowDifferentAccount: true,
+      );
+      var cloudReconciled = false;
+      try {
+        cloudReconciled =
+            await SyncService.instance.reconcilePendingRestoreIfOnline(uid);
+      } catch (e) {
+        debugPrint('[Settings] Restored locally; cloud reconciliation is pending: $e');
+      }
       if (!mounted) return;
       await Future.wait([
         context.read<ShopProvider>().load(),
@@ -174,7 +189,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context.read<SalesProvider>().load(),
         context.read<FinanceProvider>().load(),
       ]);
-      _message('Backup restored. Review your shop, stock, and bill history.');
+      _message(cloudReconciled
+          ? 'Backup restored and cloud records reconciled. Review your shop, stock, and bill history.'
+          : 'Backup restored on this device. Cloud sync is pending; connect to internet and sync again.');
     } catch (e) {
       _message('Restore failed: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
