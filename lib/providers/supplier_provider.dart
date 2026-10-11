@@ -215,20 +215,30 @@ class SupplierProvider extends ChangeNotifier {
 
     final db = await DBService.instance.database;
     final newStockByProductId = <String, int>{};
-    final newStockReceivedTotal = supplier.totalStockReceivedValue + total;
-    if (!newStockReceivedTotal.isFinite) {
-      throw StateError('Supplier total exceeds the supported amount range');
-    }
-    final updatedSupplier = Supplier(
-      id: supplier.id,
-      name: supplier.name,
-      phone: supplier.phone,
-      totalStockReceivedValue: newStockReceivedTotal,
-      totalPaymentsMade: supplier.totalPaymentsMade,
-    );
+    late Supplier updatedSupplier;
 
     // Stock, supplier balance/transaction and order status commit together.
     await db.transaction((txn) async {
+      final supplierRows = await txn.query(
+        'suppliers',
+        where: 'id = ?',
+        whereArgs: [supplier.id],
+        limit: 1,
+      );
+      if (supplierRows.isEmpty) throw StateError('Supplier no longer exists');
+      final currentSupplier = Supplier.fromMap(supplierRows.single);
+      final newStockReceivedTotal = currentSupplier.totalStockReceivedValue + total;
+      if (!newStockReceivedTotal.isFinite) {
+        throw StateError('Supplier total exceeds the supported amount range');
+      }
+      updatedSupplier = Supplier(
+        id: currentSupplier.id,
+        name: currentSupplier.name,
+        phone: currentSupplier.phone,
+        totalStockReceivedValue: newStockReceivedTotal,
+        totalPaymentsMade: currentSupplier.totalPaymentsMade,
+      );
+
       for (final entry in quantitiesByProductId.entries) {
         final rows = await txn.query(
           'products',
