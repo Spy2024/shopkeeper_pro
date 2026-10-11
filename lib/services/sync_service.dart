@@ -86,6 +86,85 @@ class SyncService {
     }
   }
 
+  /// Replaces this account's managed cloud data with the current local
+  /// snapshot. Use only for an explicit restore; normal sync must merge first
+  /// so cloud-only records are not accidentally deleted.
+  Future<void> replaceCloudWithLocalSnapshot(String userId) async {
+    if (userId.trim().isEmpty ||
+        FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId) {
+      throw StateError('Sign in with the account that owns this data before restoring cloud records.');
+    }
+    if (_isSyncing) {
+      throw StateError('Sync is already running. Wait for it to finish and retry restore.');
+    }
+    if (!await _checkOnline()) {
+      throw StateError('An internet connection is required to reconcile restored cloud data.');
+    }
+
+    _isSyncing = true;
+    try {
+      // Firestore does not cascade deletes into subcollections.
+      await _deleteChildDocuments(userId, 'bills', 'items');
+      await _deleteChildDocuments(userId, 'supplier_orders', 'items');
+      for (final collection in [
+        'bills',
+        'supplier_orders',
+        'products',
+        'customers',
+        'suppliers',
+        'supplier_transactions',
+        'sales',
+        'returns',
+        'expenses',
+      ]) {
+        await _deleteCollectionDocuments(userId, collection);
+      }
+      await _collection(userId, 'shop').doc('profile').delete();
+      await _pushLocal(userId);
+    } finally {
+      _isSyncing = false;
+    }
+  }
+
+  Future<void> _deleteChildDocuments(
+    String userId,
+    String parentCollection,
+    String childCollection,
+  ) async {
+    final parents = await _collection(userId, parentCollection).get();
+    for (final parent in parents.docs) {
+      final children = await parent.reference.collection(childCollection).get();
+      for (var start = 0; start < children.docs.length; start += 400) {
+        final end = ((start + 400) > children.docs.length)
+            ? children.docs.length
+            : start + 400;
+        final batch = _dbFirestore.batch();
+        for (final child in children.docs.sublist(start, end)) {
+          batch.delete(child.reference);
+        }
+        await batch.commit();
+      }
+    }
+  }
+
+  Future<void> _deleteCollectionDocuments(
+    String userId,
+    String collectionName,
+  ) async {
+    final snapshot = await _collection(userId, collectionName).get();
+    for (var start = 0; start < snapshot.docs.length; start += 400) {
+      final end = ((start + 400) > snapshot.docs.length)
+          ? snapshot.docs.length
+          : start + 400;
+      final batch = _dbFirestore.batch();
+      for (final doc in snapshot.docs.sublist(start, end)) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+  }
+
   Future<void> _pushLocal(String userId) async {
     final db = await DBService.instance.database;
     final shopRows = await db.query('shop', limit: 1);
