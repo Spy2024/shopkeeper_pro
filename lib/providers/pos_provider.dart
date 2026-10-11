@@ -39,6 +39,16 @@ void validateProductCanBeSold(Product product) {
   }
 }
 
+/// Stock-return flow requires a real inventory link. Manual bill-only lines
+/// never deducted stock at checkout and must not add stock when returned.
+void validateReturnItemIsInventoryLinked(BillItem item) {
+  if (item.productId == null || item.productId!.trim().isEmpty) {
+    throw StateError(
+      'This bill item is not linked to inventory and cannot be returned through stock return.',
+    );
+  }
+}
+
 /// Sums only the sold quantity for the selected product and unit-price line.
 /// This prevents a more expensive line for the same product from being
 /// refunded repeatedly using quantities sold at a lower price.
@@ -292,6 +302,7 @@ class PosProvider extends ChangeNotifier {
     if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
     if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
 
+    validateReturnItemIsInventoryLinked(item);
     final product = resolveProductForBillItem(item, inventory.products);
     if (product == null) {
       throw StateError('The returned product is no longer in inventory: ${item.productName}');
