@@ -152,10 +152,17 @@ class PosProvider extends ChangeNotifier {
     final quantitiesById = <String, int>{};
     final itemProducts = <BillItem, Product>{};
     for (final item in cart) {
+      if (item.quantity <= 0 || !item.unitPrice.isFinite || item.unitPrice <= 0) {
+        throw StateError('Invalid quantity or price');
+      }
+
+      // Manually entered bill lines have no productId. They are bill-only
+      // items and must not require a catalogue record or change stock.
+      if (item.productId == null) continue;
+
       final product = resolveProductForBillItem(item, inventory.products);
       if (product == null) throw StateError('Product not found: ${item.productName}');
       validateProductCanBeSold(product);
-      if (item.quantity <= 0 || item.unitPrice <= 0) throw StateError('Invalid quantity or price');
       productsById[product.id] = product;
       quantitiesById[product.id] = (quantitiesById[product.id] ?? 0) + item.quantity;
       itemProducts[item] = product;
@@ -165,11 +172,16 @@ class PosProvider extends ChangeNotifier {
       if (product.stockQuantity < entry.value) throw StateError('Insufficient stock for ${product.name}');
     }
 
-    // Store resolved inventory IDs and canonical names, including legacy cart entries.
+    // Catalogue-linked lines use canonical product identity. Manual lines
+    // remain in the bill with a null productId and no stock deduction.
     final normalizedItems = cart.map((item) {
-      final product = itemProducts[item]!;
-      return BillItem(productId: product.id, productName: product.name,
-        quantity: item.quantity, unitPrice: item.unitPrice);
+      final product = itemProducts[item];
+      return BillItem(
+        productId: product?.id,
+        productName: product?.name ?? item.productName.trim(),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      );
     }).toList(growable: false);
 
     final db = await DBService.instance.database;
@@ -207,10 +219,19 @@ class PosProvider extends ChangeNotifier {
       }
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
-        final product = productsById[item.productId]!;
-        await txn.insert('daily_sales', DailySale(id: _uuid.v4(), date: bill.date, billId: bill.id,
-          productId: product.id, productName: product.name, costPrice: product.costPrice,
-          salePrice: item.unitPrice * (1 - discountRatio), quantity: item.quantity, source: 'pos').toMap());
+        final product = item.productId == null ? null : productsById[item.productId];
+        await txn.insert('daily_sales', DailySale(
+          id: _uuid.v4(),
+          date: bill.date,
+          billId: bill.id,
+          productId: product?.id,
+          productName: product?.name ?? item.productName,
+          // Manual bill-only lines have no inventory cost record.
+          costPrice: product?.costPrice ?? 0,
+          salePrice: item.unitPrice * (1 - discountRatio),
+          quantity: item.quantity,
+          source: 'pos',
+        ).toMap());
       }
     });
 
