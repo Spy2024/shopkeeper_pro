@@ -42,7 +42,7 @@ class BranchProvider extends ChangeNotifier {
     final duplicateCode = await db.query(
       'branches',
       columns: ['id'],
-      where: 'code = ? AND id != ?',
+      where: 'UPPER(TRIM(code)) = ? AND id != ?',
       whereArgs: [cleanCode, id ?? ''],
       limit: 1,
     );
