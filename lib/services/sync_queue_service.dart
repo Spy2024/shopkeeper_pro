@@ -145,13 +145,27 @@ class SyncQueueService {
     } else if (_pendingQueue.isEmpty) {
       await _loadPendingQueue(expectedUserId: userId);
     }
-    if (_pendingQueue.isEmpty) return;
+    if (FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId ||
+        _pendingQueue.isEmpty) {
+      return;
+    }
 
     _isSyncing = true;
     try {
       final db = await DBService.instance.database;
+      if (FirebaseAuth.instance.currentUser?.uid != userId ||
+          DBService.instance.activeUserId != userId) {
+        return;
+      }
       for (final op in List<SyncOperation>.from(_pendingQueue)) {
         try {
+          // Account state can change while an earlier network write is in
+          // flight. Stop before sending or acknowledging another account's work.
+          if (FirebaseAuth.instance.currentUser?.uid != userId ||
+              DBService.instance.activeUserId != userId) {
+            return;
+          }
           final ref = _documentRef(userId, op.tableName, op.documentId);
           if (op.operation == 'delete') {
             await ref.delete();
@@ -160,6 +174,11 @@ class SyncQueueService {
               op.data,
               SetOptions(merge: op.operation == 'update'),
             );
+          }
+          if (FirebaseAuth.instance.currentUser?.uid != userId ||
+              DBService.instance.activeUserId != userId) {
+            // Leave the operation pending so the owning account can retry it.
+            return;
           }
           await db.update(
             queueTableName,
