@@ -79,13 +79,27 @@ class PosProvider extends ChangeNotifier {
         !(quantity * unitPrice).isFinite) {
       throw ArgumentError('Cart item must have a name, positive quantity, and finite positive price and total.');
     }
-    final existingIndex = productId == null ? -1 : cart.indexWhere((item) => item.productId == productId);
+    // Only merge identical product/price lines. If a cashier changes a price
+    // mid-cart, preserve the earlier line price for correct totals and refunds.
+    final existingIndex = productId == null
+        ? -1
+        : cart.indexWhere((item) =>
+            item.productId == productId && item.unitPrice == unitPrice);
     if (existingIndex >= 0) {
       final existing = cart[existingIndex];
-      cart[existingIndex] = BillItem(productId: existing.productId, productName: existing.productName,
-        quantity: existing.quantity + quantity, unitPrice: unitPrice);
+      cart[existingIndex] = BillItem(
+        productId: existing.productId,
+        productName: existing.productName,
+        quantity: existing.quantity + quantity,
+        unitPrice: existing.unitPrice,
+      );
     } else {
-      cart.add(BillItem(productId: productId, productName: cleanName, quantity: quantity, unitPrice: unitPrice));
+      cart.add(BillItem(
+        productId: productId,
+        productName: cleanName,
+        quantity: quantity,
+        unitPrice: unitPrice,
+      ));
     }
     notifyListeners();
   }
