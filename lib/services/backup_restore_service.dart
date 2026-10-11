@@ -13,6 +13,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'db_service.dart';
 import 'sync_queue_service.dart';
+import 'sync_service.dart';
 
 class BackupRestoreService {
   BackupRestoreService._();
@@ -114,6 +115,10 @@ class BackupRestoreService {
     await tempFile.writeAsBytes(bytes, flush: true);
     try {
       await restoreBackup(userId, tempFile);
+      // Explicit cloud-backup restore means this local snapshot is authoritative.
+      // Remove stale cloud-only documents before pushing restored rows, otherwise
+      // the next bidirectional sync could resurrect records absent from the backup.
+      await SyncService.instance.replaceCloudWithLocalSnapshot(userId);
     } finally {
       if (await tempFile.exists()) await tempFile.delete();
     }
