@@ -138,6 +138,9 @@ void main() {
         dailySalesRows: [
           {'costPrice': 300.0, 'quantity': 2, 'source': 'pos'},
           {'costPrice': -300.0, 'quantity': 1, 'source': 'return'},
+          // Manual sales are not included in billedSales, so their COGS must
+          // not reduce the profit of the POS-only statement.
+          {'costPrice': 999.0, 'quantity': 2, 'source': 'manual'},
         ],
       );
 
