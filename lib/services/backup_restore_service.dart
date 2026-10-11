@@ -192,6 +192,12 @@ class BackupRestoreService {
       throw StateError('Sign in with this account before uploading a cloud backup.');
     }
     final file = await createBackup(userId);
+    // The backup generation is asynchronous; do not upload after an account
+    // switch or sign-out while the local snapshot was being written.
+    await _requireOwner(userId);
+    if (FirebaseAuth.instance.currentUser?.uid != userId) {
+      throw StateError('Sign in with this account before uploading a cloud backup.');
+    }
     final ref = FirebaseStorage.instance.ref().child('users/$userId/backups/latest.json');
     await ref.putFile(
       file,
@@ -229,6 +235,10 @@ class BackupRestoreService {
     final ref = FirebaseStorage.instance.ref().child('users/$userId/backups/latest.json');
     final bytes = await ref.getData(100 * 1024 * 1024);
     if (bytes == null) throw StateError('No cloud backup was found for this account.');
+    await _requireOwner(userId);
+    if (FirebaseAuth.instance.currentUser?.uid != userId) {
+      throw StateError('Sign in with this account before restoring a cloud backup.');
+    }
     final documents = await getApplicationDocumentsDirectory();
     final tempFile = File(p.join(documents.path, 'cloud_backup_restore.json'));
     await tempFile.writeAsBytes(bytes, flush: true);
