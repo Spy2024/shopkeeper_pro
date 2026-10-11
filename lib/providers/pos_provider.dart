@@ -185,11 +185,25 @@ class PosProvider extends ChangeNotifier {
       }
       for (final entry in quantitiesById.entries) {
         final product = productsById[entry.key]!;
-        final newQty = product.stockQuantity - entry.value;
-        final changed = await txn.update('products', {'stockQuantity': newQty},
-          where: 'id = ? AND stockQuantity >= ?', whereArgs: [product.id, entry.value]);
-        if (changed != 1) throw StateError('Stock changed. Please retry checkout.');
-        newQuantities[product.id] = newQty;
+        // Decrement the database's current value atomically. Calculating from
+        // the provider cache could overwrite a concurrent stock receipt/edit.
+        final changed = await txn.rawUpdate(
+          'UPDATE products SET stockQuantity = stockQuantity - ? '
+          'WHERE id = ? AND stockQuantity >= ?',
+          [entry.value, product.id, entry.value],
+        );
+        if (changed != 1) {
+          throw StateError('Stock changed or is insufficient for ${product.name}. Please retry checkout.');
+        }
+        final stockRows = await txn.query(
+          'products',
+          columns: ['stockQuantity'],
+          where: 'id = ?',
+          whereArgs: [product.id],
+          limit: 1,
+        );
+        if (stockRows.isEmpty) throw StateError('Product not found after stock update.');
+        newQuantities[product.id] = (stockRows.single['stockQuantity'] as num).toInt();
       }
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
