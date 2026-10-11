@@ -73,9 +73,17 @@ class BackupRestoreService {
     if (FirebaseAuth.instance.currentUser?.uid != userId) {
       throw StateError('Sign in with this account before uploading a cloud backup.');
     }
-    final file = await createBackup(userId);
-    // Fail before touching the local database if cloud reconciliation cannot start.
+    // Manual backups should not race an active sync or cloud restore.
     await SyncService.instance.ensureCloudRestoreReady(userId);
+    return _uploadBackupToCloudFile(userId);
+  }
+
+  Future<String> _uploadBackupToCloudFile(String userId) async {
+    await _requireOwner(userId);
+    if (FirebaseAuth.instance.currentUser?.uid != userId) {
+      throw StateError('Sign in with this account before uploading a cloud backup.');
+    }
+    final file = await createBackup(userId);
     final ref = FirebaseStorage.instance.ref().child('users/$userId/backups/latest.json');
     await ref.putFile(
       file,
@@ -90,7 +98,8 @@ class BackupRestoreService {
 
   /// Creates at most one automatic cloud backup per 24 hours when a successful
   /// sync occurs. A failed upload does not advance the timestamp, so the next
-  /// sync can retry.
+  /// sync can retry. This uses the internal upload path because SyncService
+  /// deliberately holds its sync lock while invoking this method.
   Future<void> maybeCreateAutomaticCloudBackup(String userId) async {
     if (FirebaseAuth.instance.currentUser?.uid != userId) return;
     final last = await _secureStorage.read(key: 'last_cloud_backup_$userId');
@@ -101,7 +110,7 @@ class BackupRestoreService {
         return;
       }
     }
-    await uploadBackupToCloud(userId);
+    await _uploadBackupToCloudFile(userId);
   }
 
   Future<bool> restoreLatestCloudBackup(String userId) async {
