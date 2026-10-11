@@ -107,7 +107,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
         ),
       );
       if (saved == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Customer saved')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Customer saved')),
+        );
       }
     } finally {
       name.dispose(); phone.dispose(); email.dispose(); notes.dispose();
