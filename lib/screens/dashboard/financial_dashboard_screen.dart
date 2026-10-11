@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../providers/shop_provider.dart';
+import '../../services/pdf_service.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/sales_provider.dart';
 
@@ -20,6 +23,33 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     super.initState();
     context.read<FinanceProvider>().load();
     context.read<SalesProvider>().load();
+  }
+
+  Future<void> _exportFinancialStatement() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    try {
+      final finance = context.read<FinanceProvider>();
+      final sales = context.read<SalesProvider>();
+      final shop = context.read<ShopProvider>().shop;
+      final file = await PdfService.generateFinancialStatement(
+        startDate: start,
+        endDate: now,
+        sales: sales.sales,
+        expenses: finance.expenses,
+        shop: shop,
+      );
+      if (!mounted) return;
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        text: 'Shopkeeper Pro financial statement: ${DateFormat('dd MMM yyyy').format(start)} - ${DateFormat('dd MMM yyyy').format(now)}',
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export financial statement: $error')),
+      );
+    }
   }
 
   void _openAddExpenseDialog() {
@@ -80,7 +110,16 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
     final netProfit = finance.calculateNetProfit(monthlySales, now.year, now.month);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Financial Dashboard')),
+      appBar: AppBar(
+        title: const Text('Financial Dashboard'),
+        actions: [
+          IconButton(
+            tooltip: 'Export this month\'s financial statement PDF',
+            onPressed: _exportFinancialStatement,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openAddExpenseDialog,
         icon: const Icon(Icons.add),
