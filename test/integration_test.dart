@@ -358,6 +358,14 @@ void main() {
       );
     });
 
+    test('supplier amounts reject NaN and infinity', () {
+      expect(() => validateSupplierAmount(double.nan), throwsArgumentError);
+      expect(() => validateSupplierAmount(double.infinity), throwsArgumentError);
+      expect(() => validateSupplierAmount(0), throwsArgumentError);
+      expect(() => validateSupplierAmount(-1), throwsArgumentError);
+      expect(() => validateSupplierAmount(100), returnsNormally);
+    });
+
     test('supplier balance cannot be negative conceptually', () {
       final supplier = Supplier(id: 's1', name: 'ABC', phone: '',
         totalStockReceivedValue: 1000, totalPaymentsMade: 400);
