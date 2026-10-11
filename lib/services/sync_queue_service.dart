@@ -80,6 +80,22 @@ class SyncQueueService {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+
+    // SQLite may finish the insert after sign-out/account switching started.
+    // The row remains safely in the original user's database, but it must not
+    // be added to the process-wide in-memory queue for a different account.
+    final uidAfterInsert = firebaseConfigured
+        ? FirebaseAuth.instance.currentUser?.uid
+        : null;
+    if (DBService.instance.activeUserId != activeUserId ||
+        (firebaseConfigured && uidAfterInsert != activeUserId) ||
+        (uidAfterInsert != null && uidAfterInsert != activeUserId)) {
+      _pendingQueue.clear();
+      _loadedQueueUserId = null;
+      throw StateError(
+        'The account changed while saving the sync queue; the operation remains pending in its original local database.',
+      );
+    }
     _pendingQueue.add(op);
 
     try {
