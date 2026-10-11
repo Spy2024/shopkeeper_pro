@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../../providers/pos_provider.dart';
+import '../../models/bill.dart';
 import '../../providers/inventory_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
 import 'bill_history_screen.dart';
+import '../barcode_scanner_screen.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -170,11 +172,12 @@ class _BillSummaryPanel extends StatelessWidget {
         ),
       );
 
-  void _showAdjustmentsDialog(BuildContext context, PosProvider pos) {
+  Future<void> _showAdjustmentsDialog(BuildContext context, PosProvider pos) async {
     final discountCtrl = TextEditingController(text: pos.discount == 0 ? '' : pos.discount.toString());
     final taxCtrl = TextEditingController(text: pos.taxPercent == 0 ? '' : pos.taxPercent.toString());
     final nameCtrl = TextEditingController(text: pos.customerName ?? '');
-    showDialog(
+    try {
+      await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Discount, Tax & Customer'),
@@ -201,32 +204,71 @@ class _BillSummaryPanel extends StatelessWidget {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
+              final discount = double.tryParse(discountCtrl.text.trim()) ?? 0;
+              final tax = double.tryParse(taxCtrl.text.trim()) ?? 0;
+              if (!discount.isFinite || discount < 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Discount must be a valid non-negative amount.')),
+                );
+                return;
+              }
+              if (!tax.isFinite || tax < 0 || tax > 100) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Tax must be between 0 and 100%.')),
+                );
+                return;
+              }
               pos.setCustomerName(nameCtrl.text.trim().isEmpty ? null : nameCtrl.text.trim());
-              pos.setDiscount(double.tryParse(discountCtrl.text) ?? 0);
-              pos.setTax(double.tryParse(taxCtrl.text) ?? 0);
+              pos.setDiscount(discount);
+              pos.setTax(tax);
               Navigator.pop(context);
             },
             child: const Text('Apply'),
           ),
         ],
       ),
-    );
+      );
+    } finally {
+      discountCtrl.dispose();
+      taxCtrl.dispose();
+      nameCtrl.dispose();
+    }
   }
 
   Future<void> _checkoutAndShare(BuildContext context, PosProvider pos) async {
     final inventory = context.read<InventoryProvider>();
     final shop = context.read<ShopProvider>().shop;
+    late final Bill bill;
     try {
-      final bill = await pos.checkout(inventory);
+      bill = await pos.checkout(inventory);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Checkout failed; no bill was confirmed: $e')),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    try {
       final file = await PdfService.generateInvoice(bill, shop);
       if (!context.mounted) return;
+
+      // Checkout clears the cart and notifies listeners. Let Flutter finish
+      // rebuilding the POS tree before opening the native print UI.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!context.mounted) return;
+
+      final pdfBytes = await file.readAsBytes();
       await Printing.layoutPdf(
-        onLayout: (_) => file.readAsBytes(),
+        onLayout: (_) async => pdfBytes,
+        name: 'Shopkeeper-Pro-Invoice',
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Checkout failed: $e')),
+          SnackBar(content: Text('Bill saved successfully, but printing failed: $e')),
         );
       }
     }
@@ -255,6 +297,32 @@ class _AddItemSheetState extends State<_AddItemSheet> {
     setState(() {});
   }
 
+  Future<void> _scanBarcode() async {
+    final scanned = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (scanned == null || !mounted) return;
+
+    final normalized = scanned.trim().toLowerCase();
+    final exactMatches = widget.inventory.products
+        .where((product) => product.barcode?.trim().toLowerCase() == normalized)
+        .toList(growable: false);
+    if (exactMatches.length == 1) {
+      final product = exactMatches.single;
+      _selectProduct(product.name, product.sellingPrice, product.id);
+      return;
+    }
+
+    _nameCtrl.text = scanned;
+    _selectedProductId = null;
+    setState(() {});
+    if (exactMatches.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No product has this barcode. Add it in Inventory first.')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -279,8 +347,22 @@ class _AddItemSheetState extends State<_AddItemSheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: 'Product Name', prefixIcon: Icon(Icons.search)),
-            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Product name or barcode',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                tooltip: 'Scan barcode with camera',
+                onPressed: _scanBarcode,
+                icon: const Icon(Icons.document_scanner_outlined),
+              ),
+            ),
+            onChanged: (value) {
+              final selected = widget.inventory.findById(_selectedProductId ?? '');
+              if (selected != null && value.trim() != selected.name) {
+                _selectedProductId = null;
+              }
+              setState(() {});
+            },
           ),
           if (_nameCtrl.text.isNotEmpty && results.isNotEmpty)
             SizedBox(

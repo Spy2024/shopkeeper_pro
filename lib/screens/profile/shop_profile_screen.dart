@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/shop_provider.dart';
+import '../../models/business_type.dart';
 import '../dashboard/home_screen.dart';
 
 class ShopProfileScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
   final _phoneCtrl = TextEditingController();
   final _taxCtrl = TextEditingController();
   String? _logoPath;
+  String _businessType = 'general_retail';
 
   @override
   void initState() {
@@ -31,6 +33,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
       _phoneCtrl.text = shop.phone;
       _taxCtrl.text = shop.taxNumber ?? '';
       _logoPath = shop.logoPath;
+      _businessType = shop.businessType;
     }
   }
 
@@ -92,6 +95,24 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
                 decoration: const InputDecoration(
                     labelText: 'NTN / Tax Number (optional)', prefixIcon: Icon(Icons.receipt_long)),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: BusinessTypes.byId(_businessType).id,
+                decoration: const InputDecoration(
+                  labelText: 'Business Type',
+                  prefixIcon: Icon(Icons.business_center_outlined),
+                  helperText: 'Choose your business type. Its dedicated workflows are rolled out in stages.',
+                ),
+                items: BusinessTypes.all
+                    .map((type) => DropdownMenuItem<String>(
+                          value: type.id,
+                          child: Text(type.label),
+                        ))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _businessType = value);
+                },
+              ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () async {
@@ -102,6 +123,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
                         phone: _phoneCtrl.text.trim(),
                         taxNumber: _taxCtrl.text.trim().isEmpty ? null : _taxCtrl.text.trim(),
                         logoPath: _logoPath,
+                        businessType: _businessType,
                       );
                   if (!context.mounted) return;
                   if (widget.isFirstSetup) {

@@ -22,6 +22,7 @@ class ShopProvider extends ChangeNotifier {
     required String phone,
     String? taxNumber,
     String? logoPath,
+    String businessType = 'general_retail',
   }) async {
     final db = await DBService.instance.database;
     final id = shop?.id ?? _uuid.v4();
@@ -32,6 +33,7 @@ class ShopProvider extends ChangeNotifier {
       phone: phone,
       taxNumber: taxNumber,
       logoPath: logoPath ?? shop?.logoPath,
+      businessType: businessType,
     );
     await db.insert('shop', newShop.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
     await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'shop', documentId: 'profile', data: newShop.toMap());

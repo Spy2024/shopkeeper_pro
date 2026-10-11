@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <application
-        android:label="shopkeeper_pro"
+        android:label="Shopkeeper Pro"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@drawable/ic_shopkeeper_pro">
         <activity
             android:name="com.example.shopkeeper_pro.MainActivity"
             android:exported="true"

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../services/db_service.dart';
+import 'legacy_database_migration_dialog.dart';
 import '../dashboard/home_screen.dart';
 import '../profile/shop_profile_screen.dart';
 
@@ -41,6 +43,10 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
       } else {
         setState(() => _showVerificationAction = true);
       }
+    } on LegacyDatabaseMigrationRequired {
+      if (!mounted) return;
+      final imported = await confirmLegacyDatabaseImport(context);
+      if (imported) await _continueAfterAuth();
     } catch (_) {
       if (mounted) setState(() => _showVerificationAction = true);
     }
@@ -67,12 +73,20 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
   }
 
   Future<void> _verifyEmail() async {
-    final verified = await context.read<AuthProvider>().refreshEmailVerification();
-    if (!mounted) return;
-    if (verified) {
-      await _continueAfterAuth();
-    } else {
-      setState(() => _showVerificationAction = true);
+    try {
+      final verified = await context.read<AuthProvider>().refreshEmailVerification();
+      if (!mounted) return;
+      if (verified) {
+        await _continueAfterAuth();
+      } else {
+        setState(() => _showVerificationAction = true);
+      }
+    } on LegacyDatabaseMigrationRequired {
+      if (!mounted) return;
+      final imported = await confirmLegacyDatabaseImport(context);
+      if (imported) await _continueAfterAuth();
+    } catch (_) {
+      if (mounted) setState(() => _showVerificationAction = true);
     }
   }
 

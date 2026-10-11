@@ -1,3 +1,5 @@
+import 'package:shopkeeper_pro/models/daily_sale.dart';
+import 'package:shopkeeper_pro/services/pdf_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -48,6 +50,18 @@ void main() {
       const taxAmount = (afterDiscount * taxPercent) / 100;
       const grandTotal = afterDiscount + taxAmount;
       expect(grandTotal, equals(5265.0));
+    });
+
+    test('financial statement rejects an inverted date range', () async {
+      await expectLater(
+        PdfService.generateFinancialStatement(
+          startDate: DateTime(2026, 10, 2),
+          endDate: DateTime(2026, 10, 1),
+          sales: const <DailySale>[],
+          expenses: const <Expense>[],
+        ),
+        throwsArgumentError,
+      );
     });
   });
 }
