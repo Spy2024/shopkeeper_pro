@@ -35,13 +35,20 @@ class BranchProvider extends ChangeNotifier {
     bool isActive = true,
   }) async {
     final cleanName = name.trim();
-    final cleanCode = code.trim().toUpperCase();
     if (cleanName.isEmpty) throw ArgumentError('Branch name is required.');
-    if (cleanCode.isEmpty || !RegExp(r'^[A-Z0-9_-]{2,20}$').hasMatch(cleanCode)) {
-      throw ArgumentError('Branch code must be 2–20 letters, numbers, dashes or underscores.');
-    }
+    final cleanCode = normalizeBranchCode(code);
 
     final db = await DBService.instance.database;
+    final duplicateCode = await db.query(
+      'branches',
+      columns: ['id'],
+      where: 'code = ? AND id != ?',
+      whereArgs: [cleanCode, id ?? ''],
+      limit: 1,
+    );
+    if (duplicateCode.isNotEmpty) {
+      throw ArgumentError('Branch code "$cleanCode" is already in use. Choose a unique code.');
+    }
     final existing = id == null
         ? <Map<String, Object?>>[]
         : await db.query('branches', where: 'id = ?', whereArgs: [id], limit: 1);
