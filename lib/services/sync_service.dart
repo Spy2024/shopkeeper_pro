@@ -237,9 +237,11 @@ class SyncService {
       }
 
       final shopRef = _collection(userId, 'shop').doc('profile');
+      _ensureActiveAccount(userId);
       if (shopRows.isEmpty) {
         await shopRef.delete();
       }
+      _ensureActiveAccount(userId);
       await db.delete(
         'sync_metadata',
         where: 'key = ? AND value = ?',
@@ -259,12 +261,15 @@ class SyncService {
     required String localParentKey,
   }) async {
     final db = await DBService.instance.database;
+    _ensureActiveAccount(userId);
     final localParentsById = <String, Map<String, dynamic>>{
       for (final row in localParents)
         if (row['id'] != null) row['id'].toString(): row,
     };
     final cloudParents = await _collection(userId, parentCollection).get();
+    _ensureActiveAccount(userId);
     for (final parent in cloudParents.docs) {
+      _ensureActiveAccount(userId);
       final localParent = localParentsById[parent.id];
       final localChildren = localParent == null
           ? <Map<String, dynamic>>[]
@@ -280,6 +285,7 @@ class SyncService {
             (row['cloudId'] ?? row['id']).toString(),
       };
       final cloudChildren = await parent.reference.collection(childCollection).get();
+      _ensureActiveAccount(userId);
       final stale = cloudChildren.docs
           .where((doc) => !keepIds.contains(doc.id))
           .toList(growable: false);
@@ -299,6 +305,7 @@ class SyncService {
     String collectionName,
     List<Map<String, dynamic>> localRows,
   ) async {
+    _ensureActiveAccount(userId);
     final keepIds = <String>{
       for (final row in localRows)
         if ((row['cloudId'] ?? row['id']) != null &&
@@ -306,6 +313,7 @@ class SyncService {
           (row['cloudId'] ?? row['id']).toString(),
     };
     final cloudRows = await _collection(userId, collectionName).get();
+    _ensureActiveAccount(userId);
     final stale = cloudRows.docs
         .where((doc) => !keepIds.contains(doc.id))
         .toList(growable: false);
