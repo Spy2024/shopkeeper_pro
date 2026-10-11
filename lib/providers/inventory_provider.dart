@@ -4,6 +4,24 @@ import '../models/product.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 
+void validateProductValues({
+  required int stockQuantity,
+  required double costPrice,
+  required double sellingPrice,
+  required int lowStockThreshold,
+}) {
+  if (stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
+  if (!costPrice.isFinite || !sellingPrice.isFinite) {
+    throw ArgumentError('Prices must be finite numbers');
+  }
+  if (costPrice < 0 || sellingPrice < 0) {
+    throw ArgumentError('Prices cannot be negative');
+  }
+  if (lowStockThreshold < 0) {
+    throw ArgumentError('Low-stock threshold cannot be negative');
+  }
+}
+
 class InventoryProvider extends ChangeNotifier {
   final List<Product> _products = [];
   final _uuid = const Uuid();
@@ -47,9 +65,12 @@ class InventoryProvider extends ChangeNotifier {
     final cleanCategory = category.trim();
     final cleanBarcode = barcode?.trim().isEmpty == true ? null : barcode?.trim();
     if (cleanName.isEmpty) throw ArgumentError('Product name is required');
-    if (stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
-    if (costPrice < 0 || sellingPrice < 0) throw ArgumentError('Prices cannot be negative');
-    if (lowStockThreshold < 0) throw ArgumentError('Low-stock threshold cannot be negative');
+    validateProductValues(
+      stockQuantity: stockQuantity,
+      costPrice: costPrice,
+      sellingPrice: sellingPrice,
+      lowStockThreshold: lowStockThreshold,
+    );
     if (_products.any((p) => p.name.trim().toLowerCase() == cleanName.toLowerCase())) {
       throw StateError('A product with this name already exists');
     }
@@ -80,9 +101,12 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> updateProduct(Product product) async {
     final cleanName = product.name.trim();
     if (cleanName.isEmpty) throw ArgumentError('Product name is required');
-    if (product.stockQuantity < 0) throw ArgumentError('Stock cannot be negative');
-    if (product.costPrice < 0 || product.sellingPrice < 0) throw ArgumentError('Prices cannot be negative');
-    if (product.lowStockThreshold < 0) throw ArgumentError('Low-stock threshold cannot be negative');
+    validateProductValues(
+      stockQuantity: product.stockQuantity,
+      costPrice: product.costPrice,
+      sellingPrice: product.sellingPrice,
+      lowStockThreshold: product.lowStockThreshold,
+    );
     if (_products.any((p) => p.id != product.id && p.name.trim().toLowerCase() == cleanName.toLowerCase())) {
       throw StateError('A product with this name already exists');
     }
