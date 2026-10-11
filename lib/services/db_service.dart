@@ -68,11 +68,17 @@ class DBService {
   }
 
   Future<Database> get database async {
+    // Fail closed: never open the legacy/unscoped database while no account
+    // owns the active connection. Authenticated/demo sessions must call
+    // configureForUser() before any provider accesses local data.
+    final activeUserId = _activeUserId;
+    if (activeUserId == null || activeUserId.trim().isEmpty) {
+      throw StateError('Sign in before accessing the local database.');
+    }
     if (_db != null) return _db!;
     final dbPath = await getDatabasesPath();
-    final path = _activeUserId == null
-        ? join(dbPath, 'shopkeeper_pro.db')
-        : join(dbPath, 'shopkeeper_pro_${_activeUserId!.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}.db');
+    final safeId = activeUserId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final path = join(dbPath, 'shopkeeper_pro_$safeId.db');
     _db = await _openAt(path);
     return _db!;
   }
