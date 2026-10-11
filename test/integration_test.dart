@@ -4,7 +4,9 @@ import 'package:shopkeeper_pro/models/daily_sale.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/models/supplier.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
+import 'package:shopkeeper_pro/providers/inventory_provider.dart';
 import 'package:shopkeeper_pro/providers/supplier_provider.dart';
+import 'package:shopkeeper_pro/providers/sales_provider.dart';
 import 'package:shopkeeper_pro/services/backup_restore_service.dart';
 import 'package:shopkeeper_pro/services/sync_service.dart';
 
@@ -312,6 +314,48 @@ void main() {
       expect(localRow['cloudId'], 'stable-cloud-id');
       expect(localRow.containsKey('updatedAt'), isFalse);
       expect(localRow['billId'], 'bill-1');
+    });
+
+    test('inventory rejects NaN and infinite prices', () {
+      expect(
+        () => validateProductValues(
+          stockQuantity: 1,
+          costPrice: double.nan,
+          sellingPrice: 10,
+          lowStockThreshold: 1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => validateProductValues(
+          stockQuantity: 1,
+          costPrice: 10,
+          sellingPrice: double.infinity,
+          lowStockThreshold: 1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('manual sales reject NaN and infinite prices', () {
+      expect(
+        () => validateManualSaleInput(
+          productName: 'Tea',
+          costPrice: double.nan,
+          salePrice: 120,
+          quantity: 1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => validateManualSaleInput(
+          productName: 'Tea',
+          costPrice: 80,
+          salePrice: double.infinity,
+          quantity: 1,
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('supplier balance cannot be negative conceptually', () {
