@@ -31,6 +31,14 @@ Product? resolveProductForBillItem(BillItem item, List<Product> products) {
   return null;
 }
 
+/// Refuses to sell products that are past their expiry date.
+/// The check is intentionally shared by checkout and unit tests.
+void validateProductCanBeSold(Product product) {
+  if (product.isExpired) {
+    throw StateError('Cannot sell expired product: ${product.name}');
+  }
+}
+
 /// Sums only the sold quantity for the selected product and unit-price line.
 /// This prevents a more expensive line for the same product from being
 /// refunded repeatedly using quantities sold at a lower price.
@@ -115,6 +123,7 @@ class PosProvider extends ChangeNotifier {
     for (final item in cart) {
       final product = resolveProductForBillItem(item, inventory.products);
       if (product == null) throw StateError('Product not found: ${item.productName}');
+      validateProductCanBeSold(product);
       if (item.quantity <= 0 || item.unitPrice <= 0) throw StateError('Invalid quantity or price');
       productsById[product.id] = product;
       quantitiesById[product.id] = (quantitiesById[product.id] ?? 0) + item.quantity;
