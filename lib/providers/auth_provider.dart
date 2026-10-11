@@ -72,6 +72,20 @@ class AuthProvider extends ChangeNotifier {
       }
     }
 
+    // Local demo sessions are only permitted in debug builds. If Firebase
+    // failed to initialize in a release build, never trust a cached local UID
+    // as proof of identity; otherwise a stale account could bypass auth.
+    if (!kDebugMode) {
+      await AuthService.instance.clearSession();
+      await DBService.instance.clearActiveUser();
+      isLoggedIn = false;
+      phoneNumber = null;
+      emailAddress = null;
+      userUid = null;
+      notifyListeners();
+      return;
+    }
+
     final saved = await AuthService.instance.getSession();
     if (saved != null && saved.isNotEmpty) {
       phoneNumber = saved;
