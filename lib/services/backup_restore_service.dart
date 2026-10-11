@@ -20,6 +20,8 @@ import 'sync_service.dart';
 class FinancialStatementTotals {
   final double billedSales;
   final double refunds;
+  /// Sales tax collected on bills, less the tax portion of recorded refunds.
+  final double taxCollected;
   final double costOfGoods;
   final double expenses;
   final double currentStockValue;
@@ -29,6 +31,7 @@ class FinancialStatementTotals {
   const FinancialStatementTotals({
     required this.billedSales,
     required this.refunds,
+    required this.taxCollected,
     required this.costOfGoods,
     required this.expenses,
     required this.currentStockValue,
@@ -37,7 +40,8 @@ class FinancialStatementTotals {
   });
 
   double get netSales => billedSales - refunds;
-  double get grossProfit => netSales - costOfGoods;
+  // Sales tax is collected on behalf of the tax authority, not shop revenue.
+  double get grossProfit => netSales - taxCollected - costOfGoods;
   double get netProfit => grossProfit - expenses;
 
   static FinancialStatementTotals fromRecords({
@@ -57,6 +61,26 @@ class FinancialStatementTotals {
     });
     final refunds = returnRows.fold<double>(
       0, (sum, row) => sum + number(row['refundAmount']));
+    final taxRatesByBillId = <String, double>{
+      for (final row in billRows)
+        if (row['id'] != null)
+          row['id'].toString(): number(row['taxPercent']),
+    };
+    final taxOnBills = billRows.fold<double>(0, (sum, row) {
+      final subtotal = number(row['subtotal']);
+      final discount = number(row['discount']);
+      final taxable = (subtotal - discount).clamp(0.0, double.infinity).toDouble();
+      return sum + taxable * number(row['taxPercent']) / 100;
+    });
+    // Refund amounts are stored tax-inclusive. Reverse the tax portion using
+    // the original bill's rate, so refunded tax is not reported as payable.
+    final refundedTax = returnRows.fold<double>(0, (sum, row) {
+      final rate = taxRatesByBillId[row['billId']?.toString()] ?? 0.0;
+      final refund = number(row['refundAmount']);
+      final denominator = 100 + rate;
+      return sum + (denominator <= 0 ? 0.0 : refund * rate / denominator);
+    });
+    final taxCollected = taxOnBills - refundedTax;
     // Bill totals above represent POS bills only. Include COGS for POS sales
     // and their returns, but exclude manually entered sales to avoid reducing
     // profit for revenue that is not part of billedSales.
@@ -73,6 +97,7 @@ class FinancialStatementTotals {
     return FinancialStatementTotals(
       billedSales: billedSales,
       refunds: refunds,
+      taxCollected: taxCollected,
       costOfGoods: costOfGoods,
       expenses: expenses,
       currentStockValue: stockValue,
@@ -336,7 +361,8 @@ class BackupRestoreService {
           data: [
             ['Total billed sales (tax included)', 'Rs. ${totals.billedSales.toStringAsFixed(2)}'],
             ['Recorded refunds', 'Rs. ${totals.refunds.toStringAsFixed(2)}'],
-            ['Net sales after returns', 'Rs. ${totals.netSales.toStringAsFixed(2)}'],
+            ['Net sales after returns (tax included)', 'Rs. ${totals.netSales.toStringAsFixed(2)}'],
+            ['Net sales tax payable (estimated)', 'Rs. ${totals.taxCollected.toStringAsFixed(2)}'],
             ['Cost of goods sold (net of returned cost)', 'Rs. ${totals.costOfGoods.toStringAsFixed(2)}'],
             ['Gross profit after returns', 'Rs. ${totals.grossProfit.toStringAsFixed(2)}'],
             ['Recorded expenses', 'Rs. ${totals.expenses.toStringAsFixed(2)}'],
