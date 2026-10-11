@@ -95,10 +95,12 @@ class AuthProvider extends ChangeNotifier {
         // Android may verify automatically without presenting an SMS code.
         final user = FirebaseAuthService.instance.currentUser;
         if (user != null) {
+          // Do not expose the authenticated app state until the account-scoped
+          // local database has opened successfully.
+          await DBService.instance.configureForUser(user.uid);
           phoneNumber = user.phoneNumber ?? phone;
           userUid = user.uid;
           isLoggedIn = true;
-          await DBService.instance.configureForUser(user.uid);
           notifyListeners();
         }
         return '';
@@ -127,10 +129,12 @@ class AuthProvider extends ChangeNotifier {
         final ok = await FirebaseAuthService.instance.verifyOtp(otp);
         if (ok) {
           final user = FirebaseAuthService.instance.currentUser;
+          if (user != null) {
+            await DBService.instance.configureForUser(user.uid);
+          }
           phoneNumber = user?.phoneNumber ?? phone;
           userUid = user?.uid;
           isLoggedIn = user != null;
-          if (userUid != null) await DBService.instance.configureForUser(userUid!);
         }
         return ok;
       }
@@ -138,10 +142,14 @@ class AuthProvider extends ChangeNotifier {
       final ok = AuthService.instance.verifyOtp(phone, otp);
       if (ok) {
         await AuthService.instance.persistSession(phone);
+        final verifiedUserId = await AuthService.instance.getUserUid();
+        if (verifiedUserId == null || verifiedUserId.trim().isEmpty) {
+          throw StateError('Local account identity is unavailable.');
+        }
+        await DBService.instance.configureForUser(verifiedUserId);
         phoneNumber = phone;
-        userUid = await AuthService.instance.getUserUid();
+        userUid = verifiedUserId;
         isLoggedIn = true;
-        if (userUid != null) await DBService.instance.configureForUser(userUid!);
         demoOtp = null;
       }
       return ok;
@@ -168,10 +176,12 @@ class AuthProvider extends ChangeNotifier {
         password: password,
       );
       if (user == null) throw StateError('Account creation failed.');
+      if (user.emailVerified) {
+        await DBService.instance.configureForUser(user.uid);
+      }
       emailAddress = user.email;
       userUid = user.uid;
       isLoggedIn = user.emailVerified;
-      if (isLoggedIn) await DBService.instance.configureForUser(user.uid);
       if (!isLoggedIn) {
         errorMessage = 'Verification email sent. Verify your email, then tap "I have verified".';
       }
@@ -198,12 +208,13 @@ class AuthProvider extends ChangeNotifier {
         password: password,
       );
       if (user == null) throw StateError('Sign in failed.');
+      if (user.emailVerified) {
+        await DBService.instance.configureForUser(user.uid);
+      }
       emailAddress = user.email;
       userUid = user.uid;
       isLoggedIn = user.emailVerified;
-      if (isLoggedIn) {
-        await DBService.instance.configureForUser(user.uid);
-      } else {
+      if (!isLoggedIn) {
         errorMessage = 'Email is not verified. A verification email has been sent.';
       }
       return isLoggedIn;
@@ -224,10 +235,10 @@ class AuthProvider extends ChangeNotifier {
       final verified = await FirebaseAuthService.instance.refreshEmailVerification();
       final user = FirebaseAuthService.instance.currentUser;
       if (verified && user != null) {
+        await DBService.instance.configureForUser(user.uid);
         emailAddress = user.email;
         userUid = user.uid;
         isLoggedIn = true;
-        await DBService.instance.configureForUser(user.uid);
         return true;
       }
       errorMessage = 'Email is not verified yet. Please check your inbox and spam folder.';
