@@ -34,6 +34,27 @@ class SyncService {
     return _isOnline;
   }
 
+  /// Checks all non-destructive preconditions before a cloud backup restore
+  /// replaces the local database. The destructive operation rechecks these
+  /// conditions immediately before changing cloud data.
+  Future<void> ensureCloudRestoreReady(String userId) async {
+    if (userId.trim().isEmpty ||
+        FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId) {
+      throw StateError('Sign in with the account that owns this data before restoring cloud records.');
+    }
+    if (_isSyncing) {
+      throw StateError('Sync is already running. Wait for it to finish and retry restore.');
+    }
+    if (!await _checkOnline()) {
+      throw StateError('An internet connection is required to restore and reconcile cloud data.');
+    }
+    // Connectivity checks are asynchronous; recheck the lock after awaiting.
+    if (_isSyncing) {
+      throw StateError('Sync started while preparing restore. Wait for it to finish and retry.');
+    }
+  }
+
   Future<void> syncNow(String userId) async {
     final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
     if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || _isSyncing || !await _checkOnline()) return;
