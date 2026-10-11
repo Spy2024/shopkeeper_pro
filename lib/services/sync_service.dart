@@ -404,6 +404,8 @@ class SyncService {
     }
     if (!await _checkOnline()) return;
     _ensureActiveAccount(userId);
+    // A second caller may have acquired the lock while connectivity was checked.
+    if (!lockAlreadyHeld && _isSyncing) return;
     final lockedHere = !lockAlreadyHeld;
     if (lockedHere) _isSyncing = true;
     try {
