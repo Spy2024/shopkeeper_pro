@@ -10,6 +10,14 @@ class LegacyDatabaseMigrationRequired implements Exception {
       'An older local database was found. Confirm that this data belongs to this account before importing it.';
 }
 
+class LegacyDatabaseOwnershipConflict implements Exception {
+  const LegacyDatabaseOwnershipConflict();
+
+  @override
+  String toString() =>
+      'The old local database has already been assigned to a different account. It was not imported.';
+}
+
 class DBService {
   DBService._internal();
   static final DBService instance = DBService._internal();
@@ -39,6 +47,13 @@ class DBService {
     final legacyFile = File(legacyPath);
     final userFile = File(userPath);
     if (!await userFile.exists() && await legacyFile.exists()) {
+      final ownerMarker = File(join(dbPath, 'shopkeeper_pro.legacy-owner'));
+      if (await ownerMarker.exists()) {
+        final ownerId = (await ownerMarker.readAsString()).trim();
+        if (ownerId.isNotEmpty && ownerId != cleanId) {
+          throw const LegacyDatabaseOwnershipConflict();
+        }
+      }
       throw const LegacyDatabaseMigrationRequired();
     }
     final openedDb = await _openAt(userPath);
@@ -72,10 +87,17 @@ class DBService {
     final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
     final legacyFile = File(legacyPath);
     final userFile = File(userPath);
+    final ownerMarker = File(join(dbPath, 'shopkeeper_pro.legacy-owner'));
 
     if (!await userFile.exists()) {
       if (!await legacyFile.exists()) {
         throw StateError('The old local database could not be found. No data was imported.');
+      }
+      if (await ownerMarker.exists()) {
+        final ownerId = (await ownerMarker.readAsString()).trim();
+        if (ownerId.isNotEmpty && ownerId != cleanId) {
+          throw const LegacyDatabaseOwnershipConflict();
+        }
       }
       // The database connection is closed before copying. Copy sidecars too in
       // case a platform still has SQLite WAL data waiting to be checkpointed.
@@ -88,6 +110,11 @@ class DBService {
           }
         }
         final imported = await _openAt(userPath);
+        if (!await ownerMarker.exists()) {
+          final temporaryMarker = File('${ownerMarker.path}.tmp');
+          await temporaryMarker.writeAsString(cleanId, flush: true);
+          await temporaryMarker.rename(ownerMarker.path);
+        }
         _db = imported;
         _activeUserId = cleanId;
       } catch (_) {
