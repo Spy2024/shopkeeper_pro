@@ -153,10 +153,13 @@ class SyncQueueService {
     }
     if (FirebaseAuth.instance.currentUser?.uid != userId ||
         DBService.instance.activeUserId != userId ||
-        _pendingQueue.isEmpty) {
+        _pendingQueue.isEmpty ||
+        _isSyncing) {
       return;
     }
 
+    // Another caller may have finished loading the queue while this caller
+    // was awaiting it; only one sync loop may acknowledge pending operations.
     _isSyncing = true;
     try {
       final db = await DBService.instance.database;
