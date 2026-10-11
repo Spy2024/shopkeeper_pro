@@ -55,16 +55,15 @@ jobs:
         run: |
           set -euo pipefail
           KEYSTORE="$RUNNER_TEMP/shopkeeper-release.jks"
-          if [ -z "${ANDROID_KEYSTORE_BASE64}" ] || [ -z "${ANDROID_KEYSTORE_PASSWORD_SECRET}" ] || [ -z "${ANDROID_KEY_ALIAS_SECRET}" ] || [ -z "${ANDROID_KEY_PASSWORD_SECRET}" ]; then
-            echo "Production signing secrets are required for release builds." >&2
-            exit 1
-          fi
-          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ] && [ -n "${ANDROID_KEYSTORE_PASSWORD_SECRET}" ] && [ -n "${ANDROID_KEY_ALIAS_SECRET}" ] && [ -n "${ANDROID_KEY_PASSWORD_SECRET}" ]; then
             echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "${KEYSTORE}"
             STORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD_SECRET}"
             KEY_ALIAS="${ANDROID_KEY_ALIAS_SECRET}"
             KEY_PASSWORD="${ANDROID_KEY_PASSWORD_SECRET}"
+            echo "Using the configured signing keystore."
           else
+            # CI-only fallback: this key is intentionally ephemeral and must
+            # never be used to publish an upgrade to a production installation.
             STORE_PASSWORD="$(openssl rand -hex 24)"
             KEY_PASSWORD="${STORE_PASSWORD}"
             KEY_ALIAS="shopkeeper-ci"
@@ -73,8 +72,9 @@ jobs:
               -storepass "${STORE_PASSWORD}" \
               -keypass "${KEY_PASSWORD}" \
               -alias "${KEY_ALIAS}" \
-              -keyalg RSA -keysize 2048 -validity 3650 \
+              -keyalg RSA -keysize 2048 -validity 30 \
               -dname "CN=Shopkeeper Pro CI, OU=Build, O=Shopkeeper Pro, L=Karachi, S=Sindh, C=PK"
+            echo "::warning::Built with an ephemeral CI signing key. This APK is for build validation only, not production distribution."
           fi
           echo "ANDROID_KEYSTORE_FILE=${KEYSTORE}" >> "$GITHUB_ENV"
           echo "ANDROID_KEYSTORE_PASSWORD=${STORE_PASSWORD}" >> "$GITHUB_ENV"
@@ -87,6 +87,6 @@ jobs:
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: shopkeeper-pro-release-apk
+          name: shopkeeper-pro-ci-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+          retention-days: 7
