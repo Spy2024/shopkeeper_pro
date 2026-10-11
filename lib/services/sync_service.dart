@@ -343,7 +343,8 @@ class SyncService {
     return rows.map((r) => Map<String, dynamic>.from(r)).toList();
   }
 
-  Future<bool> _hasPending(Database db, String documentId, String tableName) async {
+  Future<bool> _hasPending(String userId, DatabaseExecutor db, String documentId, String tableName) async {
+    _ensureActiveAccount(userId);
     // Record IDs are only unique within a collection. A pending product with
     // the same ID must not block pulling a bill, branch, or customer.
     final rows = await db.query(
@@ -353,10 +354,12 @@ class SyncService {
       whereArgs: [documentId, tableName],
       limit: 1,
     );
+    _ensureActiveAccount(userId);
     return rows.isNotEmpty;
   }
 
-  Future<bool> _hasPendingForTable(DatabaseExecutor db, String tableName) async {
+  Future<bool> _hasPendingForTable(String userId, DatabaseExecutor db, String tableName) async {
+    _ensureActiveAccount(userId);
     final rows = await db.query(
       'sync_queue',
       columns: ['id'],
@@ -364,18 +367,28 @@ class SyncService {
       whereArgs: [tableName],
       limit: 1,
     );
+    _ensureActiveAccount(userId);
     return rows.isNotEmpty;
   }
 
   Future<void> syncFromCloud(String userId, {bool lockAlreadyHeld = false}) async {
     final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-    if (userId.trim().isEmpty || authenticatedUid != userId || DBService.instance.activeUserId != userId || (!lockAlreadyHeld && _isSyncing) || !await _checkOnline()) return;
+    if (userId.trim().isEmpty ||
+        authenticatedUid != userId ||
+        DBService.instance.activeUserId != userId ||
+        (!lockAlreadyHeld && _isSyncing)) {
+      return;
+    }
+    if (!await _checkOnline()) return;
+    _ensureActiveAccount(userId);
     final lockedHere = !lockAlreadyHeld;
     if (lockedHere) _isSyncing = true;
     try {
       final db = await DBService.instance.database;
+      _ensureActiveAccount(userId);
       final shop = await _collection(userId, 'shop').doc('profile').get();
-      if (shop.exists && shop.data() != null && !(await _hasPending(db, 'profile', 'shop'))) {
+      _ensureActiveAccount(userId);
+      if (shop.exists && shop.data() != null && !(await _hasPending(userId, db, 'profile', 'shop'))) {
         final data = Map<String, dynamic>.from(shop.data()!)..remove('updatedAt');
         await db.delete('shop');
         await db.insert('shop', data, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -397,7 +410,8 @@ class SyncService {
         // Check the queue and replace child rows in one SQLite transaction so
         // a concurrent offline edit cannot be erased between the check and write.
         final skippedForPendingItems = await db.transaction((txn) async {
-          if (await _hasPendingForTable(txn, 'bills/${doc.id}/items')) return true;
+          if (await _hasPendingForTable(userId, txn, 'bills/${doc.id}/items')) return true;
+          _ensureActiveAccount(userId);
           await txn.delete('bill_items', where: 'billId = ?', whereArgs: [doc.id]);
           for (final item in items.docs) {
             final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
