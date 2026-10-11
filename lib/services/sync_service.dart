@@ -162,6 +162,7 @@ class SyncService {
       throw StateError('Sign in with the account that owns this data before syncing restored records.');
     }
     final db = await DBService.instance.database;
+    _ensureActiveAccount(userId);
     final pending = await db.query(
       'sync_metadata',
       columns: ['value'],
@@ -169,11 +170,13 @@ class SyncService {
       whereArgs: ['cloud_restore_pending'],
       limit: 1,
     );
+    _ensureActiveAccount(userId);
     if (pending.isEmpty) return true;
     if (pending.first['value'] != userId) {
       throw StateError('Pending restore belongs to a different account; refusing to sync.');
     }
     if (!await _checkOnline()) return false;
+    _ensureActiveAccount(userId);
     await replaceCloudWithLocalSnapshot(userId);
     return true;
   }
