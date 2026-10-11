@@ -109,63 +109,163 @@ class SupplierProvider extends ChangeNotifier {
     if (orderIndex < 0) throw StateError('Purchase order not found');
     final order = _orders[orderIndex];
     if (order.status == 'received') throw StateError('Order already received');
-    final supplier = _suppliers.firstWhere((s) => s.id == order.supplierId);
-    final total = order.estimatedOrderTotal;
-    final db = await DBService.instance.database;
+    if (order.items.isEmpty) throw StateError('Cannot receive an empty purchase order');
 
-    await db.transaction((txn) async {
-      for (final item in order.items) {
-        final matches = inventory.products.where((p) =>
-            p.name.toLowerCase() == item.productName.toLowerCase());
-        if (matches.isEmpty) throw StateError('Product not found');
-        final product = matches.first;
-        final changed = await txn.update('products',
-            {'stockQuantity': product.stockQuantity + item.requiredQuantity},
-            where: 'id = ?', whereArgs: [product.id]);
-        if (changed != 1) throw StateError('Could not update inventory');
+    final supplierIndex = _suppliers.indexWhere((s) => s.id == order.supplierId);
+    if (supplierIndex < 0) throw StateError('Supplier not found');
+    final supplier = _suppliers[supplierIndex];
+    final total = order.estimatedOrderTotal;
+    if (!total.isFinite || total < 0) {
+      throw StateError('Purchase order total is invalid');
+    }
+
+    // Resolve and aggregate before touching SQLite. Multiple order lines for
+    // one product must add together rather than overwrite one another using
+    // the same stale in-memory stock value.
+    final quantitiesByProductId = <String, int>{};
+    final productsById = <String, Product>{};
+    for (final item in order.items) {
+      if (item.requiredQuantity <= 0 ||
+          !item.estimatedPrice.isFinite ||
+          item.estimatedPrice < 0) {
+        throw StateError('Purchase order contains an invalid quantity or price');
       }
-      final updatedSupplier = Supplier(
-        id: supplier.id, name: supplier.name, phone: supplier.phone,
-        totalStockReceivedValue: supplier.totalStockReceivedValue + total,
-        totalPaymentsMade: supplier.totalPaymentsMade);
-      await txn.update('suppliers', updatedSupplier.toMap(),
-          where: 'id = ?', whereArgs: [supplier.id]);
+      final normalizedName = item.productName.trim().toLowerCase();
+      final matches = inventory.products.where(
+        (p) => p.name.trim().toLowerCase() == normalizedName,
+      );
+      if (normalizedName.isEmpty || matches.length != 1) {
+        throw StateError(
+          matches.isEmpty
+              ? 'Product not found: ${item.productName}'
+              : 'Product name is ambiguous: ${item.productName}',
+        );
+      }
+      final product = matches.single;
+      productsById[product.id] = product;
+      quantitiesByProductId.update(
+        product.id,
+        (quantity) => quantity + item.requiredQuantity,
+        ifAbsent: () => item.requiredQuantity,
+      );
+    }
+
+    final db = await DBService.instance.database;
+    final newStockByProductId = <String, int>{};
+    final updatedSupplier = Supplier(
+      id: supplier.id,
+      name: supplier.name,
+      phone: supplier.phone,
+      totalStockReceivedValue: supplier.totalStockReceivedValue + total,
+      totalPaymentsMade: supplier.totalPaymentsMade,
+    );
+
+    // Stock, supplier balance/transaction and order status commit together.
+    await db.transaction((txn) async {
+      for (final entry in quantitiesByProductId.entries) {
+        final rows = await txn.query(
+          'products',
+          columns: ['stockQuantity'],
+          where: 'id = ?',
+          whereArgs: [entry.key],
+          limit: 1,
+        );
+        if (rows.isEmpty) {
+          throw StateError('Product no longer exists: ${productsById[entry.key]!.name}');
+        }
+        final currentStock = (rows.single['stockQuantity'] as num).toInt();
+        final newQuantity = currentStock + entry.value;
+        if (newQuantity < currentStock) {
+          throw StateError('Stock quantity overflow');
+        }
+        final changed = await txn.update(
+          'products',
+          {'stockQuantity': newQuantity},
+          where: 'id = ?',
+          whereArgs: [entry.key],
+        );
+        if (changed != 1) throw StateError('Could not update inventory');
+        newStockByProductId[entry.key] = newQuantity;
+      }
+
+      final supplierChanged = await txn.update(
+        'suppliers',
+        updatedSupplier.toMap(),
+        where: 'id = ?',
+        whereArgs: [supplier.id],
+      );
+      if (supplierChanged != 1) throw StateError('Supplier no longer exists');
+
       await txn.insert('supplier_transactions', {
-        'id': _uuid.v4(), 'supplierId': supplier.id, 'type': 'stock_received',
-        'amount': total, 'date': DateTime.now().toIso8601String(), 'referenceId': order.id});
-      await txn.update('supplier_orders', {'status': 'received'},
-          where: 'id = ?', whereArgs: [order.id]);
+        'id': _uuid.v4(),
+        'supplierId': supplier.id,
+        'type': 'stock_received',
+        'amount': total,
+        'date': DateTime.now().toIso8601String(),
+        'referenceId': order.id,
+      });
+      final orderChanged = await txn.update(
+        'supplier_orders',
+        {'status': 'received'},
+        where: 'id = ? AND status != ?',
+        whereArgs: [order.id, 'received'],
+      );
+      if (orderChanged != 1) {
+        throw StateError('Purchase order was already received or no longer exists');
+      }
     });
 
-    for (final item in order.items) {
-      final product = inventory.products.firstWhere(
-          (p) => p.name.toLowerCase() == item.productName.toLowerCase());
-      final newQuantity = product.stockQuantity + item.requiredQuantity;
-      inventory.applyStockAfterTransaction(product.id, newQuantity);
+    // Reflect the committed database values in memory and queue one cloud
+    // update per affected product, even when the order repeats a product line.
+    for (final entry in newStockByProductId.entries) {
+      final product = productsById[entry.key]!;
+      inventory.applyStockAfterTransaction(product.id, entry.value);
       final updatedProduct = Product(
-        id: product.id, name: product.name, category: product.category,
-        stockQuantity: newQuantity, costPrice: product.costPrice,
-        sellingPrice: product.sellingPrice, lowStockThreshold: product.lowStockThreshold);
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: entry.value,
+        costPrice: product.costPrice,
+        sellingPrice: product.sellingPrice,
+        lowStockThreshold: product.lowStockThreshold,
+        barcode: product.barcode,
+        expiryDate: product.expiryDate,
+      );
       await SyncQueueService.instance.queueOperation(
-        operation: 'update', tableName: 'products', documentId: product.id,
-        data: updatedProduct.toMap());
+        operation: 'update',
+        tableName: 'products',
+        documentId: product.id,
+        data: updatedProduct.toMap(),
+      );
     }
-    final updatedSupplier = Supplier(
-      id: supplier.id, name: supplier.name, phone: supplier.phone,
-      totalStockReceivedValue: supplier.totalStockReceivedValue + total,
-      totalPaymentsMade: supplier.totalPaymentsMade);
-    _suppliers[_suppliers.indexWhere((s) => s.id == supplier.id)] = updatedSupplier;
+
+    _suppliers[supplierIndex] = updatedSupplier;
     _orders[orderIndex] = SupplierOrder(
-      id: order.id, supplierId: order.supplierId, supplierName: order.supplierName,
-      date: order.date, items: order.items, status: 'received');
+      id: order.id,
+      supplierId: order.supplierId,
+      supplierName: order.supplierName,
+      date: order.date,
+      items: order.items,
+      status: 'received',
+    );
     await SyncQueueService.instance.queueOperation(
-      operation: 'update', tableName: 'supplier_orders', documentId: order.id,
-      data: {'id': order.id, 'supplierId': order.supplierId,
-        'supplierName': order.supplierName, 'date': order.date.toIso8601String(),
-        'status': 'received'});
+      operation: 'update',
+      tableName: 'supplier_orders',
+      documentId: order.id,
+      data: {
+        'id': order.id,
+        'supplierId': order.supplierId,
+        'supplierName': order.supplierName,
+        'date': order.date.toIso8601String(),
+        'status': 'received',
+      },
+    );
     await SyncQueueService.instance.queueOperation(
-      operation: 'update', tableName: 'suppliers', documentId: updatedSupplier.id,
-      data: updatedSupplier.toMap());
+      operation: 'update',
+      tableName: 'suppliers',
+      documentId: updatedSupplier.id,
+      data: updatedSupplier.toMap(),
+    );
     notifyListeners();
   }
 
