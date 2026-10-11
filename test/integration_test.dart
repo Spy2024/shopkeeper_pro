@@ -127,13 +127,13 @@ void main() {
     test('financial statement totals include refunds, COGS and expenses', () {
       final totals = FinancialStatementTotals.fromRecords(
         billRows: [
-          {'subtotal': 1000.0, 'discount': 100.0, 'taxPercent': 10.0},
+          {'id': 'bill-tax', 'subtotal': 1000.0, 'discount': 100.0, 'taxPercent': 10.0},
         ],
         expenseRows: [
           {'amount': 80.0},
         ],
         returnRows: [
-          {'refundAmount': 110.0},
+          {'billId': 'bill-tax', 'refundAmount': 110.0},
         ],
         productRows: [
           {'stockQuantity': 5, 'costPrice': 100.0},
@@ -151,9 +151,10 @@ void main() {
       expect(totals.refunds, closeTo(110.0, 0.001));
       expect(totals.netSales, closeTo(880.0, 0.001));
       expect(totals.costOfGoods, closeTo(300.0, 0.001));
-      expect(totals.grossProfit, closeTo(580.0, 0.001));
+      expect(totals.taxCollected, closeTo(80.0, 0.001));
+      expect(totals.grossProfit, closeTo(500.0, 0.001));
       expect(totals.expenses, closeTo(80.0, 0.001));
-      expect(totals.netProfit, closeTo(500.0, 0.001));
+      expect(totals.netProfit, closeTo(420.0, 0.001));
       expect(totals.currentStockValue, closeTo(500.0, 0.001));
       expect(totals.billCount, 1);
       expect(totals.productCount, 1);
