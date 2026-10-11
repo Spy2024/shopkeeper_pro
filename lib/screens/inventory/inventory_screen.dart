@@ -328,9 +328,9 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                             expiryDate: _expiryDate,
                           );
                         }
-                        if (mounted) Navigator.pop(context);
+                        if (context.mounted) Navigator.pop(context);
                       } catch (e) {
-                        if (mounted) {
+                        if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
