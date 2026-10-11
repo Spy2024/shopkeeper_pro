@@ -31,6 +31,23 @@ Product? resolveProductForBillItem(BillItem item, List<Product> products) {
   return null;
 }
 
+/// Sums only the sold quantity for the selected product and unit-price line.
+/// This prevents a more expensive line for the same product from being
+/// refunded repeatedly using quantities sold at a lower price.
+int soldQuantityForReturnLine({
+  required Bill bill,
+  required BillItem item,
+  required Product product,
+}) {
+  return bill.items.where((candidate) {
+    final sameProduct = candidate.productId != null
+        ? candidate.productId == product.id
+        : candidate.productName.trim().toLowerCase() ==
+            product.name.trim().toLowerCase();
+    return sameProduct && candidate.unitPrice == item.unitPrice;
+  }).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+}
+
 class PosProvider extends ChangeNotifier {
   final List<BillItem> cart = [];
   double discount = 0;
@@ -206,15 +223,11 @@ class PosProvider extends ChangeNotifier {
     }
 
     final resolvedProduct = product;
-    final soldQuantity = bill.items.where((candidate) {
-      final sameProduct = candidate.productId != null
-          ? candidate.productId == resolvedProduct.id
-          : candidate.productName.trim().toLowerCase() ==
-              resolvedProduct.name.trim().toLowerCase();
-      // Different sale-price lines for the same product must keep separate
-      // return limits so a higher-priced line cannot be refunded repeatedly.
-      return sameProduct && candidate.unitPrice == item.unitPrice;
-    }).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
+    final soldQuantity = soldQuantityForReturnLine(
+      bill: bill,
+      item: item,
+      product: resolvedProduct,
+    );
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
