@@ -111,57 +111,105 @@ class SyncService {
   /// snapshot. Use only for an explicit restore; normal sync must merge first
   /// so cloud-only records are not accidentally deleted.
   Future<void> replaceCloudWithLocalSnapshot(String userId) async {
-    if (userId.trim().isEmpty ||
-        FirebaseAuth.instance.currentUser?.uid != userId ||
-        DBService.instance.activeUserId != userId) {
-      throw StateError('Sign in with the account that owns this data before restoring cloud records.');
-    }
-    if (_isSyncing) {
-      throw StateError('Sync is already running. Wait for it to finish and retry restore.');
-    }
-    if (!await _checkOnline()) {
-      throw StateError('An internet connection is required to reconcile restored cloud data.');
-    }
-
+    await ensureCloudRestoreReady(userId);
+    // Claim the lock before the first await in the destructive phase. If any
+    // upload fails, stale records are not deleted and can be reconciled later.
     _isSyncing = true;
     try {
-      // Firestore does not cascade deletes into subcollections.
-      await _deleteChildDocuments(userId, 'bills', 'items');
-      await _deleteChildDocuments(userId, 'supplier_orders', 'items');
-      for (final collection in [
-        'bills',
-        'supplier_orders',
-        'products',
-        'customers',
-        'suppliers',
-        'supplier_transactions',
-        'sales',
-        'returns',
-        'expenses',
-      ]) {
-        await _deleteCollectionDocuments(userId, collection);
-      }
-      await _collection(userId, 'shop').doc('profile').delete();
+      final db = await DBService.instance.database;
+      final shopRows = await db.query('shop', limit: 1);
+
+      // Phase 1: upsert the complete local snapshot. Do not delete anything
+      // until every local collection and child collection has been uploaded.
       await _pushLocal(userId);
+
+      // Phase 2: remove only cloud records absent from the restored snapshot.
+      // Reconcile child collections before deleting parent documents because
+      // Firestore does not cascade parent deletes into subcollections.
+      final bills = await _maps(db, 'bills');
+      final orders = await _maps(db, 'supplier_orders');
+      await _reconcileChildren(
+        userId: userId,
+        parentCollection: 'bills',
+        childCollection: 'items',
+        localParents: bills,
+        localChildTable: 'bill_items',
+        localParentKey: 'billId',
+      );
+      await _reconcileChildren(
+        userId: userId,
+        parentCollection: 'supplier_orders',
+        childCollection: 'items',
+        localParents: orders,
+        localChildTable: 'supplier_order_items',
+        localParentKey: 'orderId',
+      );
+
+      final tablesByCollection = <String, String>{
+        'bills': 'bills',
+        'supplier_orders': 'supplier_orders',
+        'products': 'products',
+        'customers': 'customers',
+        'suppliers': 'suppliers',
+        'supplier_transactions': 'supplier_transactions',
+        'sales': 'daily_sales',
+        'returns': 'bill_returns',
+        'expenses': 'expenses',
+      };
+      for (final entry in tablesByCollection.entries) {
+        await _deleteCloudDocumentsMissingLocally(
+          userId,
+          entry.key,
+          await _maps(db, entry.value),
+        );
+      }
+
+      final shopRef = _collection(userId, 'shop').doc('profile');
+      if (shopRows.isEmpty) {
+        await shopRef.delete();
+      }
     } finally {
       _isSyncing = false;
     }
   }
 
-  Future<void> _deleteChildDocuments(
-    String userId,
-    String parentCollection,
-    String childCollection,
-  ) async {
-    final parents = await _collection(userId, parentCollection).get();
-    for (final parent in parents.docs) {
-      final children = await parent.reference.collection(childCollection).get();
-      for (var start = 0; start < children.docs.length; start += 400) {
-        final end = ((start + 400) > children.docs.length)
-            ? children.docs.length
-            : start + 400;
+  Future<void> _reconcileChildren({
+    required String userId,
+    required String parentCollection,
+    required String childCollection,
+    required List<Map<String, dynamic>> localParents,
+    required String localChildTable,
+    required String localParentKey,
+  }) async {
+    final db = await DBService.instance.database;
+    final localParentsById = <String, Map<String, dynamic>>{
+      for (final row in localParents)
+        if (row['id'] != null) row['id'].toString(): row,
+    };
+    final cloudParents = await _collection(userId, parentCollection).get();
+    for (final parent in cloudParents.docs) {
+      final localParent = localParentsById[parent.id];
+      final localChildren = localParent == null
+          ? <Map<String, dynamic>>[]
+          : await _maps(
+              db,
+              localChildTable,
+              where: '$localParentKey = ?',
+              args: [localParent['id']],
+            );
+      final keepIds = <String>{
+        for (final row in localChildren)
+          if ((row['cloudId'] ?? row['id']) != null)
+            (row['cloudId'] ?? row['id']).toString(),
+      };
+      final cloudChildren = await parent.reference.collection(childCollection).get();
+      final stale = cloudChildren.docs
+          .where((doc) => !keepIds.contains(doc.id))
+          .toList(growable: false);
+      for (var start = 0; start < stale.length; start += 400) {
+        final end = ((start + 400) > stale.length) ? stale.length : start + 400;
         final batch = _dbFirestore.batch();
-        for (final child in children.docs.sublist(start, end)) {
+        for (final child in stale.sublist(start, end)) {
           batch.delete(child.reference);
         }
         await batch.commit();
@@ -169,17 +217,25 @@ class SyncService {
     }
   }
 
-  Future<void> _deleteCollectionDocuments(
+  Future<void> _deleteCloudDocumentsMissingLocally(
     String userId,
     String collectionName,
+    List<Map<String, dynamic>> localRows,
   ) async {
-    final snapshot = await _collection(userId, collectionName).get();
-    for (var start = 0; start < snapshot.docs.length; start += 400) {
-      final end = ((start + 400) > snapshot.docs.length)
-          ? snapshot.docs.length
-          : start + 400;
+    final keepIds = <String>{
+      for (final row in localRows)
+        if ((row['cloudId'] ?? row['id']) != null &&
+            (row['cloudId'] ?? row['id']).toString().isNotEmpty)
+          (row['cloudId'] ?? row['id']).toString(),
+    };
+    final cloudRows = await _collection(userId, collectionName).get();
+    final stale = cloudRows.docs
+        .where((doc) => !keepIds.contains(doc.id))
+        .toList(growable: false);
+    for (var start = 0; start < stale.length; start += 400) {
+      final end = ((start + 400) > stale.length) ? stale.length : start + 400;
       final batch = _dbFirestore.batch();
-      for (final doc in snapshot.docs.sublist(start, end)) {
+      for (final doc in stale.sublist(start, end)) {
         batch.delete(doc.reference);
       }
       await batch.commit();
