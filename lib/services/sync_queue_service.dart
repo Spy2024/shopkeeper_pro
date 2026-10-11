@@ -60,9 +60,10 @@ class SyncQueueService {
       timestamp: now,
     );
     final db = await DBService.instance.database;
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (DBService.instance.activeUserId != activeUserId ||
-        (FirebaseAuth.instance.currentUser?.uid != null &&
-            FirebaseAuth.instance.currentUser?.uid != activeUserId)) {
+        (firebaseConfigured && currentUid != activeUserId) ||
+        (currentUid != null && currentUid != activeUserId)) {
       throw StateError('The active account changed before the sync operation was saved.');
     }
     await db.insert(
