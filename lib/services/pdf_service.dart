@@ -179,12 +179,12 @@ class PdfService {
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
           pw.Text(shop?.name.trim().isNotEmpty == true ? shop!.name : 'Shopkeeper Pro',
-              style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
           if (shop?.address.trim().isNotEmpty == true) pw.Text(shop!.address),
           if (shop?.phone.trim().isNotEmpty == true) pw.Text('Phone: ${shop!.phone}'),
           pw.SizedBox(height: 12),
           pw.Text('Financial Statement',
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
           pw.Text('Period: ${DateFormat('dd MMM yyyy').format(start)} - ${DateFormat('dd MMM yyyy').format(endExclusive.subtract(const Duration(days: 1)))}'),
           pw.SizedBox(height: 16),
           pw.TableHelper.fromTextArray(
@@ -196,13 +196,13 @@ class PdfService {
               ['Operating expenses', _currency.format(expenseTotal)],
               ['Net profit / (loss)', _currency.format(netProfit)],
             ],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
             cellAlignment: pw.Alignment.centerLeft,
             cellAlignments: {1: pw.Alignment.centerRight},
           ),
           pw.SizedBox(height: 20),
           pw.Text('Sales Detail',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 6),
           if (reportSales.isEmpty)
             pw.Text('No sales recorded for this period.')
@@ -216,7 +216,7 @@ class PdfService {
                 _currency.format(sale.revenue),
                 _currency.format(sale.costOfGoods),
               ]).toList(),
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {
                 2: pw.Alignment.centerRight,
@@ -226,7 +226,7 @@ class PdfService {
             ),
           pw.SizedBox(height: 20),
           pw.Text('Expense Detail',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 6),
           if (reportExpenses.isEmpty)
             pw.Text('No expenses recorded for this period.')
@@ -238,7 +238,7 @@ class PdfService {
                 expense.label,
                 _currency.format(expense.amount),
               ]).toList(),
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {2: pw.Alignment.centerRight},
             ),
