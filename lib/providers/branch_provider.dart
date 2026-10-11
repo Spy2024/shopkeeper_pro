@@ -45,6 +45,10 @@ class BranchProvider extends ChangeNotifier {
     final existing = id == null
         ? <Map<String, Object?>>[]
         : await db.query('branches', where: 'id = ?', whereArgs: [id], limit: 1);
+    final branchCount = Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM branches'),
+        ) ??
+        0;
     final branch = BusinessBranch(
       id: id ?? _uuid.v4(),
       name: cleanName,
@@ -52,7 +56,9 @@ class BranchProvider extends ChangeNotifier {
       address: address.trim(),
       phone: phone.trim(),
       managerName: managerName.trim(),
-      isMain: existing.isNotEmpty && (existing.first['isMain'] as num?)?.toInt() == 1,
+      isMain: existing.isNotEmpty
+          ? (existing.first['isMain'] as num?)?.toInt() == 1
+          : branchCount == 0,
       isActive: isActive,
       createdAt: existing.isNotEmpty
           ? DateTime.tryParse(existing.first['createdAt'] as String? ?? '') ?? DateTime.now()
