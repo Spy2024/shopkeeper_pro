@@ -163,6 +163,7 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
   late final _spCtrl = TextEditingController(text: widget.existing?.sellingPrice.toString() ?? '');
   late final _barcodeCtrl = TextEditingController(text: widget.existing?.barcode ?? '');
   DateTime? _expiryDate;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -293,35 +294,62 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () async {
-                if (!_formKey.currentState!.validate()) return;
-                final inventory = context.read<InventoryProvider>();
-                if (isEdit) {
-                  await inventory.updateProduct(Product(
-                    id: widget.existing!.id,
-                    name: _nameCtrl.text.trim(),
-                    category: _categoryCtrl.text.trim(),
-                    stockQuantity: int.parse(_stockCtrl.text),
-                    costPrice: double.parse(_cpCtrl.text),
-                    sellingPrice: double.parse(_spCtrl.text),
-                    lowStockThreshold: widget.existing!.lowStockThreshold,
-                    barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
-                    expiryDate: _expiryDate,
-                  ));
-                } else {
-                  await inventory.addProduct(
-                    name: _nameCtrl.text.trim(),
-                    category: _categoryCtrl.text.trim(),
-                    stockQuantity: int.parse(_stockCtrl.text),
-                    costPrice: double.parse(_cpCtrl.text),
-                    sellingPrice: double.parse(_spCtrl.text),
-                    barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
-                    expiryDate: _expiryDate,
-                  );
-                }
-                if (context.mounted) Navigator.pop(context);
-              },
-              child: Text(isEdit ? 'Save Changes' : 'Add Product'),
+              onPressed: _saving
+                  ? null
+                  : () async {
+                      if (!_formKey.currentState!.validate()) return;
+                      setState(() => _saving = true);
+                      try {
+                        final inventory = context.read<InventoryProvider>();
+                        if (isEdit) {
+                          await inventory.updateProduct(Product(
+                            id: widget.existing!.id,
+                            name: _nameCtrl.text.trim(),
+                            category: _categoryCtrl.text.trim(),
+                            stockQuantity: int.parse(_stockCtrl.text),
+                            costPrice: double.parse(_cpCtrl.text),
+                            sellingPrice: double.parse(_spCtrl.text),
+                            lowStockThreshold: widget.existing!.lowStockThreshold,
+                            barcode: _barcodeCtrl.text.trim().isEmpty
+                                ? null
+                                : _barcodeCtrl.text.trim(),
+                            expiryDate: _expiryDate,
+                          ));
+                        } else {
+                          await inventory.addProduct(
+                            name: _nameCtrl.text.trim(),
+                            category: _categoryCtrl.text.trim(),
+                            stockQuantity: int.parse(_stockCtrl.text),
+                            costPrice: double.parse(_cpCtrl.text),
+                            sellingPrice: double.parse(_spCtrl.text),
+                            barcode: _barcodeCtrl.text.trim().isEmpty
+                                ? null
+                                : _barcodeCtrl.text.trim(),
+                            expiryDate: _expiryDate,
+                          );
+                        }
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Could not save product: ${e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', '')}',
+                              ),
+                            ),
+                          );
+                        }
+                      } finally {
+                        if (mounted) setState(() => _saving = false);
+                      }
+                    },
+              child: _saving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(isEdit ? 'Save Changes' : 'Add Product'),
             ),
           ],
             ),
