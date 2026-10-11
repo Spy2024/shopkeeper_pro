@@ -8,6 +8,7 @@ import '../../providers/inventory_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
 import 'bill_history_screen.dart';
+import '../barcode_scanner_screen.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -286,6 +287,32 @@ class _AddItemSheetState extends State<_AddItemSheet> {
     setState(() {});
   }
 
+  Future<void> _scanBarcode() async {
+    final scanned = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+    );
+    if (scanned == null || !mounted) return;
+
+    final normalized = scanned.trim().toLowerCase();
+    final exactMatches = widget.inventory.products
+        .where((product) => product.barcode?.trim().toLowerCase() == normalized)
+        .toList(growable: false);
+    if (exactMatches.length == 1) {
+      final product = exactMatches.single;
+      _selectProduct(product.name, product.sellingPrice, product.id);
+      return;
+    }
+
+    _nameCtrl.text = scanned;
+    _selectedProductId = null;
+    setState(() {});
+    if (exactMatches.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No product has this barcode. Add it in Inventory first.')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -310,8 +337,22 @@ class _AddItemSheetState extends State<_AddItemSheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _nameCtrl,
-            decoration: const InputDecoration(labelText: 'Product Name', prefixIcon: Icon(Icons.search)),
-            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Product name or barcode',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                tooltip: 'Scan barcode with camera',
+                onPressed: _scanBarcode,
+                icon: const Icon(Icons.document_scanner_outlined),
+              ),
+            ),
+            onChanged: (value) {
+              final selected = widget.inventory.findById(_selectedProductId ?? '');
+              if (selected != null && value.trim() != selected.name) {
+                _selectedProductId = null;
+              }
+              setState(() {});
+            },
           ),
           if (_nameCtrl.text.isNotEmpty && results.isNotEmpty)
             SizedBox(
