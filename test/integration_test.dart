@@ -30,6 +30,21 @@ void main() {
       expect(sale.margin, 50);
     });
 
+    test('daily sale revenue and COGS include sold quantity', () {
+      final sale = DailySale(
+        id: 's2',
+        date: DateTime.now(),
+        productName: 'Tea',
+        costPrice: 80,
+        salePrice: 120,
+        quantity: 3,
+        source: 'pos',
+      );
+      expect(sale.revenue, 360);
+      expect(sale.costOfGoods, 240);
+      expect(sale.margin, 120);
+    });
+
     test('supplier balance cannot be negative conceptually', () {
       final supplier = Supplier(id: 's1', name: 'ABC', phone: '',
         totalStockReceivedValue: 1000, totalPaymentsMade: 400);
