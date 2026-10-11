@@ -225,7 +225,15 @@ class BackupRestoreService {
     final sourceTables = decoded['tables'] as Map<String, dynamic>;
     final rowsByTable = <String, List<Map<String, Object?>>>{};
     for (final table in _tables) {
-      final rows = sourceTables[table] ?? ((table == 'bill_returns' || table == 'customers') ? <dynamic>[] : null);
+      // Older schemaVersion 1 backups may predate supplier order item
+      // preservation. Restore those backups without line items rather than
+      // rejecting the entire backup.
+      final rows = sourceTables[table] ??
+          ((table == 'bill_returns' ||
+                  table == 'customers' ||
+                  table == 'supplier_order_items')
+              ? <dynamic>[]
+              : null);
       if (rows is! List) throw FormatException('Backup is missing table: $table');
       rowsByTable[table] = rows.map((row) {
         if (row is! Map) throw FormatException('Invalid row in table: $table');
