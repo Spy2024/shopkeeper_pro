@@ -104,6 +104,71 @@ void main() {
       expect(provider.grandTotal, 0);
     });
   });
+  group('Return line quantity isolation', () {
+    final product = Product(
+      id: 'tea-1',
+      name: 'Tea',
+      category: 'Grocery',
+      stockQuantity: 0,
+      costPrice: 50,
+      sellingPrice: 200,
+    );
+
+    test('does not combine sold quantities from different price lines', () {
+      final cheaperLine = BillItem(
+        productId: 'tea-1',
+        productName: 'Tea',
+        quantity: 3,
+        unitPrice: 100,
+      );
+      final expensiveLine = BillItem(
+        productId: 'tea-1',
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 200,
+      );
+      final bill = Bill(
+        id: 'bill-returns',
+        date: DateTime(2026, 10, 11),
+        items: [cheaperLine, expensiveLine],
+      );
+
+      expect(
+        soldQuantityForReturnLine(bill: bill, item: expensiveLine, product: product),
+        1,
+      );
+      expect(
+        soldQuantityForReturnLine(bill: bill, item: cheaperLine, product: product),
+        3,
+      );
+    });
+
+    test('combines identical product and unit-price lines', () {
+      final first = BillItem(
+        productId: 'tea-1',
+        productName: 'Tea',
+        quantity: 2,
+        unitPrice: 150,
+      );
+      final second = BillItem(
+        productId: 'tea-1',
+        productName: 'Tea',
+        quantity: 4,
+        unitPrice: 150,
+      );
+      final bill = Bill(
+        id: 'bill-same-price',
+        date: DateTime(2026, 10, 11),
+        items: [first, second],
+      );
+
+      expect(
+        soldQuantityForReturnLine(bill: bill, item: first, product: product),
+        6,
+      );
+    });
+  });
+
   group('Bill item inventory identity', () {
     final products = <Product>[
       Product(id: 'tea-old', name: 'Tea', category: 'Grocery',
