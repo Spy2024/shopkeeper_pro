@@ -45,9 +45,13 @@ class BackupRestoreService {
     await _requireOwner(userId);
     final db = await DBService.instance.database;
     final tables = <String, List<Map<String, dynamic>>>{};
-    for (final table in _tables) {
-      tables[table] = await db.query(table);
-    }
+    // Read every table from one SQLite transaction so a concurrent checkout
+    // cannot produce a backup with bills from one moment and stock from another.
+    await db.transaction((txn) async {
+      for (final table in _tables) {
+        tables[table] = await txn.query(table);
+      }
+    });
     final now = DateTime.now().toUtc();
     final payload = <String, dynamic>{
       'format': 'shopkeeper-pro-backup',
