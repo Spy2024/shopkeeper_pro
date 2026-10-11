@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/models/bill.dart';
+import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 
 void main() {
@@ -102,4 +104,45 @@ void main() {
       expect(provider.grandTotal, 0);
     });
   });
+  group('Bill item inventory identity', () {
+    final products = <Product>[
+      Product(id: 'tea-old', name: 'Tea', category: 'Grocery',
+          stockQuantity: 10, costPrice: 50, sellingPrice: 100),
+      Product(id: 'tea-new', name: 'Tea', category: 'Grocery',
+          stockQuantity: 20, costPrice: 60, sellingPrice: 120),
+    ];
+
+    test('does not resolve a stale product ID to another same-name product', () {
+      final item = BillItem(
+        productId: 'deleted-tea-id',
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 100,
+      );
+
+      expect(resolveProductForBillItem(item, products), isNull);
+    });
+
+    test('uses the exact product ID when names are duplicated', () {
+      final item = BillItem(
+        productId: 'tea-new',
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 120,
+      );
+
+      expect(resolveProductForBillItem(item, products)?.id, 'tea-new');
+    });
+
+    test('retains case-insensitive name lookup for legacy items without IDs', () {
+      final item = BillItem(
+        productName: '  tEa  ',
+        quantity: 1,
+        unitPrice: 100,
+      );
+
+      expect(resolveProductForBillItem(item, products)?.id, 'tea-old');
+    });
+  });
+
 }
