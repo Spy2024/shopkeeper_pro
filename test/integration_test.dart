@@ -16,6 +16,39 @@ void main() {
       expect(p.stockQuantity - 2, 48);
     });
 
+    test('product barcode and expiry survive map round-trip', () {
+      final expiry = DateTime.now().add(const Duration(days: 10));
+      final product = Product(
+        id: 'p-barcode',
+        name: 'Milk',
+        category: 'Dairy',
+        stockQuantity: 8,
+        costPrice: 100,
+        sellingPrice: 140,
+        barcode: '8901234567890',
+        expiryDate: expiry,
+      );
+      final restored = Product.fromMap(product.toMap());
+      expect(restored.barcode, '8901234567890');
+      expect(restored.expiryDate, expiry);
+      expect(restored.expiresWithin30Days, isTrue);
+      expect(restored.isExpired, isFalse);
+    });
+
+    test('expired products are flagged by date only', () {
+      final product = Product(
+        id: 'p-expired',
+        name: 'Yogurt',
+        category: 'Dairy',
+        stockQuantity: 2,
+        costPrice: 50,
+        sellingPrice: 70,
+        expiryDate: DateTime.now().subtract(const Duration(days: 1)),
+      );
+      expect(product.isExpired, isTrue);
+      expect(product.expiresWithin30Days, isFalse);
+    });
+
     test('POS bill calculation', () {
       final bill = Bill(id: 'b1', date: DateTime.now(),
         items: [BillItem(productId: 'p1', productName: 'Tea', quantity: 2, unitPrice: 150),
