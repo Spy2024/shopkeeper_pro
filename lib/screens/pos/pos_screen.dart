@@ -254,7 +254,17 @@ class _BillSummaryPanel extends StatelessWidget {
     try {
       final file = await PdfService.generateInvoice(bill, shop);
       if (!context.mounted) return;
-      await Printing.layoutPdf(onLayout: (_) => file.readAsBytes());
+
+      // Checkout clears the cart and notifies listeners. Let Flutter finish
+      // rebuilding the POS tree before opening the native print UI.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!context.mounted) return;
+
+      final pdfBytes = await file.readAsBytes();
+      await Printing.layoutPdf(
+        onLayout: (_) async => pdfBytes,
+        name: 'Shopkeeper-Pro-Invoice',
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
