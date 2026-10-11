@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shopkeeper_pro/models/business_type.dart';
+import 'package:shopkeeper_pro/models/business_branch.dart';
 import 'package:shopkeeper_pro/models/shop.dart';
 
 void main() {
@@ -36,6 +37,31 @@ void main() {
       expect(BusinessTypes.byId('not_a_real_type').id, 'general_retail');
       expect(BusinessTypes.byId(null).id, 'general_retail');
     });
+  });
+
+  test('branch record preserves all profile fields and status flags', () {
+    final branch = BusinessBranch(
+      id: 'branch-1',
+      name: 'Main Warehouse',
+      code: 'MAIN_01',
+      address: 'Karachi',
+      phone: '03000000000',
+      managerName: 'Manager',
+      isMain: true,
+      isActive: false,
+      createdAt: DateTime.utc(2026, 1, 2),
+    );
+
+    final restored = BusinessBranch.fromMap(branch.toMap());
+    expect(restored.id, 'branch-1');
+    expect(restored.name, 'Main Warehouse');
+    expect(restored.code, 'MAIN_01');
+    expect(restored.address, 'Karachi');
+    expect(restored.phone, '03000000000');
+    expect(restored.managerName, 'Manager');
+    expect(restored.isMain, isTrue);
+    expect(restored.isActive, isFalse);
+    expect(restored.createdAt, DateTime.utc(2026, 1, 2));
   });
 
   test('shop business type survives map serialization and legacy maps default safely', () {
