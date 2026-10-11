@@ -4,6 +4,7 @@ import 'package:shopkeeper_pro/models/daily_sale.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/models/supplier.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
+import 'package:shopkeeper_pro/providers/supplier_provider.dart';
 import 'package:shopkeeper_pro/services/backup_restore_service.dart';
 
 void main() {
@@ -214,6 +215,69 @@ void main() {
         throwsArgumentError,
       );
       expect(() => bill.refundFor(bill.items.single, 3), throwsArgumentError);
+    });
+
+    test('purchase receipt aggregates duplicate product lines', () {
+      final tea = Product(
+        id: 'tea-id', name: 'Tea', category: 'Grocery',
+        stockQuantity: 7, costPrice: 80, sellingPrice: 120,
+      );
+      final quantities = aggregatePurchaseOrderQuantities(
+        items: [
+          SupplierOrderItem(productName: 'Tea', requiredQuantity: 3, estimatedPrice: 70),
+          SupplierOrderItem(productName: ' tea ', requiredQuantity: 4, estimatedPrice: 75),
+        ],
+        products: [tea],
+      );
+
+      expect(quantities, {'tea-id': 7});
+      expect(tea.stockQuantity + quantities['tea-id']!, 14);
+    });
+
+    test('purchase receipt rejects missing or ambiguous products', () {
+      final tea = Product(
+        id: 'tea-id', name: 'Tea', category: 'Grocery',
+        stockQuantity: 7, costPrice: 80, sellingPrice: 120,
+      );
+      expect(
+        () => aggregatePurchaseOrderQuantities(
+          items: [SupplierOrderItem(productName: 'Coffee', requiredQuantity: 1, estimatedPrice: 50)],
+          products: [tea],
+        ),
+        throwsStateError,
+      );
+      final duplicateName = Product(
+        id: 'tea-2', name: 'Tea', category: 'Grocery',
+        stockQuantity: 2, costPrice: 60, sellingPrice: 100,
+      );
+      expect(
+        () => aggregatePurchaseOrderQuantities(
+          items: [SupplierOrderItem(productName: 'Tea', requiredQuantity: 1, estimatedPrice: 50)],
+          products: [tea, duplicateName],
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('purchase receipt rejects zero and negative quantities', () {
+      final tea = Product(
+        id: 'tea-id', name: 'Tea', category: 'Grocery',
+        stockQuantity: 7, costPrice: 80, sellingPrice: 120,
+      );
+      expect(
+        () => aggregatePurchaseOrderQuantities(
+          items: [SupplierOrderItem(productName: 'Tea', requiredQuantity: 0, estimatedPrice: 50)],
+          products: [tea],
+        ),
+        throwsStateError,
+      );
+      expect(
+        () => aggregatePurchaseOrderQuantities(
+          items: [SupplierOrderItem(productName: 'Tea', requiredQuantity: -2, estimatedPrice: 50)],
+          products: [tea],
+        ),
+        throwsStateError,
+      );
     });
 
     test('supplier balance cannot be negative conceptually', () {
