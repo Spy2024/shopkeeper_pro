@@ -341,7 +341,7 @@ class SyncService {
     return rows.isNotEmpty;
   }
 
-  Future<bool> _hasPendingForTable(Database db, String tableName) async {
+  Future<bool> _hasPendingForTable(DatabaseExecutor db, String tableName) async {
     final rows = await db.query(
       'sync_queue',
       columns: ['id'],
@@ -379,14 +379,19 @@ class SyncService {
         final bill = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('bills', bill, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
-        // Do not replace local child rows while offline bill-item edits are queued.
-        if (await _hasPendingForTable(db, 'bills/${doc.id}/items')) continue;
-        await db.delete('bill_items', where: 'billId = ?', whereArgs: [doc.id]);
-        for (final item in items.docs) {
-          final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
-          data['cloudId'] = item.id;
-          await db.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
+        // Check the queue and replace child rows in one SQLite transaction so
+        // a concurrent offline edit cannot be erased between the check and write.
+        final skippedForPendingItems = await db.transaction((txn) async {
+          if (await _hasPendingForTable(txn, 'bills/${doc.id}/items')) return true;
+          await txn.delete('bill_items', where: 'billId = ?', whereArgs: [doc.id]);
+          for (final item in items.docs) {
+            final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
+            data['cloudId'] = item.id;
+            await txn.insert('bill_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+          return false;
+        });
+        if (skippedForPendingItems) continue;
       }
 
       final branches = await _collection(userId, 'branches').get();
@@ -424,13 +429,18 @@ class SyncService {
         await db.insert('supplier_orders', order, conflictAlgorithm: ConflictAlgorithm.replace);
         final items = await doc.reference.collection('items').get();
         // Preserve locally edited order items until their queued writes succeed.
-        if (await _hasPendingForTable(db, 'supplier_orders/${doc.id}/items')) continue;
-        await db.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [doc.id]);
-        for (final item in items.docs) {
-          final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
-          data['cloudId'] = item.id;
-          await db.insert('supplier_order_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
+        // Queue check and replacement are atomic with respect to local writes.
+        final skippedForPendingOrderItems = await db.transaction((txn) async {
+          if (await _hasPendingForTable(txn, 'supplier_orders/${doc.id}/items')) return true;
+          await txn.delete('supplier_order_items', where: 'orderId = ?', whereArgs: [doc.id]);
+          for (final item in items.docs) {
+            final data = Map<String, dynamic>.from(item.data())..remove('updatedAt');
+            data['cloudId'] = item.id;
+            await txn.insert('supplier_order_items', data, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+          return false;
+        });
+        if (skippedForPendingOrderItems) continue;
       }
 
       for (final collection in ['sales', 'expenses', 'returns']) {
