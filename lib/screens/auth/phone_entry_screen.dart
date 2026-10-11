@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../services/db_service.dart';
 import '../dashboard/home_screen.dart';
 import '../profile/shop_profile_screen.dart';
 import 'email_auth_screen.dart';
 import 'otp_screen.dart';
+import 'legacy_database_migration_dialog.dart';
 
 class PhoneEntryScreen extends StatefulWidget {
   final bool isRecovery;
@@ -61,6 +63,10 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
           MaterialPageRoute(builder: (_) => OtpScreen(phoneNumber: phone)),
         );
       }
+    } on LegacyDatabaseMigrationRequired {
+      if (!mounted) return;
+      final imported = await confirmLegacyDatabaseImport(context);
+      if (imported) await _continueAfterAuth();
     } catch (_) {
       // AuthProvider exposes a user-friendly error message.
     }
