@@ -61,8 +61,18 @@ class InventoryProvider extends ChangeNotifier {
       lowStockThreshold: lowStockThreshold, barcode: cleanBarcode, expiryDate: expiryDate);
     final db = await DBService.instance.database;
     await db.insert('products', product.toMap());
-    await SyncQueueService.instance.queueOperation(operation: 'create', tableName: 'products',
-      documentId: product.id, data: product.toMap());
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'create',
+        tableName: 'products',
+        documentId: product.id,
+        data: product.toMap(),
+      );
+    } catch (e) {
+      // Keep the committed local change visible. The next full sync can upload
+      // this product from SQLite even if the queue insert temporarily fails.
+      debugPrint('[InventoryProvider] Product saved locally; queue insert failed: $e');
+    }
     _products.add(product);
     notifyListeners();
   }
@@ -86,8 +96,17 @@ class InventoryProvider extends ChangeNotifier {
     final db = await DBService.instance.database;
     final changed = await db.update('products', updated.toMap(), where: 'id = ?', whereArgs: [updated.id]);
     if (changed != 1) throw StateError('Product not found');
-    await SyncQueueService.instance.queueOperation(operation: 'update', tableName: 'products',
-      documentId: updated.id, data: updated.toMap());
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: 'update',
+        tableName: 'products',
+        documentId: updated.id,
+        data: updated.toMap(),
+      );
+    } catch (e) {
+      // SQLite is the source of truth; a later full sync can upload this row.
+      debugPrint('[InventoryProvider] Product updated locally; queue insert failed: $e');
+    }
     final idx = _products.indexWhere((p) => p.id == updated.id);
     if (idx != -1) _products[idx] = updated;
     notifyListeners();
@@ -96,9 +115,20 @@ class InventoryProvider extends ChangeNotifier {
   Future<void> deleteProduct(String id) async {
     if (id.trim().isEmpty) throw ArgumentError('Product id is required');
     final db = await DBService.instance.database;
+    // Queue the delete before removing the local row so a queue persistence
+    // failure cannot silently leave a cloud-only product that later reappears.
+    await SyncQueueService.instance.queueOperation(
+      operation: 'delete',
+      tableName: 'products',
+      documentId: id,
+      data: {},
+    );
     final changed = await db.delete('products', where: 'id = ?', whereArgs: [id]);
-    if (changed == 0) return;
-    await SyncQueueService.instance.queueOperation(operation: 'delete', tableName: 'products', documentId: id, data: {});
+    if (changed == 0) {
+      _products.removeWhere((p) => p.id == id);
+      notifyListeners();
+      return;
+    }
     _products.removeWhere((p) => p.id == id);
     notifyListeners();
   }
