@@ -50,7 +50,7 @@ class DBService {
       final ownerMarker = File(join(dbPath, 'shopkeeper_pro.legacy-owner'));
       if (await ownerMarker.exists()) {
         final ownerId = (await ownerMarker.readAsString()).trim();
-        if (ownerId.isNotEmpty && ownerId != cleanId) {
+        if (ownerId.isEmpty || ownerId != cleanId) {
           throw const LegacyDatabaseOwnershipConflict();
         }
       }
@@ -95,7 +95,7 @@ class DBService {
       }
       if (await ownerMarker.exists()) {
         final ownerId = (await ownerMarker.readAsString()).trim();
-        if (ownerId.isNotEmpty && ownerId != cleanId) {
+        if (ownerId.isEmpty || ownerId != cleanId) {
           throw const LegacyDatabaseOwnershipConflict();
         }
       }
