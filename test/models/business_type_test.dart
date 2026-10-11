@@ -71,6 +71,19 @@ void main() {
     });
   });
 
+  group('Branch code validation', () {
+    test('trims and uppercases valid codes', () {
+      expect(normalizeBranchCode('  main_01 '), 'MAIN_01');
+      expect(normalizeBranchCode('b-2'), 'B-2');
+    });
+
+    test('rejects blank, short, long and unsupported characters', () {
+      for (final code in ['', 'A', 'BRANCH CODE', 'A/B', 'X' * 21]) {
+        expect(() => normalizeBranchCode(code), throwsArgumentError, reason: code);
+      }
+    });
+  });
+
   test('branch record preserves all profile fields and status flags', () {
     final branch = BusinessBranch(
       id: 'branch-1',
