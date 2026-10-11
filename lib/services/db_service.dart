@@ -21,6 +21,9 @@ class DBService {
       await _db!.close();
       _db = null;
     }
+    // Clear ownership before opening another account's file. If opening the
+    // new database fails, the previous account must not remain active.
+    _activeUserId = null;
     final dbPath = await getDatabasesPath();
     final legacyPath = join(dbPath, 'shopkeeper_pro.db');
     final safeId = cleanId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
@@ -36,8 +39,9 @@ class DBService {
         }
       }
     }
+    final openedDb = await _openAt(userPath);
+    _db = openedDb;
     _activeUserId = cleanId;
-    _db = await _openAt(userPath);
   }
 
   Future<void> clearActiveUser() async {
