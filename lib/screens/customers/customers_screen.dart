@@ -64,7 +64,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
                     final value = v?.trim() ?? '';
-                    if (value.isNotEmpty && !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) return 'Enter a valid email';
+                    if (value.isNotEmpty &&
+                        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
+                      return 'Enter a valid email';
+                    }
                     return null;
                   },
                 ),
@@ -91,9 +94,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   }
                   if (dialogContext.mounted) Navigator.pop(dialogContext, true);
                 } catch (e) {
-                  if (dialogContext.mounted) ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(content: Text('Could not save customer: $e')),
-                  );
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('Could not save customer: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Save'),
@@ -170,7 +175,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                               context: context,
                               builder: (ctx) => AlertDialog(
                                 title: const Text('Delete customer?'),
-                                content: Text('Remove ' + customer.name + ' from this device?'),
+                                content: Text('Remove ${customer.name} from this device?'),
                                 actions: [
                                   TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
                                   FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
