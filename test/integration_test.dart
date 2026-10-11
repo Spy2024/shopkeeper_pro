@@ -128,6 +128,70 @@ void main() {
       expect(totals.productCount, 1);
     });
 
+    test('bill item resolution never substitutes a different product when an ID is present', () {
+      final intended = Product(
+        id: 'intended', name: 'Tea', category: 'Grocery',
+        stockQuantity: 5, costPrice: 80, sellingPrice: 120,
+      );
+      final sameNameWrongId = Product(
+        id: 'other', name: 'Tea', category: 'Grocery',
+        stockQuantity: 10, costPrice: 70, sellingPrice: 110,
+      );
+      expect(
+        resolveProductForBillItem(
+          BillItem(productId: 'missing-id', productName: 'Tea', quantity: 1, unitPrice: 120),
+          [intended, sameNameWrongId],
+        ),
+        isNull,
+      );
+      expect(
+        resolveProductForBillItem(
+          BillItem(productId: 'intended', productName: 'Old display name', quantity: 1, unitPrice: 120),
+          [intended, sameNameWrongId],
+        )?.id,
+        'intended',
+      );
+    });
+
+    test('return eligibility counts only the same product and unit price', () {
+      final bill = Bill(
+        id: 'return-bill',
+        date: DateTime.now(),
+        items: [
+          BillItem(productId: 'p1', productName: 'Oil', quantity: 3, unitPrice: 100),
+          BillItem(productId: 'p1', productName: 'Oil', quantity: 2, unitPrice: 120),
+        ],
+      );
+      final product = Product(
+        id: 'p1', name: 'Oil', category: 'Grocery',
+        stockQuantity: 0, costPrice: 70, sellingPrice: 120,
+      );
+      expect(soldQuantityForReturnLine(
+        bill: bill, item: bill.items[0], product: product,
+      ), 3);
+      expect(soldQuantityForReturnLine(
+        bill: bill, item: bill.items[1], product: product,
+      ), 2);
+    });
+
+    test('refund rejects a line that is not part of the bill', () {
+      final bill = Bill(
+        id: 'bill-a',
+        date: DateTime.now(),
+        items: [
+          BillItem(productId: 'p1', productName: 'Oil', quantity: 2, unitPrice: 100),
+        ],
+      );
+      expect(
+        () => bill.refundFor(
+          BillItem(productId: 'p2', productName: 'Rice', quantity: 1, unitPrice: 100),
+          1,
+        ),
+        throwsArgumentError,
+      );
+      expect(() => bill.refundFor(bill.items.single, 3), throwsArgumentError);
+    });
+
     test('supplier balance cannot be negative conceptually', () {
       final supplier = Supplier(id: 's1', name: 'ABC', phone: '',
         totalStockReceivedValue: 1000, totalPaymentsMade: 400);
