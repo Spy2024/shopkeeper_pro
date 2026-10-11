@@ -78,7 +78,15 @@ class AuthProvider extends ChangeNotifier {
       userUid = await AuthService.instance.getUserUid();
       isLoggedIn = userUid != null;
       if (userUid != null && userUid!.isNotEmpty) {
-        await DBService.instance.configureForUser(userUid!);
+        try {
+          await DBService.instance.configureForUser(userUid!);
+        } on LegacyDatabaseMigrationRequired {
+          // Keep the user signed out of the data area. They can confirm import
+          // through the normal sign-in flow instead of silently assigning data.
+          isLoggedIn = false;
+          notifyListeners();
+          return;
+        }
       }
       notifyListeners();
     }
