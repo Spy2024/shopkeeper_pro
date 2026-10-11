@@ -4,6 +4,7 @@ import 'package:shopkeeper_pro/models/daily_sale.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/models/supplier.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
+import 'package:shopkeeper_pro/services/backup_restore_service.dart';
 
 void main() {
   group('Shopkeeper business-flow tests', () {
@@ -93,6 +94,38 @@ void main() {
       expect(sale.revenue, 360);
       expect(sale.costOfGoods, 240);
       expect(sale.margin, 120);
+    });
+
+    test('financial statement totals include refunds, COGS and expenses', () {
+      final totals = FinancialStatementTotals.fromRecords(
+        billRows: [
+          {'subtotal': 1000.0, 'discount': 100.0, 'taxPercent': 10.0},
+        ],
+        expenseRows: [
+          {'amount': 80.0},
+        ],
+        returnRows: [
+          {'refundAmount': 110.0},
+        ],
+        productRows: [
+          {'stockQuantity': 5, 'costPrice': 100.0},
+        ],
+        dailySalesRows: [
+          {'costPrice': 300.0, 'quantity': 2, 'source': 'pos'},
+          {'costPrice': -300.0, 'quantity': 1, 'source': 'return'},
+        ],
+      );
+
+      expect(totals.billedSales, closeTo(990.0, 0.001));
+      expect(totals.refunds, closeTo(110.0, 0.001));
+      expect(totals.netSales, closeTo(880.0, 0.001));
+      expect(totals.costOfGoods, closeTo(300.0, 0.001));
+      expect(totals.grossProfit, closeTo(580.0, 0.001));
+      expect(totals.expenses, closeTo(80.0, 0.001));
+      expect(totals.netProfit, closeTo(500.0, 0.001));
+      expect(totals.currentStockValue, closeTo(500.0, 0.001));
+      expect(totals.billCount, 1);
+      expect(totals.productCount, 1);
     });
 
     test('supplier balance cannot be negative conceptually', () {
