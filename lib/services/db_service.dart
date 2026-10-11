@@ -102,6 +102,7 @@ class DBService {
       // The database connection is closed before copying. Copy sidecars too in
       // case a platform still has SQLite WAL data waiting to be checkpointed.
       await legacyFile.copy(userPath);
+      Database? importedDb;
       try {
         for (final suffix in ['-wal', '-shm']) {
           final source = File('$legacyPath$suffix');
@@ -110,6 +111,7 @@ class DBService {
           }
         }
         final imported = await _openAt(userPath);
+        importedDb = imported;
         if (!await ownerMarker.exists()) {
           final temporaryMarker = File('${ownerMarker.path}.tmp');
           await temporaryMarker.writeAsString(cleanId, flush: true);
@@ -118,6 +120,13 @@ class DBService {
         _db = imported;
         _activeUserId = cleanId;
       } catch (_) {
+        if (importedDb != null) {
+          try {
+            await importedDb.close();
+          } catch (_) {
+            // The source legacy database remains untouched for recovery.
+          }
+        }
         _db = null;
         _activeUserId = null;
         for (final suffix in ['', '-wal', '-shm']) {
