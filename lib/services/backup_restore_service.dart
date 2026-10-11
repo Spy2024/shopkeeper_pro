@@ -177,6 +177,13 @@ class BackupRestoreService {
           await txn.insert(table, row, conflictAlgorithm: ConflictAlgorithm.abort);
         }
       }
+      // Persist reconciliation intent in the same SQLite transaction as the
+      // restored rows, so an app interruption cannot silently skip cloud cleanup.
+      await txn.insert(
+        'sync_metadata',
+        {'key': 'cloud_restore_pending', 'value': userId},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     });
     await SyncQueueService.instance.reloadPendingQueue();
     debugPrint('[Backup] Restore completed for account $userId');
