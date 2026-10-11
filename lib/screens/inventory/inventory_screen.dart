@@ -34,6 +34,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final inventory = context.watch<InventoryProvider>();
     final products = inventory.search(_query);
     final alerts = inventory.lowOrOutOfStock;
+    final expiryAlerts = inventory.expiredProducts.length + inventory.expiringSoonProducts.length;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Inventory')),
@@ -51,6 +52,29 @@ class _InventoryScreenState extends State<InventoryScreen> {
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
+          if (expiryAlerts > 0)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.event_busy, color: Colors.orange.shade800, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${inventory.expiredProducts.length} expired • ${inventory.expiringSoonProducts.length} expiring within 30 days',
+                      style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (alerts.isNotEmpty)
             Container(
               width: double.infinity,
@@ -94,7 +118,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             child: Icon(Icons.inventory_2, color: statusColor),
                           ),
                           title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text('${p.category} • Stock: ${p.stockQuantity} • Margin: ${_currency.format(p.margin)}'),
+                          subtitle: Text([
+                            p.category,
+                            'Stock: ${p.stockQuantity}',
+                            'Margin: ${_currency.format(p.margin)}',
+                            if (p.barcode != null && p.barcode!.isNotEmpty) 'Barcode: ${p.barcode}',
+                            if (p.expiryDate != null)
+                              p.isExpired
+                                  ? 'EXPIRED: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}'
+                                  : p.expiresWithin30Days
+                                      ? 'Expires soon: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}'
+                                      : 'Expiry: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}',
+                          ].join(' • ')),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () => context.read<InventoryProvider>().deleteProduct(p.id),
@@ -125,6 +160,25 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
   late final _stockCtrl = TextEditingController(text: widget.existing?.stockQuantity.toString() ?? '');
   late final _cpCtrl = TextEditingController(text: widget.existing?.costPrice.toString() ?? '');
   late final _spCtrl = TextEditingController(text: widget.existing?.sellingPrice.toString() ?? '');
+  late final _barcodeCtrl = TextEditingController(text: widget.existing?.barcode ?? '');
+  DateTime? _expiryDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _expiryDate = widget.existing?.expiryDate;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _categoryCtrl.dispose();
+    _stockCtrl.dispose();
+    _cpCtrl.dispose();
+    _spCtrl.dispose();
+    _barcodeCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -134,9 +188,12 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
         left: 20, right: 20, top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
-      child: Form(
-        key: _formKey,
-        child: Column(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.82),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -155,10 +212,47 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
             ),
             const SizedBox(height: 8),
             TextFormField(
+              controller: _barcodeCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Barcode (optional)',
+                prefixIcon: Icon(Icons.qr_code_2),
+                helperText: 'A handheld scanner can type directly into this field.',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
               controller: _stockCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Stock Quantity'),
               validator: (v) => (int.tryParse(v ?? '') == null) ? 'Enter a valid number' : null,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _expiryDate ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null && mounted) setState(() => _expiryDate = picked);
+                    },
+                    icon: const Icon(Icons.event),
+                    label: Text(_expiryDate == null
+                        ? 'Set expiry date'
+                        : DateFormat('dd MMM yyyy').format(_expiryDate!)),
+                  ),
+                ),
+                if (_expiryDate != null)
+                  IconButton(
+                    tooltip: 'Clear expiry date',
+                    onPressed: () => setState(() => _expiryDate = null),
+                    icon: const Icon(Icons.clear),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
@@ -195,6 +289,9 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                     stockQuantity: int.parse(_stockCtrl.text),
                     costPrice: double.parse(_cpCtrl.text),
                     sellingPrice: double.parse(_spCtrl.text),
+                    lowStockThreshold: widget.existing!.lowStockThreshold,
+                    barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
+                    expiryDate: _expiryDate,
                   ));
                 } else {
                   await inventory.addProduct(
@@ -203,6 +300,8 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                     stockQuantity: int.parse(_stockCtrl.text),
                     costPrice: double.parse(_cpCtrl.text),
                     sellingPrice: double.parse(_spCtrl.text),
+                    barcode: _barcodeCtrl.text.trim().isEmpty ? null : _barcodeCtrl.text.trim(),
+                    expiryDate: _expiryDate,
                   );
                 }
                 if (context.mounted) Navigator.pop(context);
@@ -210,6 +309,8 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
               child: Text(isEdit ? 'Save Changes' : 'Add Product'),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );
