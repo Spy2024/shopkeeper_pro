@@ -5,8 +5,8 @@ import 'package:uuid/uuid.dart';
 import '../models/business_branch.dart';
 import '../services/db_service.dart';
 
-/// Local branch registry. Branch-to-transaction assignment and cloud sync are
-/// separate implementation steps and must not be inferred from this registry.
+/// Local branch registry. Checkout, stock allocation and transfers use this registry;
+/// authorization and cloud-side role enforcement must still be handled separately.
 class BranchProvider extends ChangeNotifier {
   final _uuid = const Uuid();
   List<BusinessBranch> branches = [];
