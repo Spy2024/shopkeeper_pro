@@ -305,6 +305,7 @@ class DBService {
           await _createMobileShopTables(db);
         }
         if (oldVersion < 20) {
+          await db.execute('ALTER TABLE mobile_devices ADD COLUMN soldBillId TEXT');
           await db.execute('ALTER TABLE bill_items ADD COLUMN mobileDeviceId TEXT');
           await db.execute('ALTER TABLE bill_items ADD COLUMN mobileImei TEXT');
           await db.execute('ALTER TABLE bill_returns ADD COLUMN mobileDeviceId TEXT');
@@ -429,6 +430,7 @@ class DBService {
         warrantyMonths INTEGER NOT NULL DEFAULT 0 CHECK(warrantyMonths >= 0),
         purchaseDate TEXT,
         soldAt TEXT,
+        soldBillId TEXT,
         branchId TEXT,
         inspectionJson TEXT NOT NULL DEFAULT '{}',
         notes TEXT,
