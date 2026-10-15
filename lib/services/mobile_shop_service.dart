@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/mobile_device.dart';
@@ -24,12 +25,18 @@ class MobileShopService {
     required String id,
     required Map<String, Object?> data,
   }) async {
-    await SyncQueueService.instance.queueOperation(
-      operation: operation,
-      tableName: table,
-      documentId: id,
-      data: Map<String, dynamic>.from(data),
-    );
+    try {
+      await SyncQueueService.instance.queueOperation(
+        operation: operation,
+        tableName: table,
+        documentId: id,
+        data: Map<String, dynamic>.from(data),
+      );
+    } catch (error) {
+      // Local SQLite is authoritative for offline work. Do not tell the user
+      // that a saved intake/job failed merely because queuing sync did.
+      debugPrint('[MobileShopService] Could not queue $table/$id; full sync can reconcile it: $error');
+    }
   }
 
   Future<MobileDevice> createDevice({
