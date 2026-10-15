@@ -490,7 +490,7 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
             DropdownButtonFormField<String>(
               initialValue: method,
               decoration: const InputDecoration(labelText: 'Payment method'),
-              items: const ['cash', 'card', 'bank', 'wallet', 'credit', 'other']
+              items: const ['cash', 'card', 'bank', 'wallet', 'other']
                   .map((value) => DropdownMenuItem(value: value, child: Text(value.toUpperCase()))).toList(),
               onChanged: (value) => setDialogState(() => method = value ?? 'cash'),
             ),
@@ -505,11 +505,11 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                     amount: double.parse(amount.text.trim()),
                     method: method,
                   );
-                  if (!mounted) return;
+                  if (!mounted || !dialogContext.mounted) return;
                   Navigator.pop(dialogContext);
                   await _reload();
                 } catch (error) {
-                  if (!mounted) return;
+                  if (!mounted || !context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
                 }
               },
@@ -596,7 +596,7 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
       builder: (dialogContext) => AlertDialog(
         title: Text('Issue repair warranty · ${job.jobNumber}'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Job must be marked Delivered first.'),
+          const Text('Job must be marked Delivered first.'),
           TextField(controller: days, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Warranty days')),
           TextField(controller: terms, decoration: const InputDecoration(labelText: 'Warranty terms')),
         ]),
@@ -610,11 +610,11 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                   warrantyDays: int.parse(days.text.trim()),
                   terms: terms.text.trim(),
                 );
-                if (!mounted) return;
+                if (!mounted || !dialogContext.mounted || !context.mounted) return;
                 Navigator.pop(dialogContext);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Repair warranty issued.')));
               } catch (error) {
-                if (!mounted) return;
+                if (!mounted || !context.mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
               }
             },
