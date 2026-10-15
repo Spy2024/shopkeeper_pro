@@ -79,7 +79,7 @@ class _PosScreenState extends State<PosScreen> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              if (snapshot.hasError) return Center(child: Text('Could not load phones: \${snapshot.error}'));
+              if (snapshot.hasError) return Center(child: Text('Could not load phones: ${snapshot.error}'));
               final devices = snapshot.data ?? const [];
               if (devices.isEmpty) return const Center(child: Text('No sale-ready phones. Check used-phone inspection status.'));
               return ListView(
@@ -90,8 +90,8 @@ class _PosScreenState extends State<PosScreen> {
                   for (final device in devices)
                     Card(
                       child: ListTile(
-                        title: Text('\${device.brand} \${device.model}'),
-                        subtitle: Text('IMEI: \${device.imei1 ?? '—'}\${device.imei2 == null ? '' : '\nIMEI 2: \${device.imei2}'}\nStatus: \${device.status}'),
+                        title: Text('${device.brand} ${device.model}'),
+                        subtitle: Text('IMEI: ${device.imei1 ?? '—'}${device.imei2 == null ? '' : '\nIMEI 2: ${device.imei2}'}\nStatus: ${device.status}'),
                         isThreeLine: true,
                         trailing: Text(_currency.format(device.sellingPrice)),
                         onTap: () {
@@ -99,7 +99,7 @@ class _PosScreenState extends State<PosScreen> {
                             context.read<PosProvider>().addMobileDevice(device);
                             Navigator.pop(sheetContext);
                           } catch (error) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('\$error')));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
                           }
                         },
                       ),
