@@ -116,6 +116,9 @@ class BackupRestoreService {
     'shop',
     'branches',
     'products',
+    'mobile_devices',
+    'mobile_repair_jobs',
+    'mobile_repair_job_parts',
     'branch_stock',
     'stock_transfers',
     'branch_cash_transactions',
@@ -294,7 +297,10 @@ class BackupRestoreService {
                   table == 'stock_transfers' ||
                   table == 'branch_cash_transactions' ||
                   table == 'customer_ledger' ||
-                  table == 'payment_allocations')
+                  table == 'payment_allocations' ||
+                  table == 'mobile_devices' ||
+                  table == 'mobile_repair_jobs' ||
+                  table == 'mobile_repair_job_parts')
               ? <dynamic>[]
               : null);
       if (rows is! List) throw FormatException('Backup is missing table: $table');
@@ -309,6 +315,9 @@ class BackupRestoreService {
     await db.transaction((txn) async {
       _ensureOwnerStillActive(userId);
       for (final table in [
+        'mobile_repair_job_parts',
+        'mobile_repair_jobs',
+        'mobile_devices',
         'payment_allocations',
         'bill_returns',
         'bill_items',
