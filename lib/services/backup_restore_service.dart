@@ -116,10 +116,15 @@ class BackupRestoreService {
     'shop',
     'branches',
     'products',
+    'branch_stock',
+    'stock_transfers',
+    'branch_cash_transactions',
     'customers',
+    'customer_ledger',
     'bills',
     'bill_items',
     'bill_returns',
+    'payment_allocations',
     'suppliers',
     'supplier_orders',
     'supplier_order_items',
@@ -284,7 +289,12 @@ class BackupRestoreService {
           ((table == 'bill_returns' ||
                   table == 'customers' ||
                   table == 'supplier_order_items' ||
-                  table == 'branches')
+                  table == 'branches' ||
+                  table == 'branch_stock' ||
+                  table == 'stock_transfers' ||
+                  table == 'branch_cash_transactions' ||
+                  table == 'customer_ledger' ||
+                  table == 'payment_allocations')
               ? <dynamic>[]
               : null);
       if (rows is! List) throw FormatException('Backup is missing table: $table');
@@ -299,10 +309,15 @@ class BackupRestoreService {
     await db.transaction((txn) async {
       _ensureOwnerStillActive(userId);
       for (final table in [
+        'payment_allocations',
         'bill_returns',
         'bill_items',
         'supplier_order_items',
         'supplier_transactions',
+        'stock_transfers',
+        'branch_cash_transactions',
+        'customer_ledger',
+        'branch_stock',
         'bills',
         'supplier_orders',
         'daily_sales',

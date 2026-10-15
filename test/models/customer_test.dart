@@ -10,6 +10,7 @@ void main() {
         name: '  Ayesha Khan  ',
         phone: '03001234567',
         email: 'ayesha@example.com',
+        address: 'House 12, Karachi',
         notes: 'Regular customer',
         createdAt: createdAt,
       );
@@ -19,6 +20,7 @@ void main() {
       expect(restored.name, 'Ayesha Khan');
       expect(restored.phone, '03001234567');
       expect(restored.email, 'ayesha@example.com');
+      expect(restored.address, 'House 12, Karachi');
       expect(restored.notes, 'Regular customer');
       expect(restored.createdAt, createdAt);
       expect(customer.toMap()['name'], 'Ayesha Khan');

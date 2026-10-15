@@ -4,6 +4,26 @@ import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 
 void main() {
+  group('Persisted bill reconstruction', () {
+    test('preserves branch attribution when loading bill history', () {
+      final bill = billFromDatabaseRow(
+        {
+          'id': 'bill-branch',
+          'date': DateTime(2026, 10, 16).toIso8601String(),
+          'customerName': 'Ayesha',
+          'branchId': 'branch-lahore',
+          'discount': 0.0,
+          'taxPercent': 0.0,
+        },
+        [BillItem(productName: 'Manual item', quantity: 1, unitPrice: 50)],
+      );
+
+      expect(bill.branchId, 'branch-lahore');
+      expect(bill.customerName, 'Ayesha');
+      expect(bill.grandTotal, 50);
+    });
+  });
+
   group('PosProvider cart and totals', () {
     late PosProvider provider;
 
@@ -111,6 +131,40 @@ void main() {
       expect(provider.grandTotal, 0);
     });
   });
+  group('Manual bill-only return identity', () {
+    test('uses a stable bill-scoped key without a catalogue product ID', () {
+      final bill = Bill(
+        id: 'manual-return-bill',
+        date: DateTime(2026, 10, 16),
+        items: [
+          BillItem(productName: '  Gift wrap  ', quantity: 2, unitPrice: 25),
+        ],
+      );
+      final item = bill.items.single;
+
+      expect(manualBillItemReturnKey(bill, item),
+          'manual:manual-return-bill:gift wrap:25.0000');
+      expect(manualBillItemReturnKey(bill, item),
+          manualBillItemReturnKey(bill, item));
+    });
+
+    test('separates manual return keys for different bills and prices', () {
+      final firstBill = Bill(
+        id: 'bill-a',
+        date: DateTime(2026, 10, 16),
+        items: [BillItem(productName: 'Gift wrap', quantity: 1, unitPrice: 25)],
+      );
+      final secondBill = Bill(
+        id: 'bill-b',
+        date: DateTime(2026, 10, 16),
+        items: [BillItem(productName: 'Gift wrap', quantity: 1, unitPrice: 30)],
+      );
+
+      expect(manualBillItemReturnKey(firstBill, firstBill.items.single),
+          isNot(manualBillItemReturnKey(secondBill, secondBill.items.single)));
+    });
+  });
+
   group('Return line quantity isolation', () {
     final product = Product(
       id: 'tea-1',
@@ -214,6 +268,27 @@ void main() {
       );
 
       expect(resolveProductForBillItem(item, products)?.id, 'tea-old');
+    });
+
+    test('does not treat a manual return line as inventory by matching name', () {
+      final manualItem = BillItem(
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 100,
+      );
+
+      expect(resolveProductForReturn(manualItem, products), isNull);
+    });
+
+    test('resolves a catalogue return only by its explicit product ID', () {
+      final catalogueItem = BillItem(
+        productId: 'tea-new',
+        productName: 'Tea',
+        quantity: 1,
+        unitPrice: 120,
+      );
+
+      expect(resolveProductForReturn(catalogueItem, products)?.id, 'tea-new');
     });
   });
 

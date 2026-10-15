@@ -8,6 +8,7 @@ class DailySale {
   final double salePrice;
   final int quantity;
   final String source;
+  final String? branchId;
 
   DailySale({
     required this.id,
@@ -19,6 +20,7 @@ class DailySale {
     required this.salePrice,
     this.quantity = 1,
     this.source = 'manual',
+    this.branchId,
   });
 
   double get revenue => salePrice * quantity;
@@ -35,6 +37,7 @@ class DailySale {
         'salePrice': salePrice,
         'quantity': quantity,
         'source': source,
+        'branchId': branchId,
       };
 
   factory DailySale.fromMap(Map<String, dynamic> map) => DailySale(
@@ -47,6 +50,7 @@ class DailySale {
         salePrice: (map['salePrice'] as num).toDouble(),
         quantity: (map['quantity'] as num?)?.toInt() ?? 1,
         source: (map['source'] as String?) ?? 'manual',
+        branchId: map['branchId'] as String?,
       );
 }
 

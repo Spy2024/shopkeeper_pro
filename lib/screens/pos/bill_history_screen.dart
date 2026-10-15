@@ -54,6 +54,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     if (bill.items.isEmpty) return;
     final reasonController = TextEditingController();
     BillItem selectedItem = bill.items.first;
+    String refundMethod = 'cash';
     final quantityController = TextEditingController(text: '1');
     String? dialogError;
     double? refundAmount;
@@ -94,6 +95,30 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                   decoration: const InputDecoration(labelText: 'Quantity to return'),
                 ),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: refundMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Refund method',
+                    helperText: 'Cash refunds update branch cash; credit refunds reduce customer balance.',
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                    const DropdownMenuItem(value: 'card', child: Text('Card')),
+                    const DropdownMenuItem(value: 'bank', child: Text('Bank transfer')),
+                    const DropdownMenuItem(value: 'wallet', child: Text('Wallet')),
+                    if (bill.customerId != null && bill.customerId!.trim().isNotEmpty)
+                      const DropdownMenuItem(value: 'credit', child: Text('Udhaar / credit adjustment')),
+                    const DropdownMenuItem(value: 'other', child: Text('Other')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() {
+                      refundMethod = value;
+                      dialogError = null;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: reasonController,
                   decoration: const InputDecoration(labelText: 'Reason for return'),
@@ -129,6 +154,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                     quantity: quantity,
                     reason: reasonController.text,
                     inventory: context.read<InventoryProvider>(),
+                    refundMethod: refundMethod,
                   );
                   if (!dialogContext.mounted) return;
                   Navigator.pop(dialogContext, true);

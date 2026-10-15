@@ -5,6 +5,7 @@ import '../models/product.dart';
 import '../models/daily_sale.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
+import '../services/branch_accounting_service.dart';
 import 'inventory_provider.dart';
 
 /// Resolves bill items to inventory records without silently switching product
@@ -29,6 +30,15 @@ Product? resolveProductForBillItem(BillItem item, List<Product> products) {
     if (product.name.trim().toLowerCase() == normalizedName) return product;
   }
   return null;
+}
+
+/// Resolves inventory identity for returns. New/manual bill-only lines have
+/// no productId and must never restore stock just because their name happens to
+/// match a catalogue product. Legacy name resolution remains available through
+/// resolveProductForBillItem for other compatibility paths.
+Product? resolveProductForReturn(BillItem item, List<Product> products) {
+  if (item.productId == null) return null;
+  return resolveProductForBillItem(item, products);
 }
 
 /// Refuses to sell products that are past their expiry date.
@@ -56,11 +66,37 @@ int soldQuantityForReturnLine({
   }).fold<int>(0, (sum, candidate) => sum + candidate.quantity);
 }
 
+/// Rehydrates a persisted bill without losing branch attribution.
+Bill billFromDatabaseRow(Map<String, Object?> row, List<BillItem> items) {
+  return Bill(
+    id: row['id'] as String,
+    date: DateTime.parse(row['date'] as String),
+    customerName: row['customerName'] as String?,
+    customerId: row['customerId'] as String?,
+    customerAddress: row['customerAddress'] as String?,
+    customerPhone: row['customerPhone'] as String?,
+    customerEmail: row['customerEmail'] as String?,
+    branchId: row['branchId'] as String?,
+    items: items,
+    discount: (row['discount'] as num).toDouble(),
+    taxPercent: (row['taxPercent'] as num).toDouble(),
+  );
+}
+
+/// Creates a stable, bill-scoped key for returns of manual bill-only lines.
+/// It satisfies the legacy returns table's non-null productId column without
+/// pretending that a manual line is an inventory product.
+String manualBillItemReturnKey(Bill bill, BillItem item) =>
+    'manual:${bill.id}:${item.productName.trim().toLowerCase()}:${item.unitPrice.toStringAsFixed(4)}';
+
 class PosProvider extends ChangeNotifier {
   final List<BillItem> cart = [];
   double discount = 0;
   double taxPercent = 0;
   String? customerName;
+  String? customerAddress;
+  String? customerPhone;
+  String? customerEmail;
   final _uuid = const Uuid();
   final List<Bill> savedBills = [];
   final Map<String, List<BillItem>> _billItemsCache = {};
@@ -132,11 +168,20 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearCart() {
-    cart.clear(); discount = 0; taxPercent = 0; customerName = null; notifyListeners();
+  void setCustomerDetails({String? name, String? address, String? phone, String? email}) {
+    customerName = name?.trim().isEmpty == true ? null : name?.trim();
+    customerAddress = address?.trim().isEmpty == true ? null : address?.trim();
+    customerPhone = phone?.trim().isEmpty == true ? null : phone?.trim();
+    customerEmail = email?.trim().isEmpty == true ? null : email?.trim();
+    notifyListeners();
   }
 
-  Future<Bill> checkout(InventoryProvider inventory) async {
+  void clearCart() {
+    cart.clear(); discount = 0; taxPercent = 0; customerName = null;
+    customerAddress = null; customerPhone = null; customerEmail = null; notifyListeners();
+  }
+
+  Future<Bill> checkout(InventoryProvider inventory, {String? branchId, String? customerId, List<PaymentAllocationInput> paymentAllocations = const []}) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
     if (!subtotal.isFinite || !grandTotal.isFinite) {
       throw StateError('Cart total is outside the supported amount range.');
@@ -146,6 +191,44 @@ class PosProvider extends ChangeNotifier {
     }
     if (!taxPercent.isFinite || taxPercent < 0 || taxPercent > 100) {
       throw StateError('Invalid tax');
+    }
+
+    final normalizedAllocations = paymentAllocations.isEmpty
+        ? <PaymentAllocationInput>[PaymentAllocationInput(method: 'cash', amount: grandTotal)]
+        : List<PaymentAllocationInput>.unmodifiable(paymentAllocations);
+    const paymentMethods = {'cash', 'card', 'bank', 'wallet', 'credit', 'other'};
+    for (final allocation in normalizedAllocations) {
+      if (!paymentMethods.contains(allocation.method) ||
+          !allocation.amount.isFinite || allocation.amount < 0) {
+        throw ArgumentError('Payment allocations must use a supported method and non-negative finite amounts.');
+      }
+    }
+    final allocatedTotal = normalizedAllocations.fold<double>(0, (sum, item) => sum + item.amount);
+    if ((allocatedTotal - grandTotal).abs() > 0.005) {
+      throw StateError('Payment allocations must equal the bill total.');
+    }
+    final creditDue = normalizedAllocations
+        .where((item) => item.method == 'credit')
+        .fold<double>(0, (sum, item) => sum + item.amount);
+    if (creditDue > 0 && (customerId == null || customerId.trim().isEmpty)) {
+      throw StateError('Select a customer before recording a credit/udhaar payment.');
+    }
+
+    final normalizedBranchId = branchId?.trim();
+    if (normalizedBranchId != null && normalizedBranchId.isEmpty) {
+      throw ArgumentError('Branch ID cannot be empty.');
+    }
+    if (normalizedBranchId != null) {
+      final branchRows = await (await DBService.instance.database).query(
+        'branches',
+        columns: ['id', 'isActive'],
+        where: 'id = ?',
+        whereArgs: [normalizedBranchId],
+        limit: 1,
+      );
+      if (branchRows.isEmpty || (branchRows.single['isActive'] as num?)?.toInt() != 1) {
+        throw StateError('Selected branch does not exist or is inactive.');
+      }
     }
 
     final productsById = <String, Product>{};
@@ -185,7 +268,7 @@ class PosProvider extends ChangeNotifier {
     }).toList(growable: false);
 
     final db = await DBService.instance.database;
-    final bill = Bill(id: _uuid.v4(), date: DateTime.now(), customerName: customerName,
+    final bill = Bill(id: _uuid.v4(), date: DateTime.now(), customerName: customerName, customerId: customerId?.trim(), customerAddress: customerAddress, customerPhone: customerPhone, customerEmail: customerEmail, branchId: normalizedBranchId,
       items: List.unmodifiable(normalizedItems), discount: discount, taxPercent: taxPercent);
     final newQuantities = <String, int>{};
     final itemCloudIds = List<String>.generate(bill.items.length, (_) => _uuid.v4());
@@ -197,7 +280,18 @@ class PosProvider extends ChangeNotifier {
       }
       for (final entry in quantitiesById.entries) {
         final product = productsById[entry.key]!;
+        if (normalizedBranchId != null) {
+          final branchChanged = await txn.rawUpdate(
+            'UPDATE branch_stock SET quantity = quantity - ?, updatedAt = ? '
+            'WHERE branchId = ? AND productId = ? AND quantity >= ?',
+            [entry.value, bill.date.toIso8601String(), normalizedBranchId, product.id, entry.value],
+          );
+          if (branchChanged != 1) {
+            throw StateError('Insufficient stock in selected branch for ${product.name}.');
+          }
+        }
         // Decrement the database's current value atomically. Calculating from
+        // the provider cache could overwrite a concurrent stock receipt/edit. Calculating from
         // the provider cache could overwrite a concurrent stock receipt/edit.
         final changed = await txn.rawUpdate(
           'UPDATE products SET stockQuantity = stockQuantity - ? '
@@ -217,6 +311,42 @@ class PosProvider extends ChangeNotifier {
         if (stockRows.isEmpty) throw StateError('Product not found after stock update.');
         newQuantities[product.id] = (stockRows.single['stockQuantity'] as num).toInt();
       }
+      final now = bill.date.toIso8601String();
+      for (final allocation in normalizedAllocations) {
+        await txn.insert('payment_allocations', {
+          'id': _uuid.v4(),
+          'billId': bill.id,
+          'method': allocation.method,
+          'amount': allocation.amount,
+          'reference': allocation.reference?.trim(),
+          'createdAt': now,
+        });
+      }
+      final cashPaid = normalizedAllocations
+          .where((item) => item.method == 'cash')
+          .fold<double>(0, (sum, item) => sum + item.amount);
+      if (normalizedBranchId != null && cashPaid > 0) {
+        await txn.insert('branch_cash_transactions', {
+          'id': _uuid.v4(),
+          'branchId': normalizedBranchId,
+          'type': 'sale',
+          'amount': cashPaid,
+          'date': now,
+          'referenceId': bill.id,
+          'note': 'POS cash payment',
+        });
+      }
+      if (creditDue > 0) {
+        await txn.insert('customer_ledger', {
+          'id': _uuid.v4(),
+          'customerId': customerId!.trim(),
+          'type': 'sale_due',
+          'amount': creditDue,
+          'date': now,
+          'referenceId': bill.id,
+          'note': 'Udhaar for bill ${bill.id}',
+        });
+      }
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
         final product = item.productId == null ? null : productsById[item.productId];
@@ -231,6 +361,7 @@ class PosProvider extends ChangeNotifier {
           salePrice: item.unitPrice * (1 - discountRatio),
           quantity: item.quantity,
           source: 'pos',
+          branchId: normalizedBranchId,
         ).toMap());
       }
     });
@@ -288,21 +419,35 @@ class PosProvider extends ChangeNotifier {
     required int quantity,
     required String reason,
     required InventoryProvider inventory,
+    String refundMethod = 'cash',
   }) async {
     if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
     if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
-
-    final product = resolveProductForBillItem(item, inventory.products);
-    if (product == null) {
-      throw StateError('The returned product is no longer in inventory: ${item.productName}');
+    const supportedRefundMethods = {'cash', 'card', 'bank', 'wallet', 'credit', 'other'};
+    if (!supportedRefundMethods.contains(refundMethod)) {
+      throw ArgumentError.value(refundMethod, 'refundMethod', 'Unsupported refund method.');
+    }
+    if (refundMethod == 'credit' && (bill.customerId == null || bill.customerId!.trim().isEmpty)) {
+      throw StateError('Select a customer on the original bill before issuing a credit refund.');
     }
 
-    final resolvedProduct = product;
-    final soldQuantity = soldQuantityForReturnLine(
-      bill: bill,
-      item: item,
-      product: resolvedProduct,
-    );
+    final resolvedProduct = resolveProductForReturn(item, inventory.products);
+    if (resolvedProduct == null && item.productId != null) {
+      throw StateError('The returned product is no longer in inventory: ${item.productName}');
+    }
+    // A bill-only line has no product ID and must never change stock. If a
+    // legacy ID-less line still matches a catalogue product, preserve its stock
+    // restoration behaviour.
+    final isManualLine = resolvedProduct == null;
+    final returnProductId = resolvedProduct?.id ?? manualBillItemReturnKey(bill, item);
+    final returnProductName = resolvedProduct?.name ?? item.productName;
+    final soldQuantity = isManualLine
+        ? bill.items.where((candidate) =>
+            candidate.productId == null &&
+            candidate.productName.trim().toLowerCase() == item.productName.trim().toLowerCase() &&
+            candidate.unitPrice == item.unitPrice)
+            .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
+        : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct);
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
@@ -312,70 +457,133 @@ class PosProvider extends ChangeNotifier {
       id: _uuid.v4(),
       date: returnedAt,
       billId: bill.id,
-      productId: resolvedProduct.id,
-      productName: resolvedProduct.name,
-      costPrice: -resolvedProduct.costPrice,
+      productId: resolvedProduct?.id,
+      productName: returnProductName,
+      costPrice: -(resolvedProduct?.costPrice ?? 0),
       salePrice: -item.unitPrice * (1 - discountRatio),
       quantity: quantity,
       source: 'return',
+      branchId: bill.branchId,
     );
     final returnRow = <String, dynamic>{
       'id': returnId,
       'billId': bill.id,
-      'productId': resolvedProduct.id,
-      'productName': resolvedProduct.name,
+      'productId': returnProductId,
+      'productName': returnProductName,
       'unitPrice': item.unitPrice,
       'quantity': quantity,
       'refundAmount': refundAmount,
+      'refundMethod': refundMethod,
       'date': returnedAt.toIso8601String(),
       'reason': reason.trim(),
+      'branchId': bill.branchId,
     };
-    late int newStock;
+    final cashRefundRow = refundMethod == 'cash' && bill.branchId != null
+        ? <String, dynamic>{
+            'id': _uuid.v4(),
+            'branchId': bill.branchId,
+            'type': 'refund',
+            'amount': refundAmount,
+            'date': returnedAt.toIso8601String(),
+            'referenceId': returnId,
+            'note': 'Cash refund for bill ${bill.id}',
+          }
+        : null;
+    final customerRefundRow = refundMethod == 'credit'
+        ? <String, dynamic>{
+            'id': _uuid.v4(),
+            'customerId': bill.customerId,
+            'type': 'refund',
+            'amount': refundAmount,
+            'date': returnedAt.toIso8601String(),
+            'referenceId': returnId,
+            'note': 'Credit refund for bill ${bill.id}',
+          }
+        : null;
+    int? newStock;
     await db.transaction((txn) async {
       final priorRows = await txn.rawQuery(
         'SELECT COALESCE(SUM(quantity), 0) AS returnedQuantity FROM bill_returns WHERE billId = ? AND productId = ? AND (unitPrice = ? OR unitPrice = 0)',
-        [bill.id, resolvedProduct.id, item.unitPrice],
+        [bill.id, returnProductId, item.unitPrice],
       );
       final alreadyReturned = (priorRows.first['returnedQuantity'] as num).toInt();
       if (quantity + alreadyReturned > soldQuantity) {
         throw StateError('Only ${soldQuantity - alreadyReturned} unit(s) remain eligible for return.');
       }
-      final stockRows = await txn.query(
-        'products',
-        columns: ['stockQuantity'],
-        where: 'id = ?',
-        whereArgs: [resolvedProduct.id],
-        limit: 1,
-      );
-      if (stockRows.isEmpty) throw StateError('Product not found in local database.');
-      newStock = (stockRows.first['stockQuantity'] as num).toInt() + quantity;
-      await txn.update('products', {'stockQuantity': newStock},
-          where: 'id = ?', whereArgs: [resolvedProduct.id]);
+      if (resolvedProduct != null) {
+        final stockRows = await txn.query(
+          'products',
+          columns: ['stockQuantity'],
+          where: 'id = ?',
+          whereArgs: [resolvedProduct.id],
+          limit: 1,
+        );
+        if (stockRows.isEmpty) throw StateError('Product not found in local database.');
+        newStock = (stockRows.first['stockQuantity'] as num).toInt() + quantity;
+        await txn.update('products', {'stockQuantity': newStock},
+            where: 'id = ?', whereArgs: [resolvedProduct.id]);
+      }
+      if (bill.branchId != null && resolvedProduct != null) {
+        final branchStockChanged = await txn.rawUpdate(
+          'UPDATE branch_stock SET quantity = quantity + ?, updatedAt = ? '
+          'WHERE branchId = ? AND productId = ?',
+          [quantity, returnedAt.toIso8601String(), bill.branchId, resolvedProduct.id],
+        );
+        if (branchStockChanged != 1) {
+          throw StateError('Branch stock record is missing; return was cancelled to avoid inconsistent stock.');
+        }
+      }
       await txn.insert('bill_returns', returnRow);
+      if (cashRefundRow != null) {
+        await txn.insert('branch_cash_transactions', cashRefundRow);
+      }
+      if (customerRefundRow != null) {
+        await txn.insert('customer_ledger', customerRefundRow);
+      }
       await txn.insert('daily_sales', returnSale.toMap());
     });
 
-    inventory.applyStockAfterTransaction(resolvedProduct.id, newStock);
+    if (resolvedProduct != null && newStock != null) {
+      inventory.applyStockAfterTransaction(resolvedProduct.id, newStock!);
+    }
     await _queueSafely(
-      operation: 'create', tableName: 'returns', documentId: returnId, data: returnRow);
+      operation: 'create', tableName: 'returns', documentId: returnId, data: isManualLine ? {...returnRow, 'isManual': true} : returnRow);
     await _queueSafely(
       operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
-    await _queueSafely(
-      operation: 'update',
-      tableName: 'products',
-      documentId: resolvedProduct.id,
-      data: Product(
-        id: resolvedProduct.id,
-        name: resolvedProduct.name,
-        category: resolvedProduct.category,
-        stockQuantity: newStock,
-        costPrice: resolvedProduct.costPrice,
-        sellingPrice: resolvedProduct.sellingPrice,
-        lowStockThreshold: resolvedProduct.lowStockThreshold,
-        barcode: resolvedProduct.barcode,
-        expiryDate: resolvedProduct.expiryDate,
-      ).toMap(),
-    );
+    if (cashRefundRow != null) {
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'branch_cash_transactions',
+        documentId: cashRefundRow['id'] as String,
+        data: cashRefundRow,
+      );
+    }
+    if (customerRefundRow != null) {
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'customer_ledger',
+        documentId: customerRefundRow['id'] as String,
+        data: customerRefundRow,
+      );
+    }
+    if (resolvedProduct != null && newStock != null) {
+      await _queueSafely(
+        operation: 'update',
+        tableName: 'products',
+        documentId: resolvedProduct.id,
+        data: Product(
+          id: resolvedProduct.id,
+          name: resolvedProduct.name,
+          category: resolvedProduct.category,
+          stockQuantity: newStock!,
+          costPrice: resolvedProduct.costPrice,
+          sellingPrice: resolvedProduct.sellingPrice,
+          lowStockThreshold: resolvedProduct.lowStockThreshold,
+          barcode: resolvedProduct.barcode,
+          expiryDate: resolvedProduct.expiryDate,
+        ).toMap(),
+      );
+    }
     return refundAmount;
   }
 
@@ -406,9 +614,7 @@ class PosProvider extends ChangeNotifier {
     for (final row in billRows) {
       final itemRows = await db.query('bill_items', where: 'billId = ?', whereArgs: [row['id']]);
       final items = itemRows.map((r) => BillItem.fromMap(r)).toList();
-      final bill = Bill(id: row['id'] as String, date: DateTime.parse(row['date'] as String),
-        customerName: row['customerName'] as String?, items: items,
-        discount: (row['discount'] as num).toDouble(), taxPercent: (row['taxPercent'] as num).toDouble());
+      final bill = billFromDatabaseRow(row, items);
       savedBills.add(bill); _billItemsCache[bill.id] = items;
     }
     notifyListeners();

@@ -39,6 +39,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     final name = TextEditingController(text: existing?.name ?? '');
     final phone = TextEditingController(text: existing?.phone ?? '');
     final email = TextEditingController(text: existing?.email ?? '');
+    final address = TextEditingController(text: existing?.address ?? '');
     final notes = TextEditingController(text: existing?.notes ?? '');
     final provider = context.read<CustomerProvider>();
     try {
@@ -71,6 +72,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                     return null;
                   },
                 ),
+                TextFormField(controller: address, decoration: const InputDecoration(labelText: 'Address'), maxLines: 2),
                 TextFormField(controller: notes, decoration: const InputDecoration(labelText: 'Notes'), maxLines: 2),
               ]),
             ),
@@ -82,12 +84,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 if (!formKey.currentState!.validate()) return;
                 try {
                   if (existing == null) {
-                    await provider.add(name: name.text, phone: phone.text, email: email.text, notes: notes.text);
+                    await provider.add(name: name.text, phone: phone.text, email: email.text, address: address.text, notes: notes.text);
                   } else {
                     await provider.updateCustomer(Customer(
                       id: existing.id, name: name.text.trim(),
                       phone: phone.text.trim().isEmpty ? null : phone.text.trim(),
                       email: email.text.trim().isEmpty ? null : email.text.trim(),
+                      address: address.text.trim().isEmpty ? null : address.text.trim(),
                       notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
                       createdAt: existing.createdAt,
                     ));
@@ -112,7 +115,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         );
       }
     } finally {
-      name.dispose(); phone.dispose(); email.dispose(); notes.dispose();
+      name.dispose(); phone.dispose(); email.dispose(); address.dispose(); notes.dispose();
     }
   }
 

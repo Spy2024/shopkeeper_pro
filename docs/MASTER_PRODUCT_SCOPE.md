@@ -177,6 +177,10 @@
 
 ## Current implementation notes
 
-- Business type selection is present in shop setup/profile. The catalog now includes dedicated spare-parts categories; these are configuration options only, not proof that part fitment, cross-reference search or spare-parts workflows are operational.
-- A local branches table is a schema foundation only; branch CRUD, transfer ledger, permissions, cloud sync and consolidated reports remain pending.
+- Business type selection is present in shop setup/profile. The catalog includes spare-parts categories, but part fitment, cross-reference search, OEM/aftermarket alternatives and warranty workflows remain planned.
+- The audited branch now includes local branch registry/provider foundations, branch-stock allocation UI, transactional stock transfer primitives, branch reports, branch-aware checkout, payment allocation records and cash/credit refund accounting. Remaining branch gates include transfer UI/approval/receive reconciliation, role permissions, complete historical branch tagging and end-to-end multi-account cloud conflict tests.
+- Backup/restore now includes branch stock, transfers, branch cash transactions, customer ledger and payment allocations, while preserving account-ownership rechecks. Restore compatibility/rollback tests still need to be added.
+- Bill records now persist customer IDs, and return records persist refund method. Cash refunds affect branch cash; credit refunds reduce the customer ledger. Card/bank/wallet refund settlement still needs reconciliation evidence and external-payment workflow tests.
+- Account database filenames preserve existing names for ordinary Firebase UIDs and avoid collisions for unsupported characters. Production account-switch, restore, and two-account/two-device isolation tests remain mandatory.
+- The CI workflow currently checks dependency resolution, `flutter analyze`, `flutter test`, and Android debug APK build. It does not replace web build, Firebase emulator/live-rule, physical printer/scanner, device lifecycle, signed-release, or pilot-shop verification.
 - CI passing proves only the automated checks included in that run. It does not prove production Firebase, printer, device, web or release readiness.

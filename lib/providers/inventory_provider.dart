@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/product.dart';
@@ -137,24 +138,74 @@ class InventoryProvider extends ChangeNotifier {
   }
 
   Future<void> deleteProduct(String id) async {
-    if (id.trim().isEmpty) throw ArgumentError('Product id is required');
+    final cleanId = id.trim();
+    if (cleanId.isEmpty) throw ArgumentError('Product id is required');
     final db = await DBService.instance.database;
-    // Queue the delete before removing the local row so a queue persistence
-    // failure cannot silently leave a cloud-only product that later reappears.
-    await SyncQueueService.instance.queueOperation(
-      operation: 'delete',
-      tableName: 'products',
-      documentId: id,
-      data: {},
-    );
-    final changed = await db.delete('products', where: 'id = ?', whereArgs: [id]);
-    if (changed == 0) {
-      _products.removeWhere((p) => p.id == id);
-      notifyListeners();
-      return;
-    }
-    _products.removeWhere((p) => p.id == id);
+    var deleted = false;
+    await db.transaction((txn) async {
+      final productRows = await txn.query(
+        'products',
+        columns: ['stockQuantity'],
+        where: 'id = ?',
+        whereArgs: [cleanId],
+        limit: 1,
+      );
+      if (productRows.isEmpty) return;
+      final stockQuantity = (productRows.single['stockQuantity'] as num).toInt();
+      if (stockQuantity > 0) {
+        throw StateError('Cannot delete a product with stock. Record a stock adjustment or write-off first.');
+      }
+      final branchRows = await txn.query(
+        'branch_stock',
+        columns: ['quantity'],
+        where: 'productId = ?',
+        whereArgs: [cleanId],
+      );
+      if (branchRows.any((row) => (row['quantity'] as num).toInt() > 0)) {
+        throw StateError('Cannot delete a product with branch stock allocations.');
+      }
+      final transferRows = await txn.query(
+        'stock_transfers',
+        columns: ['id'],
+        where: 'productId = ?',
+        whereArgs: [cleanId],
+        limit: 1,
+      );
+      if (transferRows.isNotEmpty) {
+        throw StateError('Cannot delete a product with transfer history; archive support is required.');
+      }
+
+      // Zero-quantity allocation rows no longer need to block product deletion.
+      await txn.delete('branch_stock', where: 'productId = ?', whereArgs: [cleanId]);
+      final changed = await txn.delete('products', where: 'id = ?', whereArgs: [cleanId]);
+      if (changed != 1) return;
+
+      // Save the delete tombstone in the same transaction as the local delete.
+      // This prevents a cloud delete from being queued when the local delete fails.
+      final now = DateTime.now().microsecondsSinceEpoch;
+      await txn.insert('sync_queue', {
+        'id': 'products_${cleanId}_$now',
+        'operation': 'delete',
+        'tableName': 'products',
+        'documentId': cleanId,
+        'data': jsonEncode(<String, dynamic>{}),
+        'timestamp': now,
+        'synced': 0,
+      });
+      deleted = true;
+    });
+
+    _products.removeWhere((product) => product.id == cleanId);
     notifyListeners();
+    if (deleted) {
+      try {
+        await SyncQueueService.instance.reloadPendingQueue();
+        await SyncQueueService.instance.scheduleSyncForActiveUser();
+      } catch (e) {
+        // The durable tombstone remains in SQLite and will be reloaded by the next sync.
+        debugPrint('[InventoryProvider] Product deleted locally; queue refresh failed: $e');
+      }
+    }
   }
 
   Future<void> deductStock(String productId, int quantitySold) async {
