@@ -145,12 +145,24 @@ void main() {
     );
   });
 
+  test('mobile device intake requires a primary IMEI', () async {
+    await expectLater(
+      MobileShopService.instance.createDevice(
+        deviceType: 'new',
+        brand: 'Apple',
+        model: 'iPhone',
+      ),
+      throwsArgumentError,
+    );
+  });
+
   test('negative and non-finite prices are rejected', () async {
     await expectLater(
       MobileShopService.instance.createDevice(
         deviceType: 'new',
         brand: 'Apple',
         model: 'iPhone',
+        imei1: '351234567890126',
         purchasePrice: double.nan,
       ),
       throwsArgumentError,
