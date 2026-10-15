@@ -129,7 +129,7 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                     const SizedBox(height: 10),
                     TextFormField(controller: model, decoration: const InputDecoration(labelText: 'Model *'), validator: _required),
                     const SizedBox(height: 10),
-                    TextFormField(controller: imei1, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'IMEI 1', helperText: '14–16 digits; duplicate IMEI is blocked'), validator: _optionalImei),
+                    TextFormField(controller: imei1, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'IMEI 1 *', helperText: '14–16 digits; duplicate IMEI is blocked'), validator: _requiredImei),
                     const SizedBox(height: 10),
                     TextFormField(controller: imei2, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'IMEI 2 (optional)'), validator: _optionalImei),
                     if (used) ...[
@@ -311,6 +311,12 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
   String? _money(String? value) {
     final parsed = double.tryParse((value ?? '').trim());
     return parsed == null || !parsed.isFinite || parsed < 0 ? 'Enter a valid amount' : null;
+  }
+
+  String? _requiredImei(String? value) {
+    final normalized = normalizeImei(value);
+    if (normalized.isEmpty) return 'IMEI is required';
+    return normalized.length < 14 || normalized.length > 16 ? 'IMEI must be 14–16 digits' : null;
   }
 
   String? _optionalImei(String? value) {
