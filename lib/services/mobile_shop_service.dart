@@ -243,7 +243,7 @@ class MobileShopService {
       labourCharge: labourCharge,
       partsCost: partsCost,
       advancePaid: advancePaid,
-      balanceDue: (approvedAmount + labourCharge - advancePaid).clamp(0.0, double.infinity).toDouble(),
+      balanceDue: (approvedAmount - advancePaid).clamp(0.0, double.infinity).toDouble(),
       technicianName: technicianName,
       promisedAt: promisedAt,
       receivedAt: now,
