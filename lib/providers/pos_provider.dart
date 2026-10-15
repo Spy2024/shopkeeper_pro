@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/bill.dart';
 import '../models/product.dart';
 import '../models/daily_sale.dart';
+import '../models/mobile_device.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 import '../services/branch_accounting_service.dart';
@@ -140,6 +141,29 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adds one individually tracked mobile phone to the cart by exact device ID/IMEI.
+  /// Unlike normal products, each physical handset can only be sold once.
+  void addMobileDevice(MobileDevice device, {double? unitPrice}) {
+    if (device.status != 'in_stock') {
+      throw StateError('This phone is not available for sale. Inspect or release it first.');
+    }
+    final imei = normalizeImei(device.imei1);
+    if (imei.isEmpty) throw StateError('This phone has no valid primary IMEI.');
+    if (cart.any((item) => item.mobileDeviceId == device.id)) {
+      throw StateError('This exact phone is already in the bill.');
+    }
+    final price = unitPrice ?? device.sellingPrice;
+    if (!price.isFinite || price <= 0) throw ArgumentError('Enter a valid mobile sale price.');
+    cart.add(BillItem(
+      productName: '${device.brand} ${device.model} · IMEI $imei',
+      quantity: 1,
+      unitPrice: price,
+      mobileDeviceId: device.id,
+      mobileImei: imei,
+    ));
+    notifyListeners();
+  }
+
   void removeItem(int index) {
     if (index < 0 || index >= cart.length) return;
     cart.removeAt(index);
@@ -239,6 +263,16 @@ class PosProvider extends ChangeNotifier {
         throw StateError('Invalid quantity or price');
       }
 
+      if (item.mobileDeviceId != null) {
+        if (item.quantity != 1 || item.mobileImei == null ||
+            normalizeImei(item.mobileImei) != item.mobileImei) {
+          throw StateError('A mobile handset sale must identify one exact IMEI.');
+        }
+        if (item.productId != null) {
+          throw StateError('A tracked mobile handset cannot also be a bulk product line.');
+        }
+        continue;
+      }
       // Manually entered bill lines have no productId. They are bill-only
       // items and must not require a catalogue record or change stock.
       if (item.productId == null) continue;
@@ -261,6 +295,8 @@ class PosProvider extends ChangeNotifier {
       final product = itemProducts[item];
       return BillItem(
         productId: product?.id,
+        mobileDeviceId: item.mobileDeviceId,
+        mobileImei: item.mobileImei,
         productName: product?.name ?? item.productName.trim(),
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -277,6 +313,23 @@ class PosProvider extends ChangeNotifier {
       await txn.insert('bills', bill.toMap());
       for (var i = 0; i < bill.items.length; i++) {
         await txn.insert('bill_items', {...bill.items[i].toMap(), 'billId': bill.id, 'cloudId': itemCloudIds[i]});
+      }
+      // Bill item, handset status and payment/stock records commit together.
+      for (final item in bill.items.where((line) => line.mobileDeviceId != null)) {
+        final deviceRows = await txn.query('mobile_devices', where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+        if (deviceRows.isEmpty) throw StateError('The selected handset no longer exists.');
+        final device = MobileDevice.fromMap(deviceRows.single);
+        if (device.status != 'in_stock' || normalizeImei(device.imei1) != item.mobileImei) {
+          throw StateError('The selected handset is no longer available or its IMEI changed. Refresh and try again.');
+        }
+        if (normalizedBranchId != null && device.branchId != normalizedBranchId) {
+          throw StateError('The selected handset belongs to a different branch.');
+        }
+        final sold = await txn.rawUpdate(
+          "UPDATE mobile_devices SET status = 'sold', soldBillId = ?, soldAt = ?, updatedAt = ? WHERE id = ? AND status = 'in_stock' AND imei1 = ?",
+          [bill.id, bill.date.toIso8601String(), bill.date.toIso8601String(), device.id, item.mobileImei],
+        );
+        if (sold != 1) throw StateError('Handset sale conflict. No bill was saved; please retry.');
       }
       for (final entry in quantitiesById.entries) {
         final product = productsById[entry.key]!;
@@ -350,14 +403,20 @@ class PosProvider extends ChangeNotifier {
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
         final product = item.productId == null ? null : productsById[item.productId];
+        var itemCost = product?.costPrice ?? 0;
+        if (item.mobileDeviceId != null) {
+          final deviceRows = await txn.query('mobile_devices', columns: ['purchasePrice', 'repairCost'], where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+          if (deviceRows.isEmpty) throw StateError('Handset cost record missing.');
+          itemCost = ((deviceRows.single['purchasePrice'] as num?)?.toDouble() ?? 0) + ((deviceRows.single['repairCost'] as num?)?.toDouble() ?? 0);
+        }
         await txn.insert('daily_sales', DailySale(
           id: _uuid.v4(),
           date: bill.date,
           billId: bill.id,
           productId: product?.id,
           productName: product?.name ?? item.productName,
-          // Manual bill-only lines have no inventory cost record.
-          costPrice: product?.costPrice ?? 0,
+          // Manual lines have no inventory cost; handset lines use device costs.
+          costPrice: itemCost,
           salePrice: item.unitPrice * (1 - discountRatio),
           quantity: item.quantity,
           source: 'pos',
@@ -385,6 +444,12 @@ class PosProvider extends ChangeNotifier {
     }
     await _queueSafely(
       operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
+    for (final item in bill.items.where((line) => line.mobileDeviceId != null)) {
+      final deviceRows = await db.query('mobile_devices', where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+      if (deviceRows.isNotEmpty) {
+        await _queueSafely(operation: 'update', tableName: 'mobile_devices', documentId: item.mobileDeviceId!, data: Map<String, dynamic>.from(deviceRows.single));
+      }
+    }
     for (var i = 0; i < bill.items.length; i++) {
       await _queueSafely(
         operation: 'create',
@@ -431,24 +496,40 @@ class PosProvider extends ChangeNotifier {
       throw StateError('Select a customer on the original bill before issuing a credit refund.');
     }
 
+    final isMobileDeviceLine = item.mobileDeviceId != null;
+    if (isMobileDeviceLine && (quantity != 1 || item.quantity != 1 || item.mobileImei == null)) {
+      throw StateError('A handset return must reference one exact IMEI from the original bill.');
+    }
     final resolvedProduct = resolveProductForReturn(item, inventory.products);
     if (resolvedProduct == null && item.productId != null) {
       throw StateError('The returned product is no longer in inventory: ${item.productName}');
     }
-    // A bill-only line has no product ID and must never change stock. If a
-    // legacy ID-less line still matches a catalogue product, preserve its stock
-    // restoration behaviour.
-    final isManualLine = resolvedProduct == null;
-    final returnProductId = resolvedProduct?.id ?? manualBillItemReturnKey(bill, item);
+    // A tracked handset is linked by device ID and IMEI, not catalogue stock.
+    final isManualLine = resolvedProduct == null && !isMobileDeviceLine;
+    final returnProductId = resolvedProduct?.id ??
+        (isMobileDeviceLine ? 'mobile:${item.mobileDeviceId}' : manualBillItemReturnKey(bill, item));
     final returnProductName = resolvedProduct?.name ?? item.productName;
-    final soldQuantity = isManualLine
-        ? bill.items.where((candidate) =>
-            candidate.productId == null &&
-            candidate.productName.trim().toLowerCase() == item.productName.trim().toLowerCase() &&
-            candidate.unitPrice == item.unitPrice)
-            .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
-        : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct);
+    final soldQuantity = isMobileDeviceLine
+        ? 1
+        : isManualLine
+            ? bill.items.where((candidate) =>
+                candidate.productId == null && candidate.mobileDeviceId == null &&
+                candidate.productName.trim().toLowerCase() == item.productName.trim().toLowerCase() &&
+                candidate.unitPrice == item.unitPrice)
+                .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
+            : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct!);
     final db = await DBService.instance.database;
+    var mobileDeviceCost = 0.0;
+    if (isMobileDeviceLine) {
+      final deviceCostRows = await db.query('mobile_devices',
+        columns: ['purchasePrice', 'repairCost'], where: 'id = ? AND soldBillId = ?',
+        whereArgs: [item.mobileDeviceId, bill.id], limit: 1);
+      if (deviceCostRows.isEmpty) {
+        throw StateError('This handset is not linked to the selected original bill.');
+      }
+      mobileDeviceCost = ((deviceCostRows.single['purchasePrice'] as num?)?.toDouble() ?? 0) +
+          ((deviceCostRows.single['repairCost'] as num?)?.toDouble() ?? 0);
+    }
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
     final returnedAt = DateTime.now();
@@ -459,7 +540,7 @@ class PosProvider extends ChangeNotifier {
       billId: bill.id,
       productId: resolvedProduct?.id,
       productName: returnProductName,
-      costPrice: -(resolvedProduct?.costPrice ?? 0),
+      costPrice: -(resolvedProduct?.costPrice ?? mobileDeviceCost),
       salePrice: -item.unitPrice * (1 - discountRatio),
       quantity: quantity,
       source: 'return',
@@ -469,6 +550,7 @@ class PosProvider extends ChangeNotifier {
       'id': returnId,
       'billId': bill.id,
       'productId': returnProductId,
+      'mobileDeviceId': item.mobileDeviceId,
       'productName': returnProductName,
       'unitPrice': item.unitPrice,
       'quantity': quantity,
@@ -523,6 +605,19 @@ class PosProvider extends ChangeNotifier {
         await txn.update('products', {'stockQuantity': newStock},
             where: 'id = ?', whereArgs: [resolvedProduct.id]);
       }
+      if (isMobileDeviceLine) {
+        final deviceRows = await txn.query('mobile_devices',
+          where: 'id = ? AND status = ? AND soldBillId = ? AND imei1 = ?',
+          whereArgs: [item.mobileDeviceId, 'sold', bill.id, item.mobileImei], limit: 1);
+        if (deviceRows.isEmpty) {
+          throw StateError('This handset is not sold on the selected original bill, or it was already returned.');
+        }
+        final changed = await txn.rawUpdate(
+          "UPDATE mobile_devices SET status = 'returned', updatedAt = ? WHERE id = ? AND status = 'sold' AND soldBillId = ? AND imei1 = ?",
+          [returnedAt.toIso8601String(), item.mobileDeviceId, bill.id, item.mobileImei],
+        );
+        if (changed != 1) throw StateError('Handset return conflict; no refund was recorded.');
+      }
       if (bill.branchId != null && resolvedProduct != null) {
         final branchStockChanged = await txn.rawUpdate(
           'UPDATE branch_stock SET quantity = quantity + ?, updatedAt = ? '
@@ -548,6 +643,12 @@ class PosProvider extends ChangeNotifier {
     }
     await _queueSafely(
       operation: 'create', tableName: 'returns', documentId: returnId, data: isManualLine ? {...returnRow, 'isManual': true} : returnRow);
+    if (isMobileDeviceLine) {
+      final deviceRows = await db.query('mobile_devices', where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+      if (deviceRows.isNotEmpty) {
+        await _queueSafely(operation: 'update', tableName: 'mobile_devices', documentId: item.mobileDeviceId!, data: Map<String, dynamic>.from(deviceRows.single));
+      }
+    }
     await _queueSafely(
       operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
     if (cashRefundRow != null) {

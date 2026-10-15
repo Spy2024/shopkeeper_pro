@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shopkeeper_pro/models/bill.dart';
 import 'package:shopkeeper_pro/models/product.dart';
+import 'package:shopkeeper_pro/models/mobile_device.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 
 void main() {
@@ -49,6 +50,45 @@ void main() {
       expect(provider.cart, hasLength(1));
       expect(provider.cart.single.quantity, 5);
       expect(provider.subtotal, 750);
+    });
+    test('adds an individually tracked handset with exact IMEI and quantity one', () {
+      final device = MobileDevice(
+        id: 'device-1',
+        deviceType: 'used',
+        brand: 'Samsung',
+        model: 'Galaxy S22',
+        imei1: '351234567890123',
+        status: 'in_stock',
+        purchasePrice: 42000,
+        repairCost: 1000,
+        sellingPrice: 49000,
+        createdAt: DateTime(2026, 10, 16),
+        updatedAt: DateTime(2026, 10, 16),
+      );
+
+      provider.addMobileDevice(device);
+
+      expect(provider.cart, hasLength(1));
+      expect(provider.cart.single.mobileDeviceId, 'device-1');
+      expect(provider.cart.single.mobileImei, '351234567890123');
+      expect(provider.cart.single.quantity, 1);
+      expect(provider.cart.single.unitPrice, 49000);
+      expect(() => provider.addMobileDevice(device), throwsStateError);
+    });
+
+    test('refuses a handset that is not sale-ready', () {
+      final device = MobileDevice(
+        id: 'device-inspection',
+        deviceType: 'used',
+        brand: 'Samsung',
+        model: 'Galaxy S22',
+        imei1: '351234567890124',
+        status: 'inspection_pending',
+        createdAt: DateTime(2026, 10, 16),
+        updatedAt: DateTime(2026, 10, 16),
+      );
+      expect(() => provider.addMobileDevice(device), throwsStateError);
+      expect(provider.cart, isEmpty);
     });
 
     test('rejects empty names, non-positive quantities and prices', () {
