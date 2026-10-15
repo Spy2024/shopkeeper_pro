@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../models/bill.dart';
 import '../models/product.dart';
 import '../models/daily_sale.dart';
+import '../models/mobile_device.dart';
 import '../services/db_service.dart';
 import '../services/sync_queue_service.dart';
 import '../services/branch_accounting_service.dart';
@@ -140,6 +141,29 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Adds one individually tracked mobile phone to the cart by exact device ID/IMEI.
+  /// Unlike normal products, each physical handset can only be sold once.
+  void addMobileDevice(MobileDevice device, {double? unitPrice}) {
+    if (device.status != 'in_stock') {
+      throw StateError('This phone is not available for sale. Inspect or release it first.');
+    }
+    final imei = normalizeImei(device.imei1);
+    if (imei.isEmpty) throw StateError('This phone has no valid primary IMEI.');
+    if (cart.any((item) => item.mobileDeviceId == device.id)) {
+      throw StateError('This exact phone is already in the bill.');
+    }
+    final price = unitPrice ?? device.sellingPrice;
+    if (!price.isFinite || price <= 0) throw ArgumentError('Enter a valid mobile sale price.');
+    cart.add(BillItem(
+      productName: '${device.brand} ${device.model} · IMEI $imei',
+      quantity: 1,
+      unitPrice: price,
+      mobileDeviceId: device.id,
+      mobileImei: imei,
+    ));
+    notifyListeners();
+  }
+
   void removeItem(int index) {
     if (index < 0 || index >= cart.length) return;
     cart.removeAt(index);
@@ -239,6 +263,16 @@ class PosProvider extends ChangeNotifier {
         throw StateError('Invalid quantity or price');
       }
 
+      if (item.mobileDeviceId != null) {
+        if (item.quantity != 1 || item.mobileImei == null ||
+            normalizeImei(item.mobileImei) != item.mobileImei) {
+          throw StateError('A mobile handset sale must identify one exact IMEI.');
+        }
+        if (item.productId != null) {
+          throw StateError('A tracked mobile handset cannot also be a bulk product line.');
+        }
+        continue;
+      }
       // Manually entered bill lines have no productId. They are bill-only
       // items and must not require a catalogue record or change stock.
       if (item.productId == null) continue;
@@ -261,6 +295,8 @@ class PosProvider extends ChangeNotifier {
       final product = itemProducts[item];
       return BillItem(
         productId: product?.id,
+        mobileDeviceId: item.mobileDeviceId,
+        mobileImei: item.mobileImei,
         productName: product?.name ?? item.productName.trim(),
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -277,6 +313,23 @@ class PosProvider extends ChangeNotifier {
       await txn.insert('bills', bill.toMap());
       for (var i = 0; i < bill.items.length; i++) {
         await txn.insert('bill_items', {...bill.items[i].toMap(), 'billId': bill.id, 'cloudId': itemCloudIds[i]});
+      }
+      // Bill item, handset status and payment/stock records commit together.
+      for (final item in bill.items.where((line) => line.mobileDeviceId != null)) {
+        final deviceRows = await txn.query('mobile_devices', where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+        if (deviceRows.isEmpty) throw StateError('The selected handset no longer exists.');
+        final device = MobileDevice.fromMap(deviceRows.single);
+        if (device.status != 'in_stock' || normalizeImei(device.imei1) != item.mobileImei) {
+          throw StateError('The selected handset is no longer available or its IMEI changed. Refresh and try again.');
+        }
+        if (normalizedBranchId != null && device.branchId != normalizedBranchId) {
+          throw StateError('The selected handset belongs to a different branch.');
+        }
+        final sold = await txn.rawUpdate(
+          "UPDATE mobile_devices SET status = 'sold', soldBillId = ?, updatedAt = ? WHERE id = ? AND status = 'in_stock' AND imei1 = ?",
+          [bill.id, bill.date.toIso8601String(), device.id, item.mobileImei],
+        );
+        if (sold != 1) throw StateError('Handset sale conflict. No bill was saved; please retry.');
       }
       for (final entry in quantitiesById.entries) {
         final product = productsById[entry.key]!;
@@ -350,14 +403,20 @@ class PosProvider extends ChangeNotifier {
       final discountRatio = bill.subtotal <= 0 ? 0.0 : bill.discount / bill.subtotal;
       for (final item in bill.items) {
         final product = item.productId == null ? null : productsById[item.productId];
+        var itemCost = product?.costPrice ?? 0;
+        if (item.mobileDeviceId != null) {
+          final deviceRows = await txn.query('mobile_devices', columns: ['purchasePrice', 'repairCost'], where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+          if (deviceRows.isEmpty) throw StateError('Handset cost record missing.');
+          itemCost = ((deviceRows.single['purchasePrice'] as num?)?.toDouble() ?? 0) + ((deviceRows.single['repairCost'] as num?)?.toDouble() ?? 0);
+        }
         await txn.insert('daily_sales', DailySale(
           id: _uuid.v4(),
           date: bill.date,
           billId: bill.id,
           productId: product?.id,
           productName: product?.name ?? item.productName,
-          // Manual bill-only lines have no inventory cost record.
-          costPrice: product?.costPrice ?? 0,
+          // Manual lines have no inventory cost; handset lines use device costs.
+          costPrice: itemCost,
           salePrice: item.unitPrice * (1 - discountRatio),
           quantity: item.quantity,
           source: 'pos',
