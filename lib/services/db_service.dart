@@ -210,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 20,
+      version: 21,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -315,6 +315,9 @@ class DBService {
           await db.execute('ALTER TABLE bill_returns ADD COLUMN mobileDeviceId TEXT');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_bill_items_mobile_device ON bill_items(mobileDeviceId)');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_bill_returns_mobile_device ON bill_returns(mobileDeviceId)');
+        }
+        if (oldVersion < 21) {
+          await _createMobileRepairFinanceTables(db);
         }
       },
     );
@@ -527,6 +530,53 @@ class DBService {
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mobile_repair_job_parts_job ON mobile_repair_job_parts(jobId)");
   }
 
+  Future<void> _createMobileRepairFinanceTables(DatabaseExecutor db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS mobile_repair_payments (
+        id TEXT PRIMARY KEY,
+        jobId TEXT NOT NULL,
+        amount REAL NOT NULL CHECK(amount > 0),
+        method TEXT NOT NULL CHECK(method IN ('cash','card','bank','wallet','credit','other')),
+        reference TEXT,
+        paidAt TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (jobId) REFERENCES mobile_repair_jobs(id) ON DELETE CASCADE
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_mobile_repair_payments_job_date ON mobile_repair_payments(jobId, paidAt)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS mobile_repair_warranties (
+        id TEXT PRIMARY KEY,
+        jobId TEXT NOT NULL,
+        deviceId TEXT,
+        customerId TEXT,
+        customerName TEXT NOT NULL,
+        warrantyType TEXT NOT NULL CHECK(warrantyType IN ('repair','device')),
+        startsAt TEXT NOT NULL,
+        expiresAt TEXT NOT NULL,
+        terms TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','claimed','expired','void')),
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (jobId) REFERENCES mobile_repair_jobs(id) ON DELETE CASCADE,
+        FOREIGN KEY (deviceId) REFERENCES mobile_devices(id) ON DELETE SET NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_mobile_repair_warranties_expiry ON mobile_repair_warranties(status, expiresAt)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS mobile_repair_warranty_claims (
+        id TEXT PRIMARY KEY,
+        warrantyId TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','rejected','resolved')),
+        resolution TEXT,
+        createdAt TEXT NOT NULL,
+        resolvedAt TEXT,
+        FOREIGN KEY (warrantyId) REFERENCES mobile_repair_warranties(id) ON DELETE CASCADE
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_mobile_repair_warranty_claims_warranty ON mobile_repair_warranty_claims(warrantyId, createdAt)');
+  }
+
   Future<void> _createSyncQueue(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -560,6 +610,7 @@ class DBService {
     await _createBranchesTable(db);
     await _createOperationsTables(db);
     await _createMobileShopTables(db);
+    await _createMobileRepairFinanceTables(db);
     await db.execute('CREATE TABLE supplier_transactions (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, referenceId TEXT, FOREIGN KEY (supplierId) REFERENCES suppliers(id) ON DELETE CASCADE)');
     await db.execute('CREATE INDEX idx_supplier_transactions_supplier ON supplier_transactions(supplierId, date)');
     await db.execute('CREATE INDEX idx_products_name ON products(name)');
