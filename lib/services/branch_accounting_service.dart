@@ -184,8 +184,8 @@ class BranchAccountingService {
       _positiveFinite(item.amount, 'payment amount', allowZero: true);
     }
     final total = allocations.fold<double>(0, (sum, item) => sum + item.amount);
-    if (total > billTotal + 0.005) {
-      throw ArgumentError('Payment allocations cannot exceed the bill total.');
+    if ((total - billTotal).abs() > 0.005) {
+      throw ArgumentError('Payment allocations must equal the bill total.');
     }
     final db = await _database;
     await db.transaction((txn) async {
