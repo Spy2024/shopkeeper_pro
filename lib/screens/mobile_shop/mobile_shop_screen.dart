@@ -427,12 +427,51 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                       _Pill(label: 'Sale ${_currency.format(device.sellingPrice)}', color: AppTheme.teal),
                     ]),
                   ])),
+                  PopupMenuButton<String>(
+                    tooltip: 'Update device status',
+                    onSelected: (status) => _changeDeviceStatus(device, status),
+                    itemBuilder: (_) => _deviceStatusOptions(device),
+                  ),
                 ]),
               ),
             )),
         ],
       ),
     );
+  }
+
+  List<PopupMenuEntry<String>> _deviceStatusOptions(MobileDevice device) {
+    final options = <String, String>{};
+    if (device.status == 'inspection_pending') {
+      options['in_stock'] = 'Inspection passed / ready for stock';
+      options['repair'] = 'Send to repair';
+      options['rejected'] = 'Reject purchase';
+    } else if (device.status == 'in_stock') {
+      options['reserved'] = 'Reserve device';
+      options['repair'] = 'Send to repair';
+      options['written_off'] = 'Write off';
+    } else if (device.status == 'reserved') {
+      options['in_stock'] = 'Release reservation';
+      options['repair'] = 'Send to repair';
+    } else if (device.status == 'repair') {
+      options['in_stock'] = 'Repair completed / back to stock';
+      options['written_off'] = 'Write off';
+    }
+    return options.entries
+        .map((entry) => PopupMenuItem<String>(value: entry.key, child: Text(entry.value)))
+        .toList(growable: false);
+  }
+
+  Future<void> _changeDeviceStatus(MobileDevice device, String status) async {
+    try {
+      await MobileShopService.instance.updateDeviceStatus(device.id, status);
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', ''))),
+      );
+    }
   }
 
   Widget _buildJobs() {
