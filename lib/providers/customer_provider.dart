@@ -27,7 +27,7 @@ class CustomerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Customer> add({required String name, String? phone, String? email, String? notes}) async {
+  Future<Customer> add({required String name, String? phone, String? email, String? address, String? notes}) async {
     final cleanName = name.trim();
     if (cleanName.isEmpty) throw ArgumentError('Customer name is required.');
     final cleanPhone = phone?.trim();
@@ -39,6 +39,7 @@ class CustomerProvider extends ChangeNotifier {
     final customer = Customer(
       id: _uuid.v4(), name: cleanName,
       phone: cleanPhone?.isEmpty == true ? null : cleanPhone,
+      address: address?.trim().isEmpty == true ? null : address?.trim(),
       email: cleanEmail?.isEmpty == true ? null : cleanEmail,
       notes: notes?.trim().isEmpty == true ? null : notes?.trim(),
       createdAt: DateTime.now(),

@@ -7,6 +7,8 @@ import '../../models/bill.dart';
 import '../../providers/inventory_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
+import '../../services/db_service.dart';
+import '../../services/branch_accounting_service.dart';
 import 'bill_history_screen.dart';
 import '../barcode_scanner_screen.dart';
 
@@ -18,7 +20,41 @@ class PosScreen extends StatefulWidget {
 }
 
 class _PosScreenState extends State<PosScreen> {
+  List<Map<String, Object?>> _activeBranches = [];
+  String? _selectedBranchId;
+  bool _loadingBranches = true;
+
   final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBranches();
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final db = await DBService.instance.database;
+      final rows = await db.query(
+        'branches',
+        where: 'isActive = ?',
+        whereArgs: [1],
+        orderBy: 'isMain DESC, name COLLATE NOCASE',
+      );
+      if (!mounted) return;
+      setState(() {
+        _activeBranches = rows;
+        _selectedBranchId = rows.isEmpty ? null : rows.first['id'] as String;
+        _loadingBranches = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingBranches = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load branches: $e')),
+      );
+    }
+  }
 
   void _openAddItemSheet() {
     final inventory = context.read<InventoryProvider>();
@@ -47,6 +83,30 @@ class _PosScreenState extends State<PosScreen> {
       ),
       body: Column(
         children: [
+          if (_loadingBranches)
+            const LinearProgressIndicator(minHeight: 2)
+          else if (_activeBranches.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: DropdownButtonFormField<String>(
+                initialValue: _selectedBranchId,
+                decoration: const InputDecoration(
+                  labelText: 'Selling branch',
+                  prefixIcon: Icon(Icons.store_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                items: _activeBranches.map((branch) {
+                  final id = branch['id'] as String;
+                  final name = (branch['name'] as String?) ?? id;
+                  final code = (branch['code'] as String?) ?? '';
+                  return DropdownMenuItem<String>(
+                    value: id,
+                    child: Text(code.isEmpty ? name : '$name ($code)'),
+                  );
+                }).toList(),
+                onChanged: (value) => setState(() => _selectedBranchId = value),
+              ),
+            ),
           Expanded(
             child: pos.cart.isEmpty
                 ? const _EmptyCart()
@@ -75,7 +135,7 @@ class _PosScreenState extends State<PosScreen> {
                     },
                   ),
           ),
-          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet),
+          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet, branchId: _selectedBranchId),
         ],
       ),
     );
@@ -104,8 +164,9 @@ class _BillSummaryPanel extends StatelessWidget {
   final PosProvider pos;
   final NumberFormat currency;
   final VoidCallback onAddItem;
+  final String? branchId;
 
-  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem});
+  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem, required this.branchId});
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +209,7 @@ class _BillSummaryPanel extends StatelessWidget {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
-                    onPressed: pos.cart.isEmpty ? null : () => _checkoutAndShare(context, pos),
+                    onPressed: pos.cart.isEmpty ? null : () => _checkoutAndShare(context, pos, branchId),
                     icon: const Icon(Icons.print),
                     label: const Text('Checkout & Print'),
                   ),
@@ -176,18 +237,24 @@ class _BillSummaryPanel extends StatelessWidget {
     final discountCtrl = TextEditingController(text: pos.discount == 0 ? '' : pos.discount.toString());
     final taxCtrl = TextEditingController(text: pos.taxPercent == 0 ? '' : pos.taxPercent.toString());
     final nameCtrl = TextEditingController(text: pos.customerName ?? '');
+    final addressCtrl = TextEditingController(text: pos.customerAddress ?? '');
+    final phoneCtrl = TextEditingController(text: pos.customerPhone ?? '');
+    final emailCtrl = TextEditingController(text: pos.customerEmail ?? '');
     try {
       await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Discount, Tax & Customer'),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameCtrl,
               decoration: const InputDecoration(labelText: 'Customer Name (optional)'),
             ),
+            TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'Customer Address (optional)'), maxLines: 2),
+            TextField(controller: phoneCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Customer Phone (optional)')),
+            TextField(controller: emailCtrl, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Customer Email (optional)')),
             TextField(
               controller: discountCtrl,
               keyboardType: TextInputType.number,
@@ -199,7 +266,7 @@ class _BillSummaryPanel extends StatelessWidget {
               decoration: const InputDecoration(labelText: 'Tax (%)'),
             ),
           ],
-        ),
+        )),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
@@ -218,7 +285,20 @@ class _BillSummaryPanel extends StatelessWidget {
                 );
                 return;
               }
-              pos.setCustomerName(nameCtrl.text.trim().isEmpty ? null : nameCtrl.text.trim());
+              final email = emailCtrl.text.trim();
+              if (email.isNotEmpty &&
+                  !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Enter a valid customer email.')),
+                );
+                return;
+              }
+              pos.setCustomerDetails(
+                name: nameCtrl.text,
+                address: addressCtrl.text,
+                phone: phoneCtrl.text,
+                email: email,
+              );
               pos.setDiscount(discount);
               pos.setTax(tax);
               Navigator.pop(context);
@@ -232,15 +312,118 @@ class _BillSummaryPanel extends StatelessWidget {
       discountCtrl.dispose();
       taxCtrl.dispose();
       nameCtrl.dispose();
+      addressCtrl.dispose(); phoneCtrl.dispose(); emailCtrl.dispose();
     }
   }
 
-  Future<void> _checkoutAndShare(BuildContext context, PosProvider pos) async {
+  Future<_CheckoutPayment?> _showPaymentDialog(BuildContext context, double total) async {
+    final db = await DBService.instance.database;
+    final customers = await db.query('customers', columns: ['id', 'name'], orderBy: 'name COLLATE NOCASE');
+    if (!context.mounted) return null;
+    String firstMethod = 'cash';
+    String secondMethod = 'credit';
+    String? customerId;
+    final firstAmount = TextEditingController(text: total.toStringAsFixed(2));
+    final secondAmount = TextEditingController(text: '0.00');
+    try {
+      return await showDialog<_CheckoutPayment>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Payment & Udhaar'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Bill total: ${NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2).format(total)}'),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: firstMethod,
+                    decoration: const InputDecoration(labelText: 'Payment 1'),
+                    items: const [
+                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'card', child: Text('Card')),
+                      DropdownMenuItem(value: 'bank', child: Text('Bank')),
+                      DropdownMenuItem(value: 'wallet', child: Text('Wallet')),
+                      DropdownMenuItem(value: 'other', child: Text('Other')),
+                      DropdownMenuItem(value: 'credit', child: Text('Udhaar / Credit')),
+                    ],
+                    onChanged: (value) => setDialogState(() => firstMethod = value ?? 'cash'),
+                  ),
+                  TextField(controller: firstAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount 1')),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: secondMethod,
+                    decoration: const InputDecoration(labelText: 'Payment 2 (optional)'),
+                    items: const [
+                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                      DropdownMenuItem(value: 'card', child: Text('Card')),
+                      DropdownMenuItem(value: 'bank', child: Text('Bank')),
+                      DropdownMenuItem(value: 'wallet', child: Text('Wallet')),
+                      DropdownMenuItem(value: 'other', child: Text('Other')),
+                      DropdownMenuItem(value: 'credit', child: Text('Udhaar / Credit')),
+                    ],
+                    onChanged: (value) => setDialogState(() => secondMethod = value ?? 'credit'),
+                  ),
+                  TextField(controller: secondAmount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount 2'),
+                    onChanged: (_) => setDialogState(() {})),
+                  if (firstMethod == 'credit' || (secondMethod == 'credit' && (double.tryParse(secondAmount.text.trim()) ?? 0) > 0))
+                    DropdownButtonFormField<String>(
+                      initialValue: customerId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Customer required for udhaar'),
+                      items: customers.map((customer) => DropdownMenuItem<String>(
+                        value: customer['id'] as String,
+                        child: Text((customer['name'] as String?) ?? 'Unnamed customer'),
+                      )).toList(),
+                      onChanged: (value) => setDialogState(() => customerId = value),
+                    ),
+                  const SizedBox(height: 8),
+                  Text('Allocated: ${NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2).format((double.tryParse(firstAmount.text) ?? 0) + (double.tryParse(secondAmount.text) ?? 0))}'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () {
+                  final a = double.tryParse(firstAmount.text.trim());
+                  final b = double.tryParse(secondAmount.text.trim());
+                  if (a == null || b == null || !a.isFinite || !b.isFinite || a < 0 || b < 0 || (a + b - total).abs() > 0.005) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment amounts must add up to the bill total.')));
+                    return;
+                  }
+                  if (((firstMethod == 'credit' && a > 0) || (secondMethod == 'credit' && b > 0)) && customerId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select a customer for udhaar.')));
+                    return;
+                  }
+                  final allocations = <PaymentAllocationInput>[
+                    PaymentAllocationInput(method: firstMethod, amount: a),
+                    if (b > 0) PaymentAllocationInput(method: secondMethod, amount: b),
+                  ];
+                  Navigator.pop(dialogContext, _CheckoutPayment(customerId: customerId, allocations: allocations));
+                },
+                child: const Text('Confirm Payment'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      firstAmount.dispose();
+      secondAmount.dispose();
+    }
+  }
+
+  Future<void> _checkoutAndShare(BuildContext context, PosProvider pos, String? branchId) async {
     final inventory = context.read<InventoryProvider>();
     final shop = context.read<ShopProvider>().shop;
     late final Bill bill;
     try {
-      bill = await pos.checkout(inventory);
+      final payment = await _showPaymentDialog(context, pos.grandTotal);
+      if (payment == null || !context.mounted) return;
+      bill = await pos.checkout(inventory, branchId: branchId, customerId: payment.customerId, paymentAllocations: payment.allocations);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -415,4 +598,10 @@ class _AddItemSheetState extends State<_AddItemSheet> {
       ),
     );
   }
+}
+
+class _CheckoutPayment {
+  final String? customerId;
+  final List<PaymentAllocationInput> allocations;
+  const _CheckoutPayment({required this.customerId, required this.allocations});
 }

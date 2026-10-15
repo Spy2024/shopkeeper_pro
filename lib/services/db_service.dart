@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -16,6 +17,16 @@ class LegacyDatabaseOwnershipConflict implements Exception {
   @override
   String toString() =>
       'The old local database has already been assigned to a different account. It was not imported.';
+}
+
+/// Produces a collision-free filename token for a Firebase UID while preserving
+/// existing filenames for ordinary Firebase UIDs. Sanitizing unsupported
+/// characters to underscores can map different accounts to the same SQLite file.
+String databaseFileTokenForUser(String userId) {
+  final cleanId = userId.trim();
+  if (cleanId.isEmpty) throw ArgumentError('A non-empty user ID is required.');
+  if (RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(cleanId)) return cleanId;
+  return 'encoded.${base64Url.encode(utf8.encode(cleanId)).replaceAll('=', '')}';
 }
 
 class DBService {
@@ -42,7 +53,7 @@ class DBService {
     _activeUserId = null;
     final dbPath = await getDatabasesPath();
     final legacyPath = join(dbPath, 'shopkeeper_pro.db');
-    final safeId = cleanId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final safeId = databaseFileTokenForUser(cleanId);
     final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
     final legacyFile = File(legacyPath);
     final userFile = File(userPath);
@@ -83,7 +94,7 @@ class DBService {
 
     final dbPath = await getDatabasesPath();
     final legacyPath = join(dbPath, 'shopkeeper_pro.db');
-    final safeId = cleanId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final safeId = databaseFileTokenForUser(cleanId);
     final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
     final legacyFile = File(legacyPath);
     final userFile = File(userPath);
@@ -166,7 +177,7 @@ class DBService {
       throw StateError('Refusing to delete a database owned by another account.');
     }
     final dbPath = await getDatabasesPath();
-    final safeId = expectedUserId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final safeId = databaseFileTokenForUser(expectedUserId);
     final userPath = join(dbPath, 'shopkeeper_pro_$safeId.db');
     final previousDb = _db;
     _db = null;
@@ -190,7 +201,7 @@ class DBService {
     }
     if (_db != null) return _db!;
     final dbPath = await getDatabasesPath();
-    final safeId = activeUserId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final safeId = databaseFileTokenForUser(activeUserId);
     final path = join(dbPath, 'shopkeeper_pro_$safeId.db');
     _db = await _openAt(path);
     return _db!;
@@ -199,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 12,
+      version: 16,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -261,6 +272,29 @@ class DBService {
           await db.execute("ALTER TABLE shop ADD COLUMN businessType TEXT NOT NULL DEFAULT 'general_retail'");
           await _createBranchesTable(db);
         }
+        if (oldVersion < 13) {
+          await db.execute('ALTER TABLE bills ADD COLUMN branchId TEXT');
+          await db.execute('ALTER TABLE daily_sales ADD COLUMN branchId TEXT');
+          await db.execute('ALTER TABLE expenses ADD COLUMN branchId TEXT');
+          await db.execute('ALTER TABLE supplier_orders ADD COLUMN branchId TEXT');
+          await _createOperationsTables(db);
+        }
+        if (oldVersion < 14) {
+          await db.execute('ALTER TABLE bill_returns ADD COLUMN branchId TEXT');
+        }
+        if (oldVersion < 15) {
+          await db.execute('ALTER TABLE customers ADD COLUMN address TEXT');
+          await db.execute('ALTER TABLE shop ADD COLUMN email TEXT');
+          await db.execute('ALTER TABLE shop ADD COLUMN website TEXT');
+          await db.execute('ALTER TABLE shop ADD COLUMN facebookUrl TEXT');
+          await db.execute('ALTER TABLE shop ADD COLUMN instagramUrl TEXT');
+          await db.execute('ALTER TABLE shop ADD COLUMN socialUrl TEXT');
+        }
+        if (oldVersion < 16) {
+          await db.execute('ALTER TABLE bills ADD COLUMN customerAddress TEXT');
+          await db.execute('ALTER TABLE bills ADD COLUMN customerPhone TEXT');
+          await db.execute('ALTER TABLE bills ADD COLUMN customerEmail TEXT');
+        }
       },
     );
   }
@@ -282,6 +316,79 @@ class DBService {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_branches_active ON branches(isActive)');
   }
 
+  Future<void> _createOperationsTables(Database db) async {
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_bills_branch_date ON bills(branchId, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_sales_branch_date ON daily_sales(branchId, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_expenses_branch_date ON expenses(branchId, date)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_supplier_orders_branch_date ON supplier_orders(branchId, date)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS branch_stock (
+        branchId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+        updatedAt TEXT NOT NULL,
+        PRIMARY KEY (branchId, productId),
+        FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE RESTRICT,
+        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS stock_transfers (
+        id TEXT PRIMARY KEY,
+        fromBranchId TEXT NOT NULL,
+        toBranchId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('pending','completed','cancelled')),
+        createdAt TEXT NOT NULL,
+        note TEXT,
+        CHECK(fromBranchId != toBranchId),
+        FOREIGN KEY (fromBranchId) REFERENCES branches(id) ON DELETE RESTRICT,
+        FOREIGN KEY (toBranchId) REFERENCES branches(id) ON DELETE RESTRICT,
+        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_stock_transfers_date ON stock_transfers(createdAt)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS branch_cash_transactions (
+        id TEXT PRIMARY KEY,
+        branchId TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('opening','cash_in','cash_out','sale','refund','expense','transfer_in','transfer_out','adjustment')),
+        amount REAL NOT NULL CHECK(amount >= 0),
+        date TEXT NOT NULL,
+        referenceId TEXT,
+        note TEXT,
+        FOREIGN KEY (branchId) REFERENCES branches(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_branch_cash_branch_date ON branch_cash_transactions(branchId, date)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS customer_ledger (
+        id TEXT PRIMARY KEY,
+        customerId TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('opening','sale_due','payment','refund','adjustment')),
+        amount REAL NOT NULL CHECK(amount >= 0),
+        date TEXT NOT NULL,
+        referenceId TEXT,
+        note TEXT,
+        FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_customer_ledger_customer_date ON customer_ledger(customerId, date)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS payment_allocations (
+        id TEXT PRIMARY KEY,
+        billId TEXT NOT NULL,
+        method TEXT NOT NULL CHECK(method IN ('cash','card','bank','wallet','credit','other')),
+        amount REAL NOT NULL CHECK(amount >= 0),
+        reference TEXT,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (billId) REFERENCES bills(id) ON DELETE CASCADE
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_payment_allocations_bill ON payment_allocations(billId)');
+  }
+
   Future<void> _createSyncQueue(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS sync_queue (
@@ -297,22 +404,23 @@ class DBService {
   }
 
   Future<void> _createSchema(Database db) async {
-    await db.execute("CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT, taxNumber TEXT, logoPath TEXT, businessType TEXT NOT NULL DEFAULT 'general_retail')");
+    await db.execute("CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT, taxNumber TEXT, email TEXT, website TEXT, facebookUrl TEXT, instagramUrl TEXT, socialUrl TEXT, logoPath TEXT, businessType TEXT NOT NULL DEFAULT 'general_retail')");
     await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5, barcode TEXT, expiryDate TEXT)');
-    await db.execute('CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, notes TEXT, createdAt TEXT NOT NULL)');
+    await db.execute('CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT, notes TEXT, createdAt TEXT NOT NULL)');
     await db.execute('CREATE INDEX idx_customers_name ON customers(name)');
-    await db.execute('CREATE TABLE bills (id TEXT PRIMARY KEY, date TEXT NOT NULL, customerName TEXT, discount REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0)');
+    await db.execute('CREATE TABLE bills (id TEXT PRIMARY KEY, date TEXT NOT NULL, customerName TEXT, customerAddress TEXT, customerPhone TEXT, customerEmail TEXT, discount REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0, branchId TEXT)');
     await db.execute('CREATE TABLE bill_items (id INTEGER PRIMARY KEY AUTOINCREMENT, billId TEXT NOT NULL, productId TEXT, productName TEXT NOT NULL, quantity INTEGER NOT NULL, unitPrice REAL NOT NULL, cloudId TEXT, FOREIGN KEY (billId) REFERENCES bills (id) ON DELETE CASCADE)');
-    await db.execute('CREATE TABLE bill_returns (id TEXT PRIMARY KEY, billId TEXT NOT NULL, productId TEXT NOT NULL, productName TEXT NOT NULL, unitPrice REAL NOT NULL DEFAULT 0, quantity INTEGER NOT NULL CHECK(quantity > 0), refundAmount REAL NOT NULL, date TEXT NOT NULL, reason TEXT NOT NULL, FOREIGN KEY (billId) REFERENCES bills(id) ON DELETE CASCADE)');
+    await db.execute('CREATE TABLE bill_returns (id TEXT PRIMARY KEY, billId TEXT NOT NULL, productId TEXT NOT NULL, productName TEXT NOT NULL, unitPrice REAL NOT NULL DEFAULT 0, quantity INTEGER NOT NULL CHECK(quantity > 0), refundAmount REAL NOT NULL, date TEXT NOT NULL, reason TEXT NOT NULL, branchId TEXT, FOREIGN KEY (billId) REFERENCES bills(id) ON DELETE CASCADE)');
     await db.execute('CREATE INDEX idx_bill_returns_bill_product ON bill_returns(billId, productId)');
     await db.execute('CREATE TABLE suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, totalStockReceivedValue REAL NOT NULL DEFAULT 0, totalPaymentsMade REAL NOT NULL DEFAULT 0)');
-    await db.execute("CREATE TABLE supplier_orders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, supplierName TEXT NOT NULL, date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft')");
+    await db.execute("CREATE TABLE supplier_orders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, supplierName TEXT NOT NULL, date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', branchId TEXT)");
     await db.execute('CREATE TABLE supplier_order_items (id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT NOT NULL, productName TEXT NOT NULL, requiredQuantity INTEGER NOT NULL, estimatedPrice REAL NOT NULL, cloudId TEXT, FOREIGN KEY (orderId) REFERENCES supplier_orders (id) ON DELETE CASCADE)');
-    await db.execute("CREATE TABLE daily_sales (id TEXT PRIMARY KEY, date TEXT NOT NULL, billId TEXT, productId TEXT, productName TEXT NOT NULL, costPrice REAL NOT NULL, salePrice REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'manual')");
-    await db.execute('CREATE TABLE expenses (id TEXT PRIMARY KEY, date TEXT NOT NULL, label TEXT NOT NULL, amount REAL NOT NULL)');
+    await db.execute("CREATE TABLE daily_sales (id TEXT PRIMARY KEY, date TEXT NOT NULL, billId TEXT, productId TEXT, productName TEXT NOT NULL, costPrice REAL NOT NULL, salePrice REAL NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'manual', branchId TEXT)");
+    await db.execute('CREATE TABLE expenses (id TEXT PRIMARY KEY, date TEXT NOT NULL, label TEXT NOT NULL, amount REAL NOT NULL, branchId TEXT)');
     await _createSyncQueue(db);
     await db.execute('CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
     await _createBranchesTable(db);
+    await _createOperationsTables(db);
     await db.execute('CREATE TABLE supplier_transactions (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, referenceId TEXT, FOREIGN KEY (supplierId) REFERENCES suppliers(id) ON DELETE CASCADE)');
     await db.execute('CREATE INDEX idx_supplier_transactions_supplier ON supplier_transactions(supplierId, date)');
     await db.execute('CREATE INDEX idx_products_name ON products(name)');

@@ -53,6 +53,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Products',
+                    value: inventory.products.length.toString(),
+                    icon: Icons.inventory_2_outlined,
+                    color: const Color(0xFF0F9D91),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Low stock',
+                    value: inventory.lowOrOutOfStock.length.toString(),
+                    icon: Icons.warning_amber_rounded,
+                    color: const Color(0xFFD97706),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Units',
+                    value: inventory.products.fold<int>(0, (sum, product) => sum + product.stockQuantity).toString(),
+                    icon: Icons.stacked_bar_chart,
+                    color: const Color(0xFF315A9B),
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (expiryAlerts > 0)
             Container(
               width: double.infinity,
@@ -112,28 +145,142 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               : Colors.green;
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        child: ListTile(
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
                           onTap: () => _openProductForm(existing: p),
-                          leading: CircleAvatar(
-                            backgroundColor: statusColor.withValues(alpha: 0.15),
-                            child: Icon(Icons.inventory_2, color: statusColor),
-                          ),
-                          title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text([
-                            p.category,
-                            'Stock: ${p.stockQuantity}',
-                            'Margin: ${_currency.format(p.margin)}',
-                            if (p.barcode != null && p.barcode!.isNotEmpty) 'Barcode: ${p.barcode}',
-                            if (p.expiryDate != null)
-                              p.isExpired
-                                  ? 'EXPIRED: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}'
-                                  : p.expiresWithin30Days
-                                      ? 'Expires soon: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}'
-                                      : 'Expiry: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}',
-                          ].join(' • ')),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => context.read<InventoryProvider>().deleteProduct(p.id),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: statusColor.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: Icon(Icons.inventory_2_rounded, color: statusColor, size: 25),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(p.name,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                                          const SizedBox(height: 4),
+                                          Text(p.category,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                                          const SizedBox(height: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: statusColor.withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              p.isOutOfStock ? 'OUT OF STOCK' : p.isLowStock ? 'LOW STOCK' : 'IN STOCK',
+                                              style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    PopupMenuButton<String>(
+                                      tooltip: 'Product actions',
+                                      onSelected: (value) async {
+                                        if (value == 'edit') {
+                                          _openProductForm(existing: p);
+                                        } else if (value == 'delete') {
+                                          final confirmed = await showDialog<bool>(
+                                            context: context,
+                                            builder: (dialogContext) => AlertDialog(
+                                              title: const Text('Delete product?'),
+                                              content: Text('Remove "${p.name}" from inventory?'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(dialogContext, false),
+                                                  child: const Text('Cancel'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () => Navigator.pop(dialogContext, true),
+                                                  child: const Text('Delete'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (confirmed == true && context.mounted) {
+                                            await context.read<InventoryProvider>().deleteProduct(p.id);
+                                          }
+                                        }
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit'), dense: true)),
+                                        PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Delete'), dense: true)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _ProductValue(
+                                        label: 'SELLING PRICE',
+                                        value: _currency.format(p.sellingPrice),
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _ProductValue(
+                                        label: 'STOCK',
+                                        value: p.stockQuantity.toString(),
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _ProductValue(
+                                        label: 'MARGIN / UNIT',
+                                        value: _currency.format(p.margin),
+                                        color: const Color(0xFF0F9D91),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if ((p.barcode != null && p.barcode!.isNotEmpty) || p.expiryDate != null) ...[
+                                  const SizedBox(height: 10),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 12,
+                                    runSpacing: 6,
+                                    children: [
+                                      if (p.barcode != null && p.barcode!.isNotEmpty)
+                                        _ProductMeta(icon: Icons.qr_code_2, text: p.barcode!),
+                                      if (p.expiryDate != null)
+                                        _ProductMeta(
+                                          icon: Icons.event_outlined,
+                                          text: p.isExpired
+                                              ? 'EXPIRED: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}'
+                                              : p.expiresWithin30Days
+                                                  ? 'Expires soon: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}'
+                                                  : 'Expiry: ${DateFormat('dd MMM yyyy').format(p.expiryDate!)}',
+                                        ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -144,6 +291,86 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
     );
   }
+}
+
+class _InventoryMetric extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _InventoryMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Theme.of(context).dividerColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 19),
+            const SizedBox(height: 8),
+            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ],
+        ),
+      );
+}
+
+class _ProductValue extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _ProductValue({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: color, letterSpacing: 0.3)),
+            const SizedBox(height: 5),
+            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
+          ],
+        ),
+      );
+}
+
+class _ProductMeta extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _ProductMeta({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(text, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+        ],
+      );
 }
 
 class _ProductFormSheet extends StatefulWidget {

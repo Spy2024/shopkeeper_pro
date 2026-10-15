@@ -12,6 +12,10 @@ void main() {
       final bill = Bill(
         id: 'bill-1',
         date: DateTime(2026, 10, 9),
+        customerName: 'Ayesha Khan',
+        customerAddress: 'House 12, Karachi',
+        customerPhone: '03001234567',
+        customerEmail: 'ayesha@example.com',
         items: items,
         discount: 20,
         taxPercent: 17,
@@ -21,6 +25,9 @@ void main() {
       expect(bill.taxableSubtotal, 400);
       expect(bill.taxAmount, closeTo(68, 0.0001));
       expect(bill.grandTotal, closeTo(468, 0.0001));
+      expect(bill.toMap()['customerAddress'], 'House 12, Karachi');
+      expect(bill.toMap()['customerPhone'], '03001234567');
+      expect(bill.toMap()['customerEmail'], 'ayesha@example.com');
     });
 
     test('bill defensively copies its item list', () {
