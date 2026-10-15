@@ -262,6 +262,9 @@ class SyncService {
         'mobile_devices': 'mobile_devices',
         'mobile_repair_jobs': 'mobile_repair_jobs',
         'mobile_repair_job_parts': 'mobile_repair_job_parts',
+        'mobile_repair_payments': 'mobile_repair_payments',
+        'mobile_repair_warranties': 'mobile_repair_warranties',
+        'mobile_repair_warranty_claims': 'mobile_repair_warranty_claims',
         'branch_stock': 'branch_stock',
       };
       for (final entry in tablesByCollection.entries) {
@@ -382,6 +385,9 @@ class SyncService {
     await _writeBatch(userId, 'mobile_devices', await _maps(db, 'mobile_devices'));
     await _writeBatch(userId, 'mobile_repair_jobs', await _maps(db, 'mobile_repair_jobs'));
     await _writeBatch(userId, 'mobile_repair_job_parts', await _maps(db, 'mobile_repair_job_parts'));
+    await _writeBatch(userId, 'mobile_repair_payments', await _maps(db, 'mobile_repair_payments'));
+    await _writeBatch(userId, 'mobile_repair_warranties', await _maps(db, 'mobile_repair_warranties'));
+    await _writeBatch(userId, 'mobile_repair_warranty_claims', await _maps(db, 'mobile_repair_warranty_claims'));
     await _writeBatch(userId, 'customers', await _maps(db, 'customers'));
     final bills = await _maps(db, 'bills');
     await _writeBatch(userId, 'bills', bills);
@@ -576,7 +582,7 @@ class SyncService {
         await db.insert('branch_stock', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      for (final collection in ['mobile_repair_job_parts', 'stock_transfers', 'branch_cash_transactions', 'customer_ledger', 'payment_allocations']) {
+      for (final collection in ['mobile_repair_job_parts', 'mobile_repair_payments', 'mobile_repair_warranties', 'mobile_repair_warranty_claims', 'stock_transfers', 'branch_cash_transactions', 'customer_ledger', 'payment_allocations']) {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(userId, db, doc.id, collection)) continue;
