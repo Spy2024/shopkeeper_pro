@@ -200,6 +200,7 @@ class InventoryProvider extends ChangeNotifier {
     if (deleted) {
       try {
         await SyncQueueService.instance.reloadPendingQueue();
+        await SyncQueueService.instance.scheduleSyncForActiveUser();
       } catch (e) {
         // The durable tombstone remains in SQLite and will be reloaded by the next sync.
         debugPrint('[InventoryProvider] Product deleted locally; queue refresh failed: $e');
