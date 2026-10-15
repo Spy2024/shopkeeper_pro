@@ -9,6 +9,7 @@ import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
 import '../../services/db_service.dart';
 import '../../services/branch_accounting_service.dart';
+import '../../services/mobile_shop_service.dart';
 import 'bill_history_screen.dart';
 import '../barcode_scanner_screen.dart';
 
@@ -65,9 +66,57 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  void _openMobilePhoneSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.72,
+          child: FutureBuilder(
+            future: MobileShopService.instance.listDevices(status: 'in_stock'),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) return Center(child: Text('Could not load phones: \${snapshot.error}'));
+              final devices = snapshot.data ?? const [];
+              if (devices.isEmpty) return const Center(child: Text('No sale-ready phones. Check used-phone inspection status.'));
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text('Select exact IMEI phone', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  for (final device in devices)
+                    Card(
+                      child: ListTile(
+                        title: Text('\${device.brand} \${device.model}'),
+                        subtitle: Text('IMEI: \${device.imei1 ?? '—'}\${device.imei2 == null ? '' : '\nIMEI 2: \${device.imei2}'}\nStatus: \${device.status}'),
+                        isThreeLine: true,
+                        trailing: Text(_currency.format(device.sellingPrice)),
+                        onTap: () {
+                          try {
+                            context.read<PosProvider>().addMobileDevice(device);
+                            Navigator.pop(sheetContext);
+                          } catch (error) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('\$error')));
+                          }
+                        },
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pos = context.watch<PosProvider>();
+    final isMobileShop = context.watch<ShopProvider>().shop?.businessType == 'mobile_electronics';
 
     return Scaffold(
       appBar: AppBar(
@@ -135,7 +184,7 @@ class _PosScreenState extends State<PosScreen> {
                     },
                   ),
           ),
-          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet, branchId: _selectedBranchId),
+          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet, onAddMobilePhone: _openMobilePhoneSheet, isMobileShop: isMobileShop, branchId: _selectedBranchId),
         ],
       ),
     );
@@ -164,9 +213,11 @@ class _BillSummaryPanel extends StatelessWidget {
   final PosProvider pos;
   final NumberFormat currency;
   final VoidCallback onAddItem;
+  final VoidCallback onAddMobilePhone;
+  final bool isMobileShop;
   final String? branchId;
 
-  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem, required this.branchId});
+  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem, required this.onAddMobilePhone, required this.isMobileShop, required this.branchId});
 
   @override
   Widget build(BuildContext context) {
@@ -187,6 +238,15 @@ class _BillSummaryPanel extends StatelessWidget {
               label: const Text('Add Item'),
               style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
             ),
+            if (isMobileShop) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: onAddMobilePhone,
+                icon: const Icon(Icons.phonelink_setup),
+                label: const Text('Add Phone by IMEI'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              ),
+            ],
             const SizedBox(height: 12),
             _totalsRow('Subtotal', currency.format(pos.subtotal)),
             if (pos.discount > 0) _totalsRow('Discount', '-${currency.format(pos.discount)}'),
