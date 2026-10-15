@@ -98,17 +98,43 @@ class BranchAccountingService {
     required int quantity,
     String? note,
   }) async {
-    if (fromBranchId == toBranchId) {
+    final cleanFromBranchId = fromBranchId.trim();
+    final cleanToBranchId = toBranchId.trim();
+    final cleanProductId = productId.trim();
+    if (cleanFromBranchId.isEmpty || cleanToBranchId.isEmpty || cleanProductId.isEmpty) {
+      throw ArgumentError('Source branch, destination branch, and product are required.');
+    }
+    if (cleanFromBranchId == cleanToBranchId) {
       throw ArgumentError('Source and destination branches must be different.');
     }
     if (quantity <= 0) throw ArgumentError.value(quantity, 'quantity', 'Must be positive.');
     final db = await _database;
     await db.transaction((txn) async {
+      for (final branchId in [cleanFromBranchId, cleanToBranchId]) {
+        final branchRows = await txn.query(
+          'branches',
+          columns: ['id', 'isActive'],
+          where: 'id = ?',
+          whereArgs: [branchId],
+          limit: 1,
+        );
+        if (branchRows.isEmpty || (branchRows.single['isActive'] as num?)?.toInt() != 1) {
+          throw StateError('Both source and destination branches must exist and be active.');
+        }
+      }
+      final productRows = await txn.query(
+        'products',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [cleanProductId],
+        limit: 1,
+      );
+      if (productRows.isEmpty) throw StateError('Selected product does not exist.');
       final source = await txn.query(
         'branch_stock',
         columns: ['quantity'],
         where: 'branchId = ? AND productId = ?',
-        whereArgs: [fromBranchId, productId],
+        whereArgs: [cleanFromBranchId, cleanProductId],
         limit: 1,
       );
       final available = source.isEmpty ? 0 : (source.first['quantity'] as num).toInt();
@@ -120,27 +146,27 @@ class BranchAccountingService {
         'branch_stock',
         {'quantity': available - quantity, 'updatedAt': now},
         where: 'branchId = ? AND productId = ?',
-        whereArgs: [fromBranchId, productId],
+        whereArgs: [cleanFromBranchId, cleanProductId],
       );
       final target = await txn.query(
         'branch_stock',
         columns: ['quantity'],
         where: 'branchId = ? AND productId = ?',
-        whereArgs: [toBranchId, productId],
+        whereArgs: [cleanToBranchId, cleanProductId],
         limit: 1,
       );
       final targetQuantity = target.isEmpty ? 0 : (target.first['quantity'] as num).toInt();
       await txn.insert('branch_stock', {
-        'branchId': toBranchId,
-        'productId': productId,
+        'branchId': cleanToBranchId,
+        'productId': cleanProductId,
         'quantity': targetQuantity + quantity,
         'updatedAt': now,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       await txn.insert('stock_transfers', {
         'id': _uuid.v4(),
-        'fromBranchId': fromBranchId,
-        'toBranchId': toBranchId,
-        'productId': productId,
+        'fromBranchId': cleanFromBranchId,
+        'toBranchId': cleanToBranchId,
+        'productId': cleanProductId,
         'quantity': quantity,
         'status': 'completed',
         'createdAt': now,
