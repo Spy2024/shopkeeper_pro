@@ -160,6 +160,78 @@ void main() {
     );
   });
 
+  test('repair parts consume inventory and repair payments update balance', () async {
+    final db = await DBService.instance.database;
+    await db.insert('products', {
+      'id': 'lcd-panel-1',
+      'name': 'LCD Panel',
+      'category': 'Mobile Spare Parts',
+      'stockQuantity': 5,
+      'costPrice': 1000.0,
+      'sellingPrice': 1500.0,
+      'lowStockThreshold': 1,
+    });
+    final job = await MobileShopService.instance.createRepairJob(
+      jobNumber: 'JOB-PART-PAY',
+      customerName: 'Test Customer',
+      reportedIssue: 'Broken display',
+      estimateAmount: 5000,
+      approvedAmount: 5000,
+      customerConsent: true,
+    );
+
+    final part = await MobileShopService.instance.consumeRepairPart(
+      jobId: job.id,
+      productId: 'lcd-panel-1',
+      quantity: 2,
+      unitPrice: 1600,
+    );
+    expect(part['partName'], 'LCD Panel');
+    expect((await db.query('products', where: 'id = ?', whereArgs: ['lcd-panel-1'])).single['stockQuantity'], 3);
+    final updatedJob = (await MobileShopService.instance.listRepairJobs(search: 'JOB-PART-PAY')).single;
+    expect(updatedJob.partsCost, 2000);
+
+    await MobileShopService.instance.recordRepairPayment(
+      jobId: job.id,
+      amount: 1000,
+      method: 'cash',
+    );
+    final paidJob = (await MobileShopService.instance.listRepairJobs(search: 'JOB-PART-PAY')).single;
+    expect(paidJob.advancePaid, 1000);
+    expect(paidJob.balanceDue, 4000);
+    await expectLater(
+      MobileShopService.instance.recordRepairPayment(
+        jobId: job.id,
+        amount: 5000,
+        method: 'cash',
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('repair warranty can be issued after delivery and claim is recorded', () async {
+    final job = await MobileShopService.instance.createRepairJob(
+      jobNumber: 'JOB-WARRANTY',
+      customerName: 'Test Customer',
+      reportedIssue: 'Charging port replaced',
+      customerConsent: true,
+      warrantyDays: 30,
+    );
+    await MobileShopService.instance.updateRepairJobStatus(job.id, 'delivered');
+    final warranty = await MobileShopService.instance.issueRepairWarranty(
+      jobId: job.id,
+      warrantyDays: 30,
+      terms: 'Repair workmanship only',
+    );
+    expect(warranty['status'], 'active');
+    final claim = await MobileShopService.instance.createWarrantyClaim(
+      warrantyId: warranty['id']! as String,
+      description: 'Charging issue returned',
+    );
+    expect(claim['status'], 'open');
+    expect(await MobileShopService.instance.repairProfitReport(), containsPair('approvedRevenue', 0.0));
+  });
+
   test('mobile device intake requires a primary IMEI', () async {
     await expectLater(
       MobileShopService.instance.createDevice(
