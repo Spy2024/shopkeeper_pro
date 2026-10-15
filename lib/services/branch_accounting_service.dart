@@ -248,8 +248,23 @@ class BranchAccountingService {
     }
     final db = await _database;
     await db.transaction((txn) async {
-      final bill = await txn.query('bills', columns: ['id'], where: 'id = ?', whereArgs: [billId], limit: 1);
-      if (bill.isEmpty) throw StateError('Bill was not found.');
+      final billRows = await txn.rawQuery(
+        'SELECT b.discount, b.taxPercent, '
+        'COALESCE(SUM(bi.quantity * bi.unitPrice), 0) AS subtotal '
+        'FROM bills b LEFT JOIN bill_items bi ON bi.billId = b.id '
+        'WHERE b.id = ? GROUP BY b.id',
+        [billId],
+      );
+      if (billRows.isEmpty) throw StateError('Bill was not found.');
+      final billRow = billRows.single;
+      final subtotal = (billRow['subtotal'] as num).toDouble();
+      final discount = (billRow['discount'] as num?)?.toDouble() ?? 0;
+      final taxPercent = (billRow['taxPercent'] as num?)?.toDouble() ?? 0;
+      final actualBillTotal = (subtotal - discount).clamp(0.0, double.infinity).toDouble() *
+          (1 + taxPercent / 100);
+      if (!actualBillTotal.isFinite || (actualBillTotal - billTotal).abs() > 0.005) {
+        throw StateError('Provided bill total does not match the saved bill total.');
+      }
       await txn.delete('payment_allocations', where: 'billId = ?', whereArgs: [billId]);
       final now = DateTime.now().toIso8601String();
       for (final allocation in allocations) {
