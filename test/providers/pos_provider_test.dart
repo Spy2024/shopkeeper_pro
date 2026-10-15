@@ -104,7 +104,7 @@ void main() {
       expect((await db.query('daily_sales')), isEmpty);
       expect((await db.query('products')).single['stockQuantity'], 2);
     });
-  }
+  });
 
   test('Product margin is derived from selling minus cost', () {
     final product = Product(
