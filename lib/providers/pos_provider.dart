@@ -72,6 +72,7 @@ Bill billFromDatabaseRow(Map<String, Object?> row, List<BillItem> items) {
     id: row['id'] as String,
     date: DateTime.parse(row['date'] as String),
     customerName: row['customerName'] as String?,
+    customerId: row['customerId'] as String?,
     customerAddress: row['customerAddress'] as String?,
     customerPhone: row['customerPhone'] as String?,
     customerEmail: row['customerEmail'] as String?,
@@ -267,7 +268,7 @@ class PosProvider extends ChangeNotifier {
     }).toList(growable: false);
 
     final db = await DBService.instance.database;
-    final bill = Bill(id: _uuid.v4(), date: DateTime.now(), customerName: customerName, customerAddress: customerAddress, customerPhone: customerPhone, customerEmail: customerEmail, branchId: normalizedBranchId,
+    final bill = Bill(id: _uuid.v4(), date: DateTime.now(), customerName: customerName, customerId: customerId?.trim(), customerAddress: customerAddress, customerPhone: customerPhone, customerEmail: customerEmail, branchId: normalizedBranchId,
       items: List.unmodifiable(normalizedItems), discount: discount, taxPercent: taxPercent);
     final newQuantities = <String, int>{};
     final itemCloudIds = List<String>.generate(bill.items.length, (_) => _uuid.v4());
@@ -418,9 +419,17 @@ class PosProvider extends ChangeNotifier {
     required int quantity,
     required String reason,
     required InventoryProvider inventory,
+    String refundMethod = 'cash',
   }) async {
     if (quantity <= 0) throw ArgumentError('Return quantity must be positive.');
     if (reason.trim().isEmpty) throw ArgumentError('A return reason is required.');
+    const supportedRefundMethods = {'cash', 'card', 'bank', 'wallet', 'credit', 'other'};
+    if (!supportedRefundMethods.contains(refundMethod)) {
+      throw ArgumentError.value(refundMethod, 'refundMethod', 'Unsupported refund method.');
+    }
+    if (refundMethod == 'credit' && (bill.customerId == null || bill.customerId!.trim().isEmpty)) {
+      throw StateError('Select a customer on the original bill before issuing a credit refund.');
+    }
 
     final resolvedProduct = resolveProductForReturn(item, inventory.products);
     if (resolvedProduct == null && item.productId != null) {
@@ -464,10 +473,33 @@ class PosProvider extends ChangeNotifier {
       'unitPrice': item.unitPrice,
       'quantity': quantity,
       'refundAmount': refundAmount,
+      'refundMethod': refundMethod,
       'date': returnedAt.toIso8601String(),
       'reason': reason.trim(),
       'branchId': bill.branchId,
     };
+    final cashRefundRow = refundMethod == 'cash' && bill.branchId != null
+        ? <String, dynamic>{
+            'id': _uuid.v4(),
+            'branchId': bill.branchId,
+            'type': 'refund',
+            'amount': refundAmount,
+            'date': returnedAt.toIso8601String(),
+            'referenceId': returnId,
+            'note': 'Cash refund for bill ${bill.id}',
+          }
+        : null;
+    final customerRefundRow = refundMethod == 'credit'
+        ? <String, dynamic>{
+            'id': _uuid.v4(),
+            'customerId': bill.customerId,
+            'type': 'refund',
+            'amount': refundAmount,
+            'date': returnedAt.toIso8601String(),
+            'referenceId': returnId,
+            'note': 'Credit refund for bill ${bill.id}',
+          }
+        : null;
     int? newStock;
     await db.transaction((txn) async {
       final priorRows = await txn.rawQuery(
@@ -502,6 +534,12 @@ class PosProvider extends ChangeNotifier {
         }
       }
       await txn.insert('bill_returns', returnRow);
+      if (cashRefundRow != null) {
+        await txn.insert('branch_cash_transactions', cashRefundRow);
+      }
+      if (customerRefundRow != null) {
+        await txn.insert('customer_ledger', customerRefundRow);
+      }
       await txn.insert('daily_sales', returnSale.toMap());
     });
 
@@ -512,6 +550,22 @@ class PosProvider extends ChangeNotifier {
       operation: 'create', tableName: 'returns', documentId: returnId, data: isManualLine ? {...returnRow, 'isManual': true} : returnRow);
     await _queueSafely(
       operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
+    if (cashRefundRow != null) {
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'branch_cash_transactions',
+        documentId: cashRefundRow['id'] as String,
+        data: cashRefundRow,
+      );
+    }
+    if (customerRefundRow != null) {
+      await _queueSafely(
+        operation: 'create',
+        tableName: 'customer_ledger',
+        documentId: customerRefundRow['id'] as String,
+        data: customerRefundRow,
+      );
+    }
     if (resolvedProduct != null && newStock != null) {
       await _queueSafely(
         operation: 'update',
