@@ -1,4 +1,3 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
