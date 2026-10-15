@@ -69,6 +69,7 @@ class MobileDevice {
   final int warrantyMonths;
   final DateTime? purchaseDate;
   final DateTime? soldAt;
+  final String? soldBillId;
   final String? branchId;
   final Map<String, dynamic> inspection;
   final String? notes;
@@ -96,6 +97,7 @@ class MobileDevice {
     this.warrantyMonths = 0,
     this.purchaseDate,
     this.soldAt,
+    this.soldBillId,
     this.branchId,
     this.inspection = const {},
     this.notes,
@@ -127,6 +129,7 @@ class MobileDevice {
     'warrantyMonths': warrantyMonths,
     'purchaseDate': purchaseDate?.toIso8601String(),
     'soldAt': soldAt?.toIso8601String(),
+    'soldBillId': soldBillId,
     'branchId': branchId,
     'inspectionJson': jsonEncode(inspection),
     'notes': notes?.trim(),
@@ -166,6 +169,7 @@ class MobileDevice {
       warrantyMonths: (map['warrantyMonths'] as num?)?.toInt() ?? 0,
       purchaseDate: date(map['purchaseDate']),
       soldAt: date(map['soldAt']),
+      soldBillId: map['soldBillId'] as String?,
       branchId: map['branchId'] as String?,
       inspection: inspection,
       notes: map['notes'] as String?,
