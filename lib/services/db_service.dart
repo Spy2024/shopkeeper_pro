@@ -431,6 +431,31 @@ class DBService {
     """);
     await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mobile_devices_imei1 ON mobile_devices(imei1) WHERE imei1 IS NOT NULL AND imei1 != ''");
     await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mobile_devices_imei2 ON mobile_devices(imei2) WHERE imei2 IS NOT NULL AND imei2 != ''");
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mobile_devices_serial ON mobile_devices(serialNumber) WHERE serialNumber IS NOT NULL AND serialNumber != ''");
+    await db.execute("""
+      CREATE TRIGGER IF NOT EXISTS trg_mobile_devices_imei_unique_insert
+      BEFORE INSERT ON mobile_devices
+      WHEN (NEW.imei1 IS NOT NULL AND NEW.imei1 != '' AND EXISTS (
+        SELECT 1 FROM mobile_devices
+        WHERE imei1 = NEW.imei1 OR imei2 = NEW.imei1
+      )) OR (NEW.imei2 IS NOT NULL AND NEW.imei2 != '' AND EXISTS (
+        SELECT 1 FROM mobile_devices
+        WHERE imei1 = NEW.imei2 OR imei2 = NEW.imei2
+      ))
+      BEGIN SELECT RAISE(ABORT, 'Duplicate IMEI'); END
+    """);
+    await db.execute("""
+      CREATE TRIGGER IF NOT EXISTS trg_mobile_devices_imei_unique_update
+      BEFORE UPDATE OF imei1, imei2 ON mobile_devices
+      WHEN (NEW.imei1 IS NOT NULL AND NEW.imei1 != '' AND EXISTS (
+        SELECT 1 FROM mobile_devices
+        WHERE id != NEW.id AND (imei1 = NEW.imei1 OR imei2 = NEW.imei1)
+      )) OR (NEW.imei2 IS NOT NULL AND NEW.imei2 != '' AND EXISTS (
+        SELECT 1 FROM mobile_devices
+        WHERE id != NEW.id AND (imei1 = NEW.imei2 OR imei2 = NEW.imei2)
+      ))
+      BEGIN SELECT RAISE(ABORT, 'Duplicate IMEI'); END
+    """);
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mobile_devices_status ON mobile_devices(status, deviceType)");
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mobile_devices_model ON mobile_devices(brand, model)");
 
