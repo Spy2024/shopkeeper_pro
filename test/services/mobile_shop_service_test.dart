@@ -61,6 +61,20 @@ void main() {
     expect(rows.single.inspection['screen'], 'pass');
   });
 
+  test('used phone can only become sale-ready after inspection status is changed', () async {
+    final device = await MobileShopService.instance.createDevice(
+      deviceType: 'used',
+      brand: 'Samsung',
+      model: 'Galaxy S22',
+      imei1: '351234567890127',
+    );
+    expect(device.status, 'inspection_pending');
+
+    await MobileShopService.instance.updateDeviceStatus(device.id, 'in_stock');
+    final refreshed = await MobileShopService.instance.listDevices(search: device.imei1);
+    expect(refreshed.single.status, 'in_stock');
+  });
+
   test('duplicate IMEI cannot be registered across IMEI fields', () async {
     await MobileShopService.instance.createDevice(
       deviceType: 'new',
