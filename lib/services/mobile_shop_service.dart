@@ -471,6 +471,19 @@ class MobileShopService {
     return claim;
   }
 
+  Future<Map<String, Object?>> repairInvoiceDetails(String jobId) async {
+    _requireActiveAccount();
+    final db = await DBService.instance.database;
+    final jobs = await db.query('mobile_repair_jobs', where: 'id = ?', whereArgs: [jobId], limit: 1);
+    if (jobs.isEmpty) throw StateError('Repair job not found.');
+    return {
+      'job': jobs.single,
+      'parts': await db.query('mobile_repair_job_parts', where: 'jobId = ?', whereArgs: [jobId], orderBy: 'createdAt'),
+      'payments': await db.query('mobile_repair_payments', where: 'jobId = ?', whereArgs: [jobId], orderBy: 'paidAt'),
+      'warranties': await db.query('mobile_repair_warranties', where: 'jobId = ?', whereArgs: [jobId], orderBy: 'createdAt DESC'),
+    };
+  }
+
   /// Financial snapshot based on approved job revenue, recorded part cost and payments.
   Future<Map<String, double>> repairProfitReport() async {
     _requireActiveAccount();
