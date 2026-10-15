@@ -77,6 +77,7 @@ class MobileShopService {
     if (warrantyMonths < 0) throw ArgumentError('Warranty months cannot be negative.');
     final firstImei = normalizeImei(imei1);
     final secondImei = normalizeImei(imei2);
+    if (firstImei.isEmpty) throw ArgumentError('IMEI 1 is required for a mobile phone.');
     final cleanSerial = serialNumber?.trim();
     final now = DateTime.now();
     final device = MobileDevice(
