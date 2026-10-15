@@ -18,14 +18,10 @@ import 'package:firebase_core/firebase_core.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase is optional until real project credentials are configured.
-  // Keep the offline-first app usable instead of blocking startup.
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   } catch (e) {
-    debugPrint('Firebase initialization skipped: $e');
+    debugPrint('Firebase initialization failed: $e');
   }
 
   runApp(const ShopkeeperProApp());
@@ -81,30 +77,32 @@ class _StartupGateState extends State<_StartupGate> {
 
     if (!mounted) return;
 
-    if (auth.isLoggedIn) {
-      await context.read<ShopProvider>().load();
+    if (auth.isLoggedIn && auth.userUid != null) {
+      await Future.wait([
+        context.read<ShopProvider>().load(),
+        context.read<InventoryProvider>().load(),
+        context.read<SalesProvider>().load(),
+        context.read<FinanceProvider>().load(),
+        context.read<SupplierProvider>().load(),
+        context.read<PosProvider>().loadHistory(),
+      ]);
+      await context.read<SyncProvider>().init(auth.userUid!);
     }
 
-    if (mounted) {
-      setState(() => _ready = true);
-    }
+    if (mounted) setState(() => _ready = true);
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) return const PhoneEntryScreen();
 
     final shop = context.watch<ShopProvider>().shop;
-    if (shop == null) {
-      return const ShopProfileScreen(isFirstSetup: true);
-    }
+    if (shop == null) return const ShopProfileScreen(isFirstSetup: true);
 
     return const HomeScreen();
   }

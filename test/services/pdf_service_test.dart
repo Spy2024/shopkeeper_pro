@@ -1,54 +1,36 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/models/bill.dart';
 
 void main() {
-  group('PdfService Tests', () {
-    test('generateInvoice should create PDF file', () async {
-      const billId = 'bill-123';
-      const shopName = 'Test Shop';
-      expect(billId, isNotEmpty);
-      expect(shopName, isNotEmpty);
-    });
+  test('invoice data contains all financial components', () {
+    final bill = Bill(
+      id: 'bill-12345678',
+      date: DateTime(2026, 10, 1, 15, 16),
+      customerName: 'Ahmed',
+      items: [
+        BillItem(productName: 'Tea', quantity: 2, unitPrice: 150),
+        BillItem(productName: 'Sugar', quantity: 1, unitPrice: 120),
+      ],
+      discount: 20,
+      taxPercent: 17,
+    );
 
-    test('generateInvoice should embed shop logo if available', () async {
-      const logoPath = '/path/to/logo.png';
-      expect(logoPath, isNotEmpty);
-    });
+    expect(bill.subtotal, 420);
+    expect(bill.effectiveDiscount, 20);
+    expect(bill.taxAmount, closeTo(68, 0.0001));
+    expect(bill.grandTotal, closeTo(468, 0.0001));
+  });
 
-    test('generateInvoice should include tax details', () async {
-      const taxPercent = 17.0;
-      const subtotal = 1000.0;
-      final expectedTax = (subtotal * taxPercent) / 100;
-      expect(expectedTax, equals(170.0));
-    });
+  test('invoice serialization keeps shop-independent bill fields and items', () {
+    final bill = Bill(
+      id: 'b1',
+      date: DateTime(2026, 10, 1),
+      items: [BillItem(productName: 'Milk', quantity: 1, unitPrice: 90)],
+    );
 
-    test('generateInvoice should format currency as Rs.', () async {
-      const amount = 5000.0;
-      final formatted = 'Rs. ${amount.toStringAsFixed(2)}';
-      expect(formatted, contains('Rs.'));
-    });
-
-    test('generateInvoice should calculate line totals correctly', () async {
-      const quantity = 2;
-      const unitPrice = 500.0;
-      final lineTotal = quantity * unitPrice;
-      expect(lineTotal, equals(1000.0));
-    });
-
-    test('generateInvoice should apply discount correctly', () async {
-      const subtotal = 5000.0;
-      const discount = 500.0;
-      final afterDiscount = subtotal - discount;
-      expect(afterDiscount, equals(4500.0));
-    });
-
-    test('grandTotal should include discount and tax', () async {
-      const subtotal = 5000.0;
-      const discount = 500.0;
-      const taxPercent = 17.0;
-      final afterDiscount = subtotal - discount;
-      final taxAmount = (afterDiscount * taxPercent) / 100;
-      final grandTotal = afterDiscount + taxAmount;
-      expect(grandTotal, equals(5265.0));
-    });
+    final sync = bill.toSyncMap();
+    expect(sync['id'], 'b1');
+    expect(sync['items'], isA<List<dynamic>>());
+    expect((sync['items'] as List).single['productName'], 'Milk');
   });
 }

@@ -20,6 +20,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
   final _phoneCtrl = TextEditingController();
   final _taxCtrl = TextEditingController();
   String? _logoPath;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -34,10 +35,26 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _addressCtrl.dispose();
+    _phoneCtrl.dispose();
+    _taxCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickLogo() async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (file != null) setState(() => _logoPath = file.path);
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+      if (file != null && mounted) setState(() => _logoPath = file.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Unable to select logo: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -75,8 +92,7 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _addressCtrl,
-                decoration:
-                    const InputDecoration(labelText: 'Shop Address', prefixIcon: Icon(Icons.location_on)),
+                decoration: const InputDecoration(labelText: 'Shop Address', prefixIcon: Icon(Icons.location_on)),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
               const SizedBox(height: 12),
@@ -90,31 +106,48 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
               TextFormField(
                 controller: _taxCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'NTN / Tax Number (optional)', prefixIcon: Icon(Icons.receipt_long)),
+                  labelText: 'NTN / Tax Number (optional)',
+                  prefixIcon: Icon(Icons.receipt_long),
+                ),
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: () async {
-                  if (!_formKey.currentState!.validate()) return;
-                  await context.read<ShopProvider>().save(
-                        name: _nameCtrl.text.trim(),
-                        address: _addressCtrl.text.trim(),
-                        phone: _phoneCtrl.text.trim(),
-                        taxNumber: _taxCtrl.text.trim().isEmpty ? null : _taxCtrl.text.trim(),
-                        logoPath: _logoPath,
-                      );
-                  if (!context.mounted) return;
-                  if (widget.isFirstSetup) {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (_) => const HomeScreen()),
-                      (route) => false,
-                    );
-                  } else {
-                    Navigator.pop(context);
-                  }
-                },
-                child: Text(widget.isFirstSetup ? 'Finish Setup' : 'Save Changes'),
+                onPressed: _saving
+                    ? null
+                    : () async {
+                        if (!_formKey.currentState!.validate()) return;
+                        setState(() => _saving = true);
+                        try {
+                          await context.read<ShopProvider>().save(
+                                name: _nameCtrl.text,
+                                address: _addressCtrl.text,
+                                phone: _phoneCtrl.text,
+                                taxNumber: _taxCtrl.text,
+                                logoPath: _logoPath,
+                              );
+                          if (!context.mounted) return;
+                          if (widget.isFirstSetup) {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (_) => const HomeScreen()),
+                              (route) => false,
+                            );
+                          } else {
+                            Navigator.pop(context);
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Could not save shop: $e')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _saving = false);
+                        }
+                      },
+                child: _saving
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(widget.isFirstSetup ? 'Finish Setup' : 'Save Changes'),
               ),
             ],
           ),

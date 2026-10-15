@@ -17,7 +17,6 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
-  final _searchCtrl = TextEditingController();
 
   void _openAddItemSheet() {
     final inventory = context.read<InventoryProvider>();
@@ -217,10 +216,19 @@ class _BillSummaryPanel extends StatelessWidget {
   Future<void> _checkoutAndShare(BuildContext context, PosProvider pos) async {
     final inventory = context.read<InventoryProvider>();
     final shop = context.read<ShopProvider>().shop;
-    final bill = await pos.checkout(inventory);
-    final file = await PdfService.generateInvoice(bill, shop);
-    if (!context.mounted) return;
-    await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
+    try {
+      final bill = await pos.checkout(inventory);
+      final file = await PdfService.generateInvoice(bill, shop);
+      if (!context.mounted) return;
+      await Share.shareXFiles([XFile(file.path)],
+        text: 'Here is your invoice from ${shop?.name ?? "our shop"}.',
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Checkout failed: $e')),
+      );
+    }
   }
 }
 
@@ -303,7 +311,26 @@ class _AddItemSheetState extends State<_AddItemSheet> {
               final name = _nameCtrl.text.trim();
               final qty = int.tryParse(_qtyCtrl.text) ?? 0;
               final price = double.tryParse(_priceCtrl.text) ?? 0;
-              if (name.isEmpty || qty <= 0 || price <= 0) return;
+              if (name.isEmpty || qty <= 0 || price <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Enter a valid product, quantity and price.')),
+                );
+                return;
+              }
+              final selected = widget.inventory.products.where((p) => p.name == name);
+              if (selected.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Select a product from inventory.')),
+                );
+                return;
+              }
+              final product = selected.first;
+              if (qty > product.stockQuantity) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Only ${product.stockQuantity} unit(s) available.')),
+                );
+                return;
+              }
               context.read<PosProvider>().addItem(name, qty, price);
               Navigator.pop(context);
             },

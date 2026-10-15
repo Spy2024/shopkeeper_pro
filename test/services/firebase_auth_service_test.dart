@@ -1,22 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('FirebaseAuthService Tests', () {
-    test('sendOtp should initiate Firebase phone verification', () async {
-      const phoneNumber = '+923334455667';
-      expect(phoneNumber, contains('+92'));
-      expect(phoneNumber.length, greaterThan(10));
-    });
+  test('Firebase phone auth accepts E.164-style Pakistan numbers', () {
+    const phone = '+923334455667';
+    expect(RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(phone), isTrue);
+  });
 
-    test('verifyOtp should validate 6-digit code', () async {
-      const validOtp = '123456';
-      expect(validOtp.length, equals(6));
-      expect(int.tryParse(validOtp), isNotNull);
-    });
-
-    test('clearSession should remove secure storage entries', () async {
-      const sessionPhone = '+923334455667';
-      expect(sessionPhone, isNotEmpty);
-    });
+  test('OTP contract is exactly six numeric digits', () {
+    for (final otp in ['123456', '000001', '987654']) {
+      expect(RegExp(r'^\d{6}$').hasMatch(otp), isTrue);
+    }
+    expect(RegExp(r'^\d{6}$').hasMatch('12345'), isFalse);
+    expect(RegExp(r'^\d{6}$').hasMatch('12ab56'), isFalse);
   });
 }

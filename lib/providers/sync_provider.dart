@@ -3,7 +3,6 @@ import '../services/sync_service.dart';
 import '../services/sync_queue_service.dart';
 import '../services/connectivity_service.dart';
 
-/// Provider to expose sync status to UI
 class SyncProvider extends ChangeNotifier {
   bool _isSyncing = false;
   bool _isOnline = false;
@@ -15,18 +14,13 @@ class SyncProvider extends ChangeNotifier {
   int get pendingOperations => _pendingOperations;
   String? get lastSyncTime => _lastSyncTime;
 
-  /// Initialize sync monitoring
   Future<void> init(String userId) async {
+    await SyncQueueService.instance.init(userId);
     await SyncService.instance.init(userId);
     await ConnectivityService.instance.init(userId);
-    await SyncQueueService.instance.init(userId);
-
-    // Update UI state
     _updateStatus();
-    notifyListeners();
   }
 
-  /// Update sync status from services
   void _updateStatus() {
     _isSyncing = SyncService.instance.isSyncing;
     _isOnline = SyncService.instance.isOnline;
@@ -34,25 +28,14 @@ class SyncProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Manual sync trigger
   Future<void> syncNow(String userId) async {
     _isSyncing = true;
     notifyListeners();
-
     try {
-      // Sync pending offline operations
-      if (SyncQueueService.instance.hasPending) {
-        await SyncQueueService.instance.syncPendingOperations(userId);
-      }
-
-      // Sync from cloud
-      await SyncService.instance.syncFromCloud(userId);
-
-      _lastSyncTime = DateTime.now().toString();
+      await SyncService.instance.syncNow(userId);
+      _lastSyncTime = DateTime.now().toIso8601String();
     } finally {
-      _isSyncing = false;
       _updateStatus();
-      notifyListeners();
     }
   }
 }

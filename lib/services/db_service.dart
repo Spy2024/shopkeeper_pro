@@ -13,16 +13,46 @@ class DBService {
 
   Future<Database> _initDb() async {
     final path = join(await getDatabasesPath(), 'shopkeeper_pro.db');
-    return openDatabase(path, version: 2,
+    return openDatabase(
+      path,
+      version: 3,
       onCreate: (db, version) async => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          await db.execute('''CREATE TABLE IF NOT EXISTS sync_queue (
-            id TEXT PRIMARY KEY, operation TEXT NOT NULL, tableName TEXT NOT NULL,
-            documentId TEXT NOT NULL, data TEXT NOT NULL, timestamp INTEGER NOT NULL,
-            synced INTEGER NOT NULL DEFAULT 0)''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS sync_queue (
+              id TEXT PRIMARY KEY,
+              operation TEXT NOT NULL,
+              tableName TEXT NOT NULL,
+              documentId TEXT NOT NULL,
+              data TEXT NOT NULL,
+              timestamp INTEGER NOT NULL,
+              synced INTEGER NOT NULL DEFAULT 0
+            )
+          ''');
         }
-      });
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE sync_queue ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0');
+          await db.execute('ALTER TABLE sync_queue ADD COLUMN nextRetryAt INTEGER');
+          await db.execute('ALTER TABLE sync_queue ADD COLUMN lastError TEXT');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS sync_metadata (
+              tableName TEXT NOT NULL,
+              documentId TEXT NOT NULL,
+              updatedAt INTEGER NOT NULL,
+              PRIMARY KEY (tableName, documentId)
+            )
+          ''');
+        }
+      },
+    );
+  }
+
+  Future<void> resetForTests() async {
+    final path = join(await getDatabasesPath(), 'shopkeeper_pro.db');
+    await _db?.close();
+    _db = null;
+    await deleteDatabase(path);
   }
 
   Future<void> _createSchema(Database db) async {
@@ -35,6 +65,7 @@ class DBService {
     await db.execute('CREATE TABLE supplier_order_items (id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT NOT NULL, productName TEXT NOT NULL, requiredQuantity INTEGER NOT NULL, estimatedPrice REAL NOT NULL, FOREIGN KEY (orderId) REFERENCES supplier_orders(id) ON DELETE CASCADE)');
     await db.execute('CREATE TABLE daily_sales (id TEXT PRIMARY KEY, date TEXT NOT NULL, productName TEXT NOT NULL, costPrice REAL NOT NULL, salePrice REAL NOT NULL)');
     await db.execute('CREATE TABLE expenses (id TEXT PRIMARY KEY, date TEXT NOT NULL, label TEXT NOT NULL, amount REAL NOT NULL)');
-    await db.execute('CREATE TABLE sync_queue (id TEXT PRIMARY KEY, operation TEXT NOT NULL, tableName TEXT NOT NULL, documentId TEXT NOT NULL, data TEXT NOT NULL, timestamp INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0)');
+    await db.execute('CREATE TABLE sync_queue (id TEXT PRIMARY KEY, operation TEXT NOT NULL, tableName TEXT NOT NULL, documentId TEXT NOT NULL, data TEXT NOT NULL, timestamp INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, nextRetryAt INTEGER, lastError TEXT)');
+    await db.execute('CREATE TABLE sync_metadata (tableName TEXT NOT NULL, documentId TEXT NOT NULL, updatedAt INTEGER NOT NULL, PRIMARY KEY (tableName, documentId))');
   }
 }

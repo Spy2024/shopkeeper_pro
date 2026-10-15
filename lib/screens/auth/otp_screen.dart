@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/sync_provider.dart';
 import '../profile/shop_profile_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
-  /// Only present because this build has no real SMS backend wired up yet —
-  /// see AuthService docstring. Remove this param once a provider is connected.
-  final String demoOtp;
-
-  const OtpScreen({super.key, required this.phoneNumber, required this.demoOtp});
+  const OtpScreen({super.key, required this.phoneNumber});
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -18,6 +15,13 @@ class OtpScreen extends StatefulWidget {
 class _OtpScreenState extends State<OtpScreen> {
   final _otpController = TextEditingController();
   String? _error;
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _otpController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,19 +35,6 @@ class _OtpScreenState extends State<OtpScreen> {
           children: [
             Text('Enter the 6-digit code sent to ${widget.phoneNumber}',
                 style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.amber.shade200),
-              ),
-              child: Text(
-                'Demo mode — no SMS provider connected yet. Your code: ${widget.demoOtp}',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
             const SizedBox(height: 24),
             TextField(
               controller: _otpController,
@@ -51,27 +42,51 @@ class _OtpScreenState extends State<OtpScreen> {
               maxLength: 6,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 24, letterSpacing: 8),
-              decoration: InputDecoration(
-                counterText: '',
-                errorText: _error,
-              ),
+              decoration: InputDecoration(counterText: '', errorText: _error),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () async {
-                final ok = await auth.confirmOtp(widget.phoneNumber, _otpController.text.trim());
-                if (!context.mounted) return;
-                if (ok) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ShopProfileScreen(isFirstSetup: true)),
-                    (route) => false,
-                  );
-                } else {
-                  setState(() => _error = 'Incorrect code. Try again.');
-                }
-              },
-              child: const Text('Verify & Continue'),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _loading
+                    ? null
+                    : () async {
+                        final otp = _otpController.text.trim();
+                        if (otp.length != 6) {
+                          setState(() => _error = 'Enter a valid 6-digit code.');
+                          return;
+                        }
+                        setState(() {
+                          _loading = true;
+                          _error = null;
+                        });
+                        try {
+                          final ok = await auth.confirmOtp(otp);
+                          if (!context.mounted) return;
+                          if (!ok || auth.userUid == null) {
+                            setState(() => _error = 'Incorrect or expired code.');
+                            return;
+                          }
+
+                          await context.read<SyncProvider>().init(auth.userUid!);
+                          if (!context.mounted) return;
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ShopProfileScreen(isFirstSetup: true),
+                            ),
+                            (route) => false,
+                          );
+                        } catch (e) {
+                          if (mounted) setState(() => _error = e.toString());
+                        } finally {
+                          if (mounted) setState(() => _loading = false);
+                        }
+                      },
+                child: _loading
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Verify & Continue'),
+              ),
             ),
           ],
         ),

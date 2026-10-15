@@ -1,30 +1,69 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:shopkeeper_pro/providers/inventory_provider.dart';
+import 'package:shopkeeper_pro/models/product.dart';
+import 'package:shopkeeper_pro/services/db_service.dart';
 
 void main() {
-  group('InventoryProvider Tests', () {
-    test('addProduct should add to inventory', () async {
-      const productName = 'Tea';
-      const stockQuantity = 50;
-      expect(productName, isNotEmpty);
-      expect(stockQuantity, greaterThan(0));
-    });
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
 
-    test('deductStock should reduce quantity', () async {
-      const initialStock = 50;
-      const quantitySold = 2;
-      final remaining = initialStock - quantitySold;
-      expect(remaining, equals(48));
-    });
+  setUp(() async => DBService.instance.resetForTests());
+  tearDown(() async => DBService.instance.resetForTests());
 
-    test('deductStock should not go below 0', () async {
-      const currentStock = 2;
-      const quantitySold = 5;
-      final remaining = (currentStock - quantitySold).clamp(0, 1000);
-      expect(remaining, equals(0));
-    });
+  test('CRUD persists product and preserves low-stock threshold', () async {
+    final inventory = InventoryProvider();
+    await inventory.addProduct(
+      name: 'Tea',
+      category: 'Grocery',
+      stockQuantity: 3,
+      costPrice: 100,
+      sellingPrice: 150,
+      lowStockThreshold: 4,
+    );
 
-    test('lowOrOutOfStock should filter products', () async {
-      expect(true, true);
-    });
+    expect(inventory.products.single.name, 'Tea');
+    expect(inventory.lowOrOutOfStock.single.stockQuantity, 3);
+
+    final product = inventory.products.single;
+    await inventory.updateProduct(
+      Product(
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        stockQuantity: product.stockQuantity,
+        costPrice: product.costPrice,
+        sellingPrice: 160,
+        lowStockThreshold: product.lowStockThreshold,
+      ),
+    );
+
+    expect(inventory.products.single.sellingPrice, 160);
+    expect(inventory.products.single.lowStockThreshold, 4);
+
+    await inventory.deleteProduct(product.id);
+    expect(inventory.products, isEmpty);
+    expect((await (await DBService.instance.database).query('products')), isEmpty);
+  });
+
+  test('deductStock rejects negative result instead of clamping silently', () async {
+    final inventory = InventoryProvider();
+    await inventory.addProduct(
+      name: 'Milk',
+      category: 'Dairy',
+      stockQuantity: 2,
+      costPrice: 60,
+      sellingPrice: 90,
+    );
+
+    await expectLater(
+      inventory.deductStock('Milk', 3),
+      throwsA(isA<StateError>()),
+    );
+    expect(inventory.products.single.stockQuantity, 2);
   });
 }
