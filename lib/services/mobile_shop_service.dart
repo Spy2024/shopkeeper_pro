@@ -380,12 +380,13 @@ class MobileShopService {
     _requireActiveAccount();
     validateNonNegativeMoney({'Payment amount': amount});
     if (amount <= 0) throw ArgumentError('Payment amount must be greater than zero.');
-    const methods = {'cash', 'card', 'bank', 'wallet', 'credit', 'other'};
+    const methods = {'cash', 'card', 'bank', 'wallet', 'other'};
     if (!methods.contains(method)) throw ArgumentError.value(method, 'method', 'Unsupported payment method.');
     final db = await DBService.instance.database;
     final paymentId = _uuid.v4();
     final now = DateTime.now().toIso8601String();
     late Map<String, Object?> payment;
+    Map<String, Object?>? cashRow;
     late Map<String, Object?> updatedJob;
     await db.transaction((txn) async {
       _requireActiveAccount();
@@ -400,6 +401,14 @@ class MobileShopService {
         'reference': reference?.trim(), 'paidAt': now, 'createdAt': now,
       };
       await txn.insert('mobile_repair_payments', payment);
+      if (method == 'cash' && job.branchId != null) {
+        cashRow = {
+          'id': _uuid.v4(), 'branchId': job.branchId, 'type': 'sale',
+          'amount': amount, 'date': now, 'referenceId': paymentId,
+          'note': 'Repair payment for job ${job.jobNumber}',
+        };
+        await txn.insert('branch_cash_transactions', cashRow!);
+      }
       updatedJob = {...Map<String, Object?>.from(rows.single),
         'advancePaid': paid, 'balanceDue': balance, 'updatedAt': now};
       await txn.update('mobile_repair_jobs', {
@@ -407,6 +416,9 @@ class MobileShopService {
       }, where: 'id = ?', whereArgs: [jobId]);
     });
     await _queue(operation: 'create', table: 'mobile_repair_payments', id: paymentId, data: payment);
+    if (cashRow != null) {
+      await _queue(operation: 'create', table: 'branch_cash_transactions', id: cashRow!['id']! as String, data: cashRow!);
+    }
     await _queue(operation: 'update', table: 'mobile_repair_jobs', id: jobId, data: updatedJob);
     return payment;
   }
@@ -493,10 +505,11 @@ class MobileShopService {
     final payments = await db.query('mobile_repair_payments');
     double sumRows(List<Map<String, Object?>> rows, String key) =>
         rows.fold<double>(0, (sum, row) => sum + ((row[key] as num?)?.toDouble() ?? 0));
-    final revenue = sumRows(jobs, 'approvedAmount');
-    final partsCost = sumRows(jobs, 'partsCost');
+    final activeJobs = jobs.where((job) => !['cancelled', 'rejected'].contains(job['status'])).toList(growable: false);
+    final revenue = sumRows(activeJobs, 'approvedAmount');
+    final partsCost = sumRows(activeJobs, 'partsCost');
     final collected = sumRows(payments, 'amount');
-    final outstanding = sumRows(jobs, 'balanceDue');
+    final outstanding = sumRows(activeJobs, 'balanceDue');
     final partsRetail = parts.fold<double>(0, (sum, row) =>
         sum + ((row['unitPrice'] as num?)?.toDouble() ?? 0) * ((row['quantity'] as num?)?.toInt() ?? 0));
     return {
