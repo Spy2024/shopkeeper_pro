@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../models/mobile_device.dart';
 import '../../services/mobile_shop_service.dart';
+import '../../services/db_service.dart';
 import '../../utils/theme.dart';
 
 class MobileShopScreen extends StatefulWidget {
@@ -474,6 +475,230 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
     }
   }
 
+  Future<void> _showRepairPaymentDialog(MobileRepairJob job) async {
+    final amount = TextEditingController();
+    var method = 'cash';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Payment · ${job.jobNumber}'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Remaining balance: ${_currency.format(job.balanceDue)}'),
+            TextField(controller: amount, autofocus: true, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount (Rs.)')),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: method,
+              decoration: const InputDecoration(labelText: 'Payment method'),
+              items: const ['cash', 'card', 'bank', 'wallet', 'credit', 'other']
+                  .map((value) => DropdownMenuItem(value: value, child: Text(value.toUpperCase()))).toList(),
+              onChanged: (value) => setDialogState(() => method = value ?? 'cash'),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await MobileShopService.instance.recordRepairPayment(
+                    jobId: job.id,
+                    amount: double.parse(amount.text.trim()),
+                    method: method,
+                  );
+                  if (!mounted) return;
+                  Navigator.pop(dialogContext);
+                  await _reload();
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+                }
+              },
+              child: const Text('Save payment'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amount.dispose();
+  }
+
+  Future<void> _showRepairPartDialog(MobileRepairJob job) async {
+    final db = await DBService.instance.database;
+    final products = await db.query('products', orderBy: 'name COLLATE NOCASE');
+    if (!mounted) return;
+    if (products.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Add repair parts to inventory first.')));
+      return;
+    }
+    var productId = products.first['id'] as String;
+    final quantity = TextEditingController(text: '1');
+    final price = TextEditingController(text: ((products.first['sellingPrice'] as num?)?.toDouble() ?? 0).toString());
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Use inventory part · ${job.jobNumber}'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            DropdownButtonFormField<String>(
+              initialValue: productId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Inventory part'),
+              items: products.map((row) => DropdownMenuItem<String>(
+                value: row['id'] as String,
+                child: Text('${row['name']} · stock ${row['stockQuantity']}'),
+              )).toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                final selected = products.firstWhere((row) => row['id'] == value);
+                setDialogState(() {
+                  productId = value;
+                  price.text = ((selected['sellingPrice'] as num?)?.toDouble() ?? 0).toString();
+                });
+              },
+            ),
+            TextField(controller: quantity, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantity')),
+            TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Customer price per part (Rs.)')),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await MobileShopService.instance.consumeRepairPart(
+                    jobId: job.id,
+                    productId: productId,
+                    quantity: int.parse(quantity.text.trim()),
+                    unitPrice: double.parse(price.text.trim()),
+                  );
+                  if (!mounted) return;
+                  Navigator.pop(dialogContext);
+                  await _reload();
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+                }
+              },
+              child: const Text('Consume part'),
+            ),
+          ],
+        ),
+      ),
+    );
+    quantity.dispose();
+    price.dispose();
+  }
+
+  Future<void> _showRepairWarrantyDialog(MobileRepairJob job) async {
+    final days = TextEditingController(text: job.warrantyDays > 0 ? job.warrantyDays.toString() : '30');
+    final terms = TextEditingController(text: 'Repair workmanship only');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Issue repair warranty · ${job.jobNumber}'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Job must be marked Delivered first.'),
+          TextField(controller: days, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Warranty days')),
+          TextField(controller: terms, decoration: const InputDecoration(labelText: 'Warranty terms')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await MobileShopService.instance.issueRepairWarranty(
+                  jobId: job.id,
+                  warrantyDays: int.parse(days.text.trim()),
+                  terms: terms.text.trim(),
+                );
+                if (!mounted) return;
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Repair warranty issued.')));
+              } catch (error) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+              }
+            },
+            child: const Text('Issue warranty'),
+          ),
+        ],
+      ),
+    );
+    days.dispose();
+    terms.dispose();
+  }
+
+  Future<void> _showRepairInvoice(MobileRepairJob job) async {
+    try {
+      final details = await MobileShopService.instance.repairInvoiceDetails(job.id);
+      if (!mounted) return;
+      final parts = details['parts'] as List<Map<String, Object?>>;
+      final payments = details['payments'] as List<Map<String, Object?>>;
+      final warranties = details['warranties'] as List<Map<String, Object?>>;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Repair invoice · ${job.jobNumber}'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(job.customerName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                Text('${job.brand ?? ''} ${job.model ?? ''} · IMEI ${job.imei ?? '—'}'),
+                const Divider(),
+                Text('Complaint: ${job.reportedIssue}'),
+                Text('Approved total: ${_currency.format(job.approvedAmount)}'),
+                Text('Parts cost: ${_currency.format(job.partsCost)}'),
+                Text('Paid: ${_currency.format(job.advancePaid)}'),
+                Text('Balance: ${_currency.format(job.balanceDue)}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                const Text('Parts used', style: TextStyle(fontWeight: FontWeight.w800)),
+                if (parts.isEmpty) const Text('No parts consumed yet.'),
+                for (final part in parts) Text('${part['partName']} × ${part['quantity']} · ${_currency.format(((part['unitPrice'] as num?)?.toDouble() ?? 0) * ((part['quantity'] as num?)?.toInt() ?? 0))}'),
+                const SizedBox(height: 8),
+                const Text('Payments', style: TextStyle(fontWeight: FontWeight.w800)),
+                if (payments.isEmpty) const Text('No payments recorded yet.'),
+                for (final payment in payments) Text('${payment['method']} · ${_currency.format((payment['amount'] as num).toDouble())}'),
+                const SizedBox(height: 8),
+                const Text('Warranty', style: TextStyle(fontWeight: FontWeight.w800)),
+                if (warranties.isEmpty) const Text('No warranty issued.'),
+                for (final warranty in warranties) Text('${warranty['status']} · expires ${warranty['expiresAt']}'),
+              ]),
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _showRepairProfitReport() async {
+    try {
+      final report = await MobileShopService.instance.repairProfitReport();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Repair profit summary'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            for (final entry in report.entries)
+              ListTile(
+                dense: true,
+                title: Text(entry.key.replaceAllMapped(RegExp(r'[A-Z]'), (match) => ' ${match.group(0)!.toLowerCase()}').trim()),
+                trailing: Text(_currency.format(entry.value), style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+          ]),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close'))],
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   Widget _buildJobs() {
     final active = _jobs.where((j) => !{'delivered', 'cancelled', 'rejected'}.contains(j.status)).length;
     return RefreshIndicator(
@@ -493,6 +718,14 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
               Text('$active jobs in progress', style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
               const SizedBox(height: 4),
               Text('${_jobs.length} total job cards', style: const TextStyle(color: Colors.white70)),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _showRepairProfitReport,
+                  icon: const Icon(Icons.insights, color: Colors.white),
+                  label: const Text('Repair profit report', style: TextStyle(color: Colors.white)),
+                ),
+              ),
             ]),
           ),
           const SizedBox(height: 8),
@@ -539,6 +772,17 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                       ],
                     ),
                   ]),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 0,
+                    children: [
+                      TextButton.icon(onPressed: () => _showRepairInvoice(job), icon: const Icon(Icons.receipt_long_outlined), label: const Text('Invoice')),
+                      TextButton.icon(onPressed: () => _showRepairPaymentDialog(job), icon: const Icon(Icons.payments_outlined), label: const Text('Payment')),
+                      TextButton.icon(onPressed: () => _showRepairPartDialog(job), icon: const Icon(Icons.build_outlined), label: const Text('Use part')),
+                      TextButton.icon(onPressed: () => _showRepairWarrantyDialog(job), icon: const Icon(Icons.verified_outlined), label: const Text('Warranty')),
+                    ],
+                  ),
                 ]),
               ),
             )),
