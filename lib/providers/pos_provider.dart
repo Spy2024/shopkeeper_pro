@@ -496,23 +496,28 @@ class PosProvider extends ChangeNotifier {
       throw StateError('Select a customer on the original bill before issuing a credit refund.');
     }
 
+    final isMobileDeviceLine = item.mobileDeviceId != null;
+    if (isMobileDeviceLine && (quantity != 1 || item.quantity != 1 || item.mobileImei == null)) {
+      throw StateError('A handset return must reference one exact IMEI from the original bill.');
+    }
     final resolvedProduct = resolveProductForReturn(item, inventory.products);
     if (resolvedProduct == null && item.productId != null) {
       throw StateError('The returned product is no longer in inventory: ${item.productName}');
     }
-    // A bill-only line has no product ID and must never change stock. If a
-    // legacy ID-less line still matches a catalogue product, preserve its stock
-    // restoration behaviour.
-    final isManualLine = resolvedProduct == null;
-    final returnProductId = resolvedProduct?.id ?? manualBillItemReturnKey(bill, item);
+    // A tracked handset is linked by device ID and IMEI, not catalogue stock.
+    final isManualLine = resolvedProduct == null && !isMobileDeviceLine;
+    final returnProductId = resolvedProduct?.id ??
+        (isMobileDeviceLine ? 'mobile:${item.mobileDeviceId}' : manualBillItemReturnKey(bill, item));
     final returnProductName = resolvedProduct?.name ?? item.productName;
-    final soldQuantity = isManualLine
-        ? bill.items.where((candidate) =>
-            candidate.productId == null &&
-            candidate.productName.trim().toLowerCase() == item.productName.trim().toLowerCase() &&
-            candidate.unitPrice == item.unitPrice)
-            .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
-        : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct);
+    final soldQuantity = isMobileDeviceLine
+        ? 1
+        : isManualLine
+            ? bill.items.where((candidate) =>
+                candidate.productId == null && candidate.mobileDeviceId == null &&
+                candidate.productName.trim().toLowerCase() == item.productName.trim().toLowerCase() &&
+                candidate.unitPrice == item.unitPrice)
+                .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
+            : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct);
     final db = await DBService.instance.database;
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
@@ -534,6 +539,7 @@ class PosProvider extends ChangeNotifier {
       'id': returnId,
       'billId': bill.id,
       'productId': returnProductId,
+      'mobileDeviceId': item.mobileDeviceId,
       'productName': returnProductName,
       'unitPrice': item.unitPrice,
       'quantity': quantity,
@@ -588,6 +594,19 @@ class PosProvider extends ChangeNotifier {
         await txn.update('products', {'stockQuantity': newStock},
             where: 'id = ?', whereArgs: [resolvedProduct.id]);
       }
+      if (isMobileDeviceLine) {
+        final deviceRows = await txn.query('mobile_devices',
+          where: 'id = ? AND status = ? AND soldBillId = ? AND imei1 = ?',
+          whereArgs: [item.mobileDeviceId, 'sold', bill.id, item.mobileImei], limit: 1);
+        if (deviceRows.isEmpty) {
+          throw StateError('This handset is not sold on the selected original bill, or it was already returned.');
+        }
+        final changed = await txn.rawUpdate(
+          "UPDATE mobile_devices SET status = 'returned', updatedAt = ? WHERE id = ? AND status = 'sold' AND soldBillId = ? AND imei1 = ?",
+          [returnedAt.toIso8601String(), item.mobileDeviceId, bill.id, item.mobileImei],
+        );
+        if (changed != 1) throw StateError('Handset return conflict; no refund was recorded.');
+      }
       if (bill.branchId != null && resolvedProduct != null) {
         final branchStockChanged = await txn.rawUpdate(
           'UPDATE branch_stock SET quantity = quantity + ?, updatedAt = ? '
@@ -613,6 +632,12 @@ class PosProvider extends ChangeNotifier {
     }
     await _queueSafely(
       operation: 'create', tableName: 'returns', documentId: returnId, data: isManualLine ? {...returnRow, 'isManual': true} : returnRow);
+    if (isMobileDeviceLine) {
+      final deviceRows = await db.query('mobile_devices', where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+      if (deviceRows.isNotEmpty) {
+        await _queueSafely(operation: 'update', tableName: 'mobile_devices', documentId: item.mobileDeviceId!, data: Map<String, dynamic>.from(deviceRows.single));
+      }
+    }
     await _queueSafely(
       operation: 'create', tableName: 'sales', documentId: returnSale.id, data: returnSale.toMap());
     if (cashRefundRow != null) {
