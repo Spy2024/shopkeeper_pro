@@ -179,7 +179,7 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save device: ${e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', '')}')));
                         } finally {
-                          setSheetState(() => saving = false);
+                          if (sheetContext.mounted) setSheetState(() => saving = false);
                         }
                       },
                       icon: saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_outlined),
@@ -287,7 +287,7 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save repair job: ${e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', '')}')));
                         } finally {
-                          setSheetState(() => saving = false);
+                          if (sheetContext.mounted) setSheetState(() => saving = false);
                         }
                       },
                       icon: saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_outlined),
