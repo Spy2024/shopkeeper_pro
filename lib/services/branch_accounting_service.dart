@@ -74,7 +74,7 @@ class BranchAccountingService {
         [cleanProductId, cleanBranchId],
       );
       final allocatedElsewhere = (otherRows.single['allocated'] as num).toInt();
-      final availableForBranch = totalStock - allocatedElsewhere;
+      final availableForBranch = (totalStock - allocatedElsewhere).clamp(0, totalStock).toInt();
       if (quantity > availableForBranch) {
         throw StateError(
           'Only $availableForBranch unit(s) are available to allocate to this branch.',
