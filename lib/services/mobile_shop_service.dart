@@ -176,6 +176,9 @@ class MobileShopService {
   Future<void> updateDeviceStatus(String deviceId, String status) async {
     _requireActiveAccount();
     if (!mobileDeviceStatuses.contains(status)) throw ArgumentError('Invalid device status.');
+    if (status == 'sold' || status == 'returned') {
+      throw StateError('Use the POS sale/return workflow to change a device to sold or returned.');
+    }
     final db = await DBService.instance.database;
     final now = DateTime.now().toIso8601String();
     await db.transaction((txn) async {
