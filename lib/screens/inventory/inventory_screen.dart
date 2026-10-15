@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../providers/inventory_provider.dart';
+import '../../models/business_branch.dart';
 import '../../models/product.dart';
+import '../../providers/branch_provider.dart';
+import '../../providers/inventory_provider.dart';
+import '../../services/branch_accounting_service.dart';
 import '../barcode_scanner_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -30,6 +33,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  Future<void> _openBranchStockDialog() async {
+    final branchesProvider = context.read<BranchProvider>();
+    final inventory = context.read<InventoryProvider>();
+    try {
+      await branchesProvider.load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load branches: $e')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final branches = branchesProvider.branches.where((branch) => branch.isActive).toList();
+    if (branches.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create or activate a branch before allocating stock.')),
+      );
+      return;
+    }
+    if (inventory.products.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a product before allocating branch stock.')),
+      );
+      return;
+    }
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => _BranchStockDialog(
+        branches: branches,
+        products: inventory.products,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
@@ -38,7 +76,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final expiryAlerts = inventory.expiredProducts.length + inventory.expiringSoonProducts.length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Inventory')),
+      appBar: AppBar(
+        title: const Text('Inventory'),
+        actions: [
+          IconButton(
+            tooltip: 'Manage branch stock',
+            onPressed: _openBranchStockDialog,
+            icon: const Icon(Icons.store_mall_directory_outlined),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openProductForm(),
         icon: const Icon(Icons.add),
@@ -289,6 +336,166 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BranchStockDialog extends StatefulWidget {
+  final List<BusinessBranch> branches;
+  final List<Product> products;
+
+  const _BranchStockDialog({
+    required this.branches,
+    required this.products,
+  });
+
+  @override
+  State<_BranchStockDialog> createState() => _BranchStockDialogState();
+}
+
+class _BranchStockDialogState extends State<_BranchStockDialog> {
+  final _quantityController = TextEditingController(text: '0');
+  late String _branchId;
+  late String _productId;
+  bool _loadingStock = false;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _branchId = widget.branches.first.id;
+    _productId = widget.products.first.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadStock());
+  }
+
+  Future<void> _loadStock() async {
+    setState(() {
+      _loadingStock = true;
+      _error = null;
+    });
+    try {
+      final quantity = await BranchAccountingService.instance.branchStock(
+        _branchId,
+        _productId,
+      );
+      if (!mounted) return;
+      _quantityController.text = quantity.toString();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loadingStock = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final quantity = int.tryParse(_quantityController.text.trim());
+    if (quantity == null || quantity < 0) {
+      setState(() => _error = 'Enter a whole-number quantity of zero or more.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await BranchAccountingService.instance.setBranchStock(
+        branchId: _branchId,
+        productId: _productId,
+        quantity: quantity,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final product = widget.products.firstWhere((item) => item.id == _productId);
+    return AlertDialog(
+      title: const Text('Allocate Branch Stock'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _branchId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Branch'),
+              items: widget.branches.map((branch) => DropdownMenuItem<String>(
+                value: branch.id,
+                child: Text('${branch.name} (${branch.code})'),
+              )).toList(),
+              onChanged: _saving ? null : (value) {
+                if (value == null) return;
+                setState(() => _branchId = value);
+                _loadStock();
+              },
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _productId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Product'),
+              items: widget.products.map((item) => DropdownMenuItem<String>(
+                value: item.id,
+                child: Text('${item.name} • total ${item.stockQuantity}'),
+              )).toList(),
+              onChanged: _saving ? null : (value) {
+                if (value == null) return;
+                setState(() => _productId = value);
+                _loadStock();
+              },
+            ),
+            const SizedBox(height: 12),
+            Text('Total inventory: ${product.stockQuantity} units'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _quantityController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Quantity allocated to this branch',
+                helperText: 'Cannot exceed total stock after other branch allocations.',
+                suffixIcon: _loadingStock
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : null,
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving || _loadingStock ? null : _save,
+          child: _saving
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Save Allocation'),
+        ),
+      ],
     );
   }
 }
