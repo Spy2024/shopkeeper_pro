@@ -570,11 +570,11 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                     quantity: int.parse(quantity.text.trim()),
                     unitPrice: double.parse(price.text.trim()),
                   );
-                  if (!mounted) return;
+                  if (!mounted || !dialogContext.mounted) return;
                   Navigator.pop(dialogContext);
                   await _reload();
                 } catch (error) {
-                  if (!mounted) return;
+                  if (!mounted || !context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
                 }
               },
