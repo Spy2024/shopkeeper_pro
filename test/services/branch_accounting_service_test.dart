@@ -85,6 +85,18 @@ void main() {
     expect(await db.query('stock_transfers'), hasLength(1));
   });
 
+  test('branch allocation cannot exceed stock left after other branches', () async {
+    final service = BranchAccountingService.instance;
+    await service.setBranchStock(branchId: 'b1', productId: 'p1', quantity: 15);
+
+    await expectLater(
+      service.setBranchStock(branchId: 'b2', productId: 'p1', quantity: 6),
+      throwsA(isA<StateError>()),
+    );
+    expect(await service.branchStock('b1', 'p1'), 15);
+    expect(await service.branchStock('b2', 'p1'), 0);
+  });
+
   test('split tender rejects allocations below the bill total', () async {
     await expectLater(
       BranchAccountingService.instance.recordPaymentAllocations(
