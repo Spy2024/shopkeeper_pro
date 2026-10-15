@@ -4,9 +4,8 @@ import 'package:uuid/uuid.dart';
 import 'db_service.dart';
 
 /// Transaction-safe primitives for branch stock, cash, customer balances and
-/// split tender. These methods deliberately do not change the legacy global
-/// stock quantity; checkout integration must move to branch-aware stock before
-/// branch stock can be treated as the sole source of truth.
+/// split tender. Global product stock is the total shop quantity; branch_stock
+/// tracks its allocation across branches. Checkout decrements both atomically.
 class BranchAccountingService {
   BranchAccountingService._();
   static final BranchAccountingService instance = BranchAccountingService._();
