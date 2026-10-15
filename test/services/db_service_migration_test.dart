@@ -66,6 +66,9 @@ void main() {
       'mobile_devices',
       'mobile_repair_jobs',
       'mobile_repair_job_parts',
+      'mobile_repair_payments',
+      'mobile_repair_warranties',
+      'mobile_repair_warranty_claims',
     ]));
     final deviceColumns = await db.rawQuery('PRAGMA table_info(mobile_devices)');
     expect(deviceColumns.map((column) => column['name']), containsAll([
