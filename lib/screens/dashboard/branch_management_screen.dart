@@ -41,6 +41,7 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
     final phoneController = TextEditingController(text: branch?.phone ?? '');
     final managerController = TextEditingController(text: branch?.managerName ?? '');
     var isActive = branch?.isActive ?? true;
+    var saving = false;
     String? error;
 
     final saved = await showDialog<bool>(
@@ -94,11 +95,15 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
+              onPressed: saving ? null : () => Navigator.of(dialogContext).pop(false),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () async {
+              onPressed: saving ? null : () async {
+                setDialogState(() {
+                  saving = true;
+                  error = null;
+                });
                 try {
                   await dialogContext.read<BranchProvider>().saveBranch(
                     id: branch?.id,
@@ -112,10 +117,16 @@ class _BranchManagementScreenState extends State<BranchManagementScreen> {
                   if (!dialogContext.mounted) return;
                   Navigator.of(dialogContext).pop(true);
                 } catch (e) {
-                  setDialogState(() => error = e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', ''));
+                  if (!dialogContext.mounted) return;
+                  setDialogState(() {
+                    error = e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', '');
+                    saving = false;
+                  });
                 }
               },
-              child: const Text('Save branch'),
+              child: saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Save branch'),
             ),
           ],
         ),
