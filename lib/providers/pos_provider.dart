@@ -517,7 +517,7 @@ class PosProvider extends ChangeNotifier {
                 candidate.productName.trim().toLowerCase() == item.productName.trim().toLowerCase() &&
                 candidate.unitPrice == item.unitPrice)
                 .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
-            : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct);
+            : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct!);
     final db = await DBService.instance.database;
     var mobileDeviceCost = 0.0;
     if (isMobileDeviceLine) {
