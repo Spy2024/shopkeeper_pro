@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/branch_report_service.dart';
+import 'branch_management_screen.dart';
 
 class BranchReportsScreen extends StatefulWidget {
   const BranchReportsScreen({super.key});
@@ -110,6 +111,13 @@ class _BranchReportsScreenState extends State<BranchReportsScreen> {
       appBar: AppBar(
         title: const Text('Branch Reports'),
         actions: [
+          IconButton(
+            tooltip: 'Manage branches',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BranchManagementScreen()),
+            ),
+            icon: const Icon(Icons.store_mall_directory_outlined),
+          ),
           IconButton(
             tooltip: 'Choose date range',
             onPressed: _pickRange,
