@@ -519,6 +519,17 @@ class PosProvider extends ChangeNotifier {
                 .fold<int>(0, (sum, candidate) => sum + candidate.quantity)
             : soldQuantityForReturnLine(bill: bill, item: item, product: resolvedProduct);
     final db = await DBService.instance.database;
+    var mobileDeviceCost = 0.0;
+    if (isMobileDeviceLine) {
+      final deviceCostRows = await db.query('mobile_devices',
+        columns: ['purchasePrice', 'repairCost'], where: 'id = ? AND soldBillId = ?',
+        whereArgs: [item.mobileDeviceId, bill.id], limit: 1);
+      if (deviceCostRows.isEmpty) {
+        throw StateError('This handset is not linked to the selected original bill.');
+      }
+      mobileDeviceCost = ((deviceCostRows.single['purchasePrice'] as num?)?.toDouble() ?? 0) +
+          ((deviceCostRows.single['repairCost'] as num?)?.toDouble() ?? 0);
+    }
     final refundAmount = bill.refundFor(item, quantity);
     final returnId = _uuid.v4();
     final returnedAt = DateTime.now();
@@ -529,7 +540,7 @@ class PosProvider extends ChangeNotifier {
       billId: bill.id,
       productId: resolvedProduct?.id,
       productName: returnProductName,
-      costPrice: -(resolvedProduct?.costPrice ?? 0),
+      costPrice: -(resolvedProduct?.costPrice ?? mobileDeviceCost),
       salePrice: -item.unitPrice * (1 - discountRatio),
       quantity: quantity,
       source: 'return',
