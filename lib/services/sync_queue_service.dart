@@ -97,6 +97,23 @@ class SyncQueueService {
 
   Future<void> reloadPendingQueue() => _loadPendingQueue();
 
+  /// Schedules queued work only when the active Firebase identity owns the
+  /// active local database. Local/demo mode keeps the durable queue for later.
+  Future<void> scheduleSyncForActiveUser() async {
+    final activeUserId = DBService.instance.activeUserId;
+    if (activeUserId == null || activeUserId.trim().isEmpty || Firebase.apps.isEmpty) return;
+    try {
+      final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+      if (authenticatedUid != activeUserId) return;
+      _scheduledSync?.cancel();
+      _scheduledSync = Timer(const Duration(milliseconds: 500), () {
+        unawaited(syncPendingOperations(activeUserId));
+      });
+    } catch (e) {
+      debugPrint('[SyncQueue] Could not schedule sync; queue remains durable: $e');
+    }
+  }
+
   Future<void> _loadPendingQueue({String? expectedUserId}) async {
     final activeUserId = DBService.instance.activeUserId;
     if (activeUserId == null ||
