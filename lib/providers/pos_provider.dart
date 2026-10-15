@@ -326,8 +326,8 @@ class PosProvider extends ChangeNotifier {
           throw StateError('The selected handset belongs to a different branch.');
         }
         final sold = await txn.rawUpdate(
-          "UPDATE mobile_devices SET status = 'sold', soldBillId = ?, updatedAt = ? WHERE id = ? AND status = 'in_stock' AND imei1 = ?",
-          [bill.id, bill.date.toIso8601String(), device.id, item.mobileImei],
+          "UPDATE mobile_devices SET status = 'sold', soldBillId = ?, soldAt = ?, updatedAt = ? WHERE id = ? AND status = 'in_stock' AND imei1 = ?",
+          [bill.id, bill.date.toIso8601String(), bill.date.toIso8601String(), device.id, item.mobileImei],
         );
         if (sold != 1) throw StateError('Handset sale conflict. No bill was saved; please retry.');
       }
@@ -444,6 +444,12 @@ class PosProvider extends ChangeNotifier {
     }
     await _queueSafely(
       operation: 'create', tableName: 'bills', documentId: bill.id, data: bill.toMap());
+    for (final item in bill.items.where((line) => line.mobileDeviceId != null)) {
+      final deviceRows = await db.query('mobile_devices', where: 'id = ?', whereArgs: [item.mobileDeviceId], limit: 1);
+      if (deviceRows.isNotEmpty) {
+        await _queueSafely(operation: 'update', tableName: 'mobile_devices', documentId: item.mobileDeviceId!, data: Map<String, dynamic>.from(deviceRows.single));
+      }
+    }
     for (var i = 0; i < bill.items.length; i++) {
       await _queueSafely(
         operation: 'create',
