@@ -12,6 +12,8 @@ void main() {
       expect(ids, containsAll([
         'general_retail',
         'wholesale_distribution',
+        'mobile_electronics',
+        'cosmetics',
         'car_showroom',
         'motorcycle_showroom',
         'trucking_fleet',
@@ -44,6 +46,39 @@ void main() {
         expect(type.defaultModules.toSet().length, type.defaultModules.length,
             reason: 'Duplicate default module in ${type.id}');
       }
+    });
+
+    test('mobile shop has the planned new/used/parts/repair module defaults', () {
+      final mobile = BusinessTypes.byId('mobile_electronics');
+      expect(mobile.label, contains('Mobile Shop'));
+      expect(mobile.defaultModules, containsAll([
+        'pos',
+        'inventory',
+        'purchases',
+        'new_devices',
+        'used_device_intake',
+        'imei_tracking',
+        'mobile_accessories',
+        'mobile_parts',
+        'repair_job_cards',
+        'software_services',
+        'device_condition_checklist',
+        'warranty_tracking',
+        'reports',
+      ]));
+    });
+
+    test('cosmetics has inventory, expiry/batch and sales defaults', () {
+      final cosmetics = BusinessTypes.byId('cosmetics');
+      expect(cosmetics.label, contains('Cosmetics'));
+      expect(cosmetics.defaultModules, containsAll([
+        'pos',
+        'inventory',
+        'batch_expiry',
+        'purchases',
+        'customers',
+        'reports',
+      ]));
     });
 
     test('spare-parts types include part catalog and fitment-related modules', () {
