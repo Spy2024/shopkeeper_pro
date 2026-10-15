@@ -68,6 +68,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  Future<void> _openStockTransferDialog() async {
+    final branchesProvider = context.read<BranchProvider>();
+    final inventory = context.read<InventoryProvider>();
+    try {
+      await branchesProvider.load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load branches: $e')),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final branches = branchesProvider.branches.where((branch) => branch.isActive).toList();
+    if (branches.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create or activate at least two branches to transfer stock.')),
+      );
+      return;
+    }
+    if (inventory.products.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a product before transferring stock.')),
+      );
+      return;
+    }
+    await showDialog<bool>(
+      context: context,
+      builder: (_) => _StockTransferDialog(
+        branches: branches,
+        products: inventory.products,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
@@ -83,6 +118,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
             tooltip: 'Manage branch stock',
             onPressed: _openBranchStockDialog,
             icon: const Icon(Icons.store_mall_directory_outlined),
+          ),
+          IconButton(
+            tooltip: 'Transfer stock between branches',
+            onPressed: _openStockTransferDialog,
+            icon: const Icon(Icons.swap_horiz),
           ),
         ],
       ),
@@ -336,6 +376,190 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _StockTransferDialog extends StatefulWidget {
+  final List<BusinessBranch> branches;
+  final List<Product> products;
+
+  const _StockTransferDialog({required this.branches, required this.products});
+
+  @override
+  State<_StockTransferDialog> createState() => _StockTransferDialogState();
+}
+
+class _StockTransferDialogState extends State<_StockTransferDialog> {
+  final _quantityController = TextEditingController(text: '1');
+  final _noteController = TextEditingController();
+  late String _fromBranchId;
+  late String _toBranchId;
+  late String _productId;
+  int _available = 0;
+  bool _loading = false;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fromBranchId = widget.branches.first.id;
+    _toBranchId = widget.branches.firstWhere((b) => b.id != _fromBranchId).id;
+    _productId = widget.products.first.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSourceStock());
+  }
+
+  Future<void> _loadSourceStock() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final available = await BranchAccountingService.instance.branchStock(_fromBranchId, _productId);
+      if (!mounted) return;
+      setState(() {
+        _available = available;
+        _quantityController.text = available > 0 ? '1' : '0';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final quantity = int.tryParse(_quantityController.text.trim());
+    if (quantity == null || quantity <= 0) {
+      setState(() => _error = 'Enter a whole-number quantity greater than zero.');
+      return;
+    }
+    if (quantity > _available) {
+      setState(() => _error = 'Only $_available unit(s) are available in the source branch.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await BranchAccountingService.instance.transferStock(
+        fromBranchId: _fromBranchId,
+        toBranchId: _toBranchId,
+        productId: _productId,
+        quantity: quantity,
+        note: _noteController.text.trim(),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('StateError: ', '').replaceFirst('ArgumentError: ', ''));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Transfer Stock'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _fromBranchId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'From branch'),
+              items: widget.branches.map((b) => DropdownMenuItem<String>(
+                value: b.id,
+                child: Text('${b.name} (${b.code})'),
+              )).toList(),
+              onChanged: _saving ? null : (value) {
+                if (value == null) return;
+                setState(() {
+                  _fromBranchId = value;
+                  if (_toBranchId == value) {
+                    _toBranchId = widget.branches.firstWhere((b) => b.id != value).id;
+                  }
+                });
+                _loadSourceStock();
+              },
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: _toBranchId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'To branch'),
+              items: widget.branches.where((b) => b.id != _fromBranchId).map((b) => DropdownMenuItem<String>(
+                value: b.id,
+                child: Text('${b.name} (${b.code})'),
+              )).toList(),
+              onChanged: _saving ? null : (value) {
+                if (value != null) setState(() => _toBranchId = value);
+              },
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: _productId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Product'),
+              items: widget.products.map((p) => DropdownMenuItem<String>(
+                value: p.id,
+                child: Text('${p.name} • total ${p.stockQuantity}'),
+              )).toList(),
+              onChanged: _saving ? null : (value) {
+                if (value == null) return;
+                setState(() => _productId = value);
+                _loadSourceStock();
+              },
+            ),
+            const SizedBox(height: 8),
+            Text('Available in source: $_available units'),
+            TextField(
+              controller: _quantityController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Quantity to transfer',
+                suffixIcon: _loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : null,
+              ),
+            ),
+            TextField(
+              controller: _noteController,
+              decoration: const InputDecoration(labelText: 'Transfer note (optional)'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _saving || _loading ? null : _save,
+          child: _saving
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Transfer'),
+        ),
+      ],
     );
   }
 }
