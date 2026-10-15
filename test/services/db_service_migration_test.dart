@@ -24,7 +24,7 @@ void main() {
     }
   });
 
-  test('schema v16 upgrades with bill customer ID and return refund method', () async {
+  test('schema v16 upgrades billing fields and creates mobile shop tables', () async {
     final path = p.join(await getDatabasesPath(), 'shopkeeper_pro_$userId.db');
     final oldDb = await openDatabase(
       path,
@@ -51,5 +51,19 @@ void main() {
 
     expect(billColumns.map((column) => column['name']), contains('customerId'));
     expect(returnColumns.map((column) => column['name']), contains('refundMethod'));
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    );
+    final tableNames = tables.map((row) => row['name']).toSet();
+    expect(tableNames, containsAll([
+      'mobile_devices',
+      'mobile_repair_jobs',
+      'mobile_repair_job_parts',
+    ]));
+    final deviceColumns = await db.rawQuery('PRAGMA table_info(mobile_devices)');
+    expect(deviceColumns.map((column) => column['name']), containsAll([
+      'imei1', 'imei2', 'conditionGrade', 'purchasePrice', 'repairCost',
+      'sellingPrice', 'inspectionJson', 'status',
+    ]));
   });
 }
