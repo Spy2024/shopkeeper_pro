@@ -259,6 +259,9 @@ class SyncService {
         'branch_cash_transactions': 'branch_cash_transactions',
         'customer_ledger': 'customer_ledger',
         'payment_allocations': 'payment_allocations',
+        'mobile_devices': 'mobile_devices',
+        'mobile_repair_jobs': 'mobile_repair_jobs',
+        'mobile_repair_job_parts': 'mobile_repair_job_parts',
         'branch_stock': 'branch_stock',
       };
       for (final entry in tablesByCollection.entries) {
@@ -376,6 +379,9 @@ class SyncService {
     }
     await _writeBatch(userId, 'products', await _maps(db, 'products'));
     await _writeBatch(userId, 'branches', await _maps(db, 'branches'));
+    await _writeBatch(userId, 'mobile_devices', await _maps(db, 'mobile_devices'));
+    await _writeBatch(userId, 'mobile_repair_jobs', await _maps(db, 'mobile_repair_jobs'));
+    await _writeBatch(userId, 'mobile_repair_job_parts', await _maps(db, 'mobile_repair_job_parts'));
     await _writeBatch(userId, 'customers', await _maps(db, 'customers'));
     final bills = await _maps(db, 'bills');
     await _writeBatch(userId, 'bills', bills);
@@ -504,11 +510,25 @@ class SyncService {
         await db.insert('branches', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
+      final mobileDevices = await _collection(userId, 'mobile_devices').get();
+      for (final doc in mobileDevices.docs) {
+        if (await _hasPending(userId, db, doc.id, 'mobile_devices')) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('mobile_devices', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
       final customers = await _collection(userId, 'customers').get();
       for (final doc in customers.docs) {
         if (await _hasPending(userId, db, doc.id, 'customers')) continue;
         final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
         await db.insert('customers', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      final mobileRepairJobs = await _collection(userId, 'mobile_repair_jobs').get();
+      for (final doc in mobileRepairJobs.docs) {
+        if (await _hasPending(userId, db, doc.id, 'mobile_repair_jobs')) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+        await db.insert('mobile_repair_jobs', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
       final suppliers = await _collection(userId, 'suppliers').get();
@@ -556,7 +576,7 @@ class SyncService {
         await db.insert('branch_stock', data, conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      for (final collection in ['stock_transfers', 'branch_cash_transactions', 'customer_ledger', 'payment_allocations']) {
+      for (final collection in ['mobile_repair_job_parts', 'stock_transfers', 'branch_cash_transactions', 'customer_ledger', 'payment_allocations']) {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(userId, db, doc.id, collection)) continue;
