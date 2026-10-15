@@ -3,6 +3,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:shopkeeper_pro/services/branch_accounting_service.dart';
 import 'package:shopkeeper_pro/services/db_service.dart';
+import 'package:shopkeeper_pro/providers/branch_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +53,39 @@ void main() {
     if (DBService.instance.activeUserId == userId) {
       await DBService.instance.deleteActiveUserDatabase(userId);
     }
+  });
+
+  test('main branch cannot be deactivated until another branch becomes main', () async {
+    final provider = BranchProvider();
+    await provider.load();
+
+    await expectLater(
+      provider.saveBranch(
+        id: 'b1',
+        name: 'Main',
+        code: 'MAIN',
+        isActive: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    await provider.setMainBranch('b2');
+    await provider.saveBranch(
+      id: 'b1',
+      name: 'Main',
+      code: 'MAIN',
+      isActive: false,
+    );
+    expect(provider.branches.firstWhere((branch) => branch.id == 'b1').isActive, isFalse);
+  });
+
+  test('branch with stock history cannot be deleted', () async {
+    final provider = BranchProvider();
+    await provider.setMainBranch('b2');
+
+    await expectLater(provider.deleteBranch('b1'), throwsA(isA<StateError>()));
+    final db = await DBService.instance.database;
+    expect(await db.query('branches', where: 'id = ?', whereArgs: ['b1']), hasLength(1));
   });
 
   test('stock transfer is atomic and conserves branch quantity', () async {
