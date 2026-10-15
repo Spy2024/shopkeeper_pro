@@ -5,6 +5,9 @@ import '../../models/business_branch.dart';
 import '../../models/product.dart';
 import '../../providers/branch_provider.dart';
 import '../../providers/inventory_provider.dart';
+import '../../providers/shop_provider.dart';
+import '../../utils/theme.dart';
+import '../mobile_shop/mobile_shop_screen.dart';
 import '../../services/branch_accounting_service.dart';
 import '../barcode_scanner_screen.dart';
 
@@ -106,6 +109,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   Widget build(BuildContext context) {
     final inventory = context.watch<InventoryProvider>();
+    final isMobileShop = context.watch<ShopProvider>().shop?.businessType == 'mobile_electronics';
     final products = inventory.search(_query);
     final alerts = inventory.lowOrOutOfStock;
     final expiryAlerts = inventory.expiredProducts.length + inventory.expiringSoonProducts.length;
@@ -114,6 +118,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
       appBar: AppBar(
         title: const Text('Inventory'),
         actions: [
+          if (isMobileShop)
+            IconButton(
+              tooltip: 'Mobile devices and repair jobs',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MobileShopScreen()),
+              ),
+              icon: const Icon(Icons.phone_android),
+            ),
           IconButton(
             tooltip: 'Manage branch stock',
             onPressed: _openBranchStockDialog,
@@ -149,7 +161,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: 'Products',
                     value: inventory.products.length.toString(),
                     icon: Icons.inventory_2_outlined,
-                    color: const Color(0xFF0F9D91),
+                    color: AppTheme.teal,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -158,7 +170,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: 'Low stock',
                     value: inventory.lowOrOutOfStock.length.toString(),
                     icon: Icons.warning_amber_rounded,
-                    color: const Color(0xFFD97706),
+                    color: AppTheme.gold,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -167,7 +179,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: 'Units',
                     value: inventory.products.fold<int>(0, (sum, product) => sum + product.stockQuantity).toString(),
                     icon: Icons.stacked_bar_chart,
-                    color: const Color(0xFF315A9B),
+                    color: AppTheme.ink,
                   ),
                 ),
               ],
@@ -339,7 +351,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       child: _ProductValue(
                                         label: 'MARGIN / UNIT',
                                         value: _currency.format(p.margin),
-                                        color: const Color(0xFF0F9D91),
+                                        color: AppTheme.teal,
                                       ),
                                     ),
                                   ],
