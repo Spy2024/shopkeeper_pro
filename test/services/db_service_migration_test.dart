@@ -40,6 +40,11 @@ void main() {
           'productName TEXT NOT NULL, unitPrice REAL NOT NULL DEFAULT 0, quantity INTEGER NOT NULL CHECK(quantity > 0), '
           'refundAmount REAL NOT NULL, date TEXT NOT NULL, reason TEXT NOT NULL, branchId TEXT)',
         );
+        await db.execute(
+          'CREATE TABLE bill_items (id INTEGER PRIMARY KEY AUTOINCREMENT, billId TEXT NOT NULL, '
+          'productId TEXT, productName TEXT NOT NULL, quantity INTEGER NOT NULL, '
+          'unitPrice REAL NOT NULL, cloudId TEXT)',
+        );
       },
     );
     await oldDb.close();
@@ -50,7 +55,9 @@ void main() {
     final returnColumns = await db.rawQuery('PRAGMA table_info(bill_returns)');
 
     expect(billColumns.map((column) => column['name']), contains('customerId'));
-    expect(returnColumns.map((column) => column['name']), contains('refundMethod'));
+    expect(returnColumns.map((column) => column['name']), containsAll(['refundMethod', 'mobileDeviceId']));
+    final billItemColumns = await db.rawQuery('PRAGMA table_info(bill_items)');
+    expect(billItemColumns.map((column) => column['name']), containsAll(['mobileDeviceId', 'mobileImei']));
     final tables = await db.rawQuery(
       "SELECT name FROM sqlite_master WHERE type = 'table'",
     );
@@ -63,7 +70,7 @@ void main() {
     final deviceColumns = await db.rawQuery('PRAGMA table_info(mobile_devices)');
     expect(deviceColumns.map((column) => column['name']), containsAll([
       'imei1', 'imei2', 'conditionGrade', 'purchasePrice', 'repairCost',
-      'sellingPrice', 'inspectionJson', 'status',
+      'sellingPrice', 'inspectionJson', 'status', 'soldBillId',
     ]));
   });
 }
