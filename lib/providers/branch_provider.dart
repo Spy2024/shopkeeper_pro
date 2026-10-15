@@ -52,6 +52,11 @@ class BranchProvider extends ChangeNotifier {
     final existing = id == null
         ? <Map<String, Object?>>[]
         : await db.query('branches', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (existing.isNotEmpty &&
+        (existing.first['isMain'] as num?)?.toInt() == 1 &&
+        !isActive) {
+      throw StateError('Set another active branch as main before deactivating this branch.');
+    }
     final branchCount = Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM branches'),
         ) ??
@@ -83,8 +88,11 @@ class BranchProvider extends ChangeNotifier {
   Future<void> setMainBranch(String id) async {
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
-      final rows = await txn.query('branches', columns: ['id'], where: 'id = ?', whereArgs: [id], limit: 1);
+      final rows = await txn.query('branches', columns: ['id', 'isActive'], where: 'id = ?', whereArgs: [id], limit: 1);
       if (rows.isEmpty) throw StateError('Branch was not found.');
+      if ((rows.first['isActive'] as num?)?.toInt() != 1) {
+        throw StateError('An inactive branch cannot be set as the main branch.');
+      }
       await txn.update('branches', {'isMain': 0});
       await txn.update('branches', {'isMain': 1}, where: 'id = ?', whereArgs: [id]);
     });
@@ -97,6 +105,30 @@ class BranchProvider extends ChangeNotifier {
     if (rows.isEmpty) return;
     if ((rows.first['isMain'] as num?)?.toInt() == 1) {
       throw StateError('Set another branch as main before deleting this branch.');
+    }
+    final references = <String, String>{
+      'branch_stock': 'branchId = ?',
+      'branch_cash_transactions': 'branchId = ?',
+      'bills': 'branchId = ?',
+      'daily_sales': 'branchId = ?',
+      'expenses': 'branchId = ?',
+      'supplier_orders': 'branchId = ?',
+    };
+    for (final entry in references.entries) {
+      final countRows = await db.rawQuery(
+        'SELECT COUNT(*) AS count FROM ${entry.key} WHERE ${entry.value}',
+        [id],
+      );
+      if (((countRows.first['count'] as num?)?.toInt() ?? 0) > 0) {
+        throw StateError('This branch has historical records; deactivate it instead of deleting it.');
+      }
+    }
+    final transferRows = await db.rawQuery(
+      'SELECT COUNT(*) AS count FROM stock_transfers WHERE fromBranchId = ? OR toBranchId = ?',
+      [id, id],
+    );
+    if (((transferRows.first['count'] as num?)?.toInt() ?? 0) > 0) {
+      throw StateError('This branch has stock-transfer history; deactivate it instead of deleting it.');
     }
     await db.delete('branches', where: 'id = ?', whereArgs: [id]);
     await load();
