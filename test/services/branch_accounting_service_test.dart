@@ -153,6 +153,19 @@ void main() {
     expect(await db.query('payment_allocations'), isEmpty);
   });
 
+  test('split tender rejects a caller total that differs from the persisted bill', () async {
+    await expectLater(
+      BranchAccountingService.instance.recordPaymentAllocations(
+        billId: 'bill-1',
+        billTotal: 90,
+        allocations: const [PaymentAllocationInput(method: 'cash', amount: 90)],
+      ),
+      throwsA(isA<StateError>()),
+    );
+    final db = await DBService.instance.database;
+    expect(await db.query('payment_allocations'), isEmpty);
+  });
+
   test('split tender saves allocations that exactly equal the bill total', () async {
     await BranchAccountingService.instance.recordPaymentAllocations(
       billId: 'bill-1',
