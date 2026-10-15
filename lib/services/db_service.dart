@@ -305,7 +305,11 @@ class DBService {
           await _createMobileShopTables(db);
         }
         if (oldVersion < 20) {
-          await db.execute('ALTER TABLE mobile_devices ADD COLUMN soldBillId TEXT');
+          // v19 databases already have mobile_devices; older schemas create
+          // that table in the v19 migration using the current column set.
+          if (oldVersion >= 19) {
+            await db.execute('ALTER TABLE mobile_devices ADD COLUMN soldBillId TEXT');
+          }
           await db.execute('ALTER TABLE bill_items ADD COLUMN mobileDeviceId TEXT');
           await db.execute('ALTER TABLE bill_items ADD COLUMN mobileImei TEXT');
           await db.execute('ALTER TABLE bill_returns ADD COLUMN mobileDeviceId TEXT');
