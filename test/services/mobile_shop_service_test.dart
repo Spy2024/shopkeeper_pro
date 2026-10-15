@@ -80,19 +80,20 @@ void main() {
     );
   });
 
-  test('device status update cannot silently put a sold phone back in stock', () async {
+  test('device cannot be marked sold without a POS bill link', () async {
     final device = await MobileShopService.instance.createDevice(
       deviceType: 'new',
       brand: 'Xiaomi',
       model: 'Redmi Note',
       imei1: '351234567890124',
     );
-    await MobileShopService.instance.updateDeviceStatus(device.id, 'sold');
 
     await expectLater(
-      MobileShopService.instance.updateDeviceStatus(device.id, 'in_stock'),
+      MobileShopService.instance.updateDeviceStatus(device.id, 'sold'),
       throwsA(isA<StateError>()),
     );
+    final saved = await MobileShopService.instance.listDevices(search: device.imei1);
+    expect(saved.single.status, 'in_stock');
   });
 
   test('repair jobs require customer consent before work starts', () async {
