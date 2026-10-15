@@ -306,6 +306,196 @@ class MobileShopService {
     return rows.map((row) => MobileRepairJob.fromMap(row)).toList(growable: false);
   }
 
+  /// Consumes a repair part from normal inventory and records the job usage
+  /// in one SQLite transaction. Cost and customer charge are stored separately.
+  Future<Map<String, Object?>> consumeRepairPart({
+    required String jobId,
+    required String productId,
+    required int quantity,
+    double? unitPrice,
+  }) async {
+    _requireActiveAccount();
+    if (quantity <= 0) throw ArgumentError('Part quantity must be greater than zero.');
+    final db = await DBService.instance.database;
+    final partId = _uuid.v4();
+    final now = DateTime.now().toIso8601String();
+    late Map<String, Object?> partRow;
+    late Map<String, Object?> productRow;
+    late Map<String, Object?> jobRow;
+    await db.transaction((txn) async {
+      _requireActiveAccount();
+      final jobs = await txn.query('mobile_repair_jobs', where: 'id = ?', whereArgs: [jobId], limit: 1);
+      if (jobs.isEmpty) throw StateError('Repair job not found.');
+      final job = MobileRepairJob.fromMap(jobs.single);
+      if (['delivered', 'cancelled', 'rejected'].contains(job.status)) {
+        throw StateError('Parts cannot be consumed for a closed repair job.');
+      }
+      final products = await txn.query('products', where: 'id = ?', whereArgs: [productId], limit: 1);
+      if (products.isEmpty) throw StateError('Selected repair part is not in inventory.');
+      final product = Map<String, Object?>.from(products.single);
+      final stock = (product['stockQuantity'] as num).toInt();
+      if (stock < quantity) throw StateError('Insufficient stock for repair part ${product['name']}.');
+      final cost = (product['costPrice'] as num?)?.toDouble() ?? 0;
+      final price = unitPrice ?? ((product['sellingPrice'] as num?)?.toDouble() ?? cost);
+      validateNonNegativeMoney({'Part cost': cost, 'Part charge': price});
+      if (job.branchId != null) {
+        final branchRows = await txn.rawUpdate(
+          'UPDATE branch_stock SET quantity = quantity - ?, updatedAt = ? WHERE branchId = ? AND productId = ? AND quantity >= ?',
+          [quantity, now, job.branchId, productId, quantity],
+        );
+        if (branchRows != 1) throw StateError('Insufficient stock at the repair job branch.');
+      }
+      final changed = await txn.rawUpdate(
+        'UPDATE products SET stockQuantity = stockQuantity - ? WHERE id = ? AND stockQuantity >= ?',
+        [quantity, productId, quantity],
+      );
+      if (changed != 1) throw StateError('Inventory changed during repair part issue. Retry.');
+      partRow = {
+        'id': partId, 'jobId': jobId, 'productId': productId,
+        'partName': product['name']?.toString() ?? 'Repair part',
+        'quantity': quantity, 'unitCost': cost, 'unitPrice': price, 'createdAt': now,
+      };
+      await txn.insert('mobile_repair_job_parts', partRow);
+      await txn.update('mobile_repair_jobs', {
+        'partsCost': job.partsCost + cost * quantity,
+        'updatedAt': now,
+      }, where: 'id = ?', whereArgs: [jobId]);
+      productRow = {...product, 'stockQuantity': stock - quantity};
+      jobRow = {...Map<String, Object?>.from(jobs.single),
+        'partsCost': job.partsCost + cost * quantity, 'updatedAt': now};
+    });
+    await _queue(operation: 'create', table: 'mobile_repair_job_parts', id: partId, data: partRow);
+    await _queue(operation: 'update', table: 'products', id: productId, data: productRow);
+    await _queue(operation: 'update', table: 'mobile_repair_jobs', id: jobId, data: jobRow);
+    return partRow;
+  }
+
+  /// Records a repair payment and updates the job's paid/balance amounts atomically.
+  Future<Map<String, Object?>> recordRepairPayment({
+    required String jobId,
+    required double amount,
+    required String method,
+    String? reference,
+  }) async {
+    _requireActiveAccount();
+    validateNonNegativeMoney({'Payment amount': amount});
+    if (amount <= 0) throw ArgumentError('Payment amount must be greater than zero.');
+    const methods = {'cash', 'card', 'bank', 'wallet', 'credit', 'other'};
+    if (!methods.contains(method)) throw ArgumentError.value(method, 'method', 'Unsupported payment method.');
+    final db = await DBService.instance.database;
+    final paymentId = _uuid.v4();
+    final now = DateTime.now().toIso8601String();
+    late Map<String, Object?> payment;
+    late Map<String, Object?> updatedJob;
+    await db.transaction((txn) async {
+      _requireActiveAccount();
+      final rows = await txn.query('mobile_repair_jobs', where: 'id = ?', whereArgs: [jobId], limit: 1);
+      if (rows.isEmpty) throw StateError('Repair job not found.');
+      final job = MobileRepairJob.fromMap(rows.single);
+      if (amount > job.balanceDue + 0.005) throw StateError('Payment exceeds the remaining repair balance.');
+      final paid = job.advancePaid + amount;
+      final balance = (job.approvedAmount - paid).clamp(0.0, double.infinity).toDouble();
+      payment = {
+        'id': paymentId, 'jobId': jobId, 'amount': amount, 'method': method,
+        'reference': reference?.trim(), 'paidAt': now, 'createdAt': now,
+      };
+      await txn.insert('mobile_repair_payments', payment);
+      updatedJob = {...Map<String, Object?>.from(rows.single),
+        'advancePaid': paid, 'balanceDue': balance, 'updatedAt': now};
+      await txn.update('mobile_repair_jobs', {
+        'advancePaid': paid, 'balanceDue': balance, 'updatedAt': now,
+      }, where: 'id = ?', whereArgs: [jobId]);
+    });
+    await _queue(operation: 'create', table: 'mobile_repair_payments', id: paymentId, data: payment);
+    await _queue(operation: 'update', table: 'mobile_repair_jobs', id: jobId, data: updatedJob);
+    return payment;
+  }
+
+  /// Issues a repair warranty only after the job has been delivered.
+  Future<Map<String, Object?>> issueRepairWarranty({
+    required String jobId,
+    required int warrantyDays,
+    String? terms,
+  }) async {
+    _requireActiveAccount();
+    if (warrantyDays <= 0) throw ArgumentError('Warranty days must be greater than zero.');
+    final db = await DBService.instance.database;
+    final rows = await db.query('mobile_repair_jobs', where: 'id = ?', whereArgs: [jobId], limit: 1);
+    if (rows.isEmpty) throw StateError('Repair job not found.');
+    final job = MobileRepairJob.fromMap(rows.single);
+    if (job.status != 'delivered') throw StateError('Deliver the repair job before issuing its warranty.');
+    final startsAt = job.deliveredAt ?? DateTime.now();
+    final expiresAt = startsAt.add(Duration(days: warrantyDays));
+    final warranty = <String, Object?>{
+      'id': _uuid.v4(), 'jobId': job.id, 'deviceId': job.deviceId,
+      'customerId': job.customerId, 'customerName': job.customerName,
+      'warrantyType': 'repair', 'startsAt': startsAt.toIso8601String(),
+      'expiresAt': expiresAt.toIso8601String(), 'terms': terms?.trim(),
+      'status': 'active', 'createdAt': DateTime.now().toIso8601String(),
+    };
+    await db.insert('mobile_repair_warranties', warranty);
+    await _queue(operation: 'create', table: 'mobile_repair_warranties', id: warranty['id']! as String, data: warranty);
+    return warranty;
+  }
+
+  Future<Map<String, Object?>> createWarrantyClaim({
+    required String warrantyId,
+    required String description,
+  }) async {
+    _requireActiveAccount();
+    if (description.trim().isEmpty) throw ArgumentError('Describe the warranty issue.');
+    final db = await DBService.instance.database;
+    final now = DateTime.now();
+    late Map<String, Object?> claim;
+    await db.transaction((txn) async {
+      final rows = await txn.query('mobile_repair_warranties', where: 'id = ?', whereArgs: [warrantyId], limit: 1);
+      if (rows.isEmpty) throw StateError('Warranty record not found.');
+      final warranty = rows.single;
+      final expiry = DateTime.tryParse(warranty['expiresAt']?.toString() ?? '');
+      if (warranty['status'] != 'active' || expiry == null || expiry.isBefore(now)) {
+        throw StateError('This warranty is expired or not active.');
+      }
+      claim = {
+        'id': _uuid.v4(), 'warrantyId': warrantyId, 'description': description.trim(),
+        'status': 'open', 'resolution': null, 'createdAt': now.toIso8601String(),
+        'resolvedAt': null,
+      };
+      await txn.insert('mobile_repair_warranty_claims', claim);
+      await txn.update('mobile_repair_warranties', {'status': 'claimed'},
+        where: 'id = ?', whereArgs: [warrantyId]);
+    });
+    await _queue(operation: 'create', table: 'mobile_repair_warranty_claims', id: claim['id']! as String, data: claim);
+    await _queue(operation: 'update', table: 'mobile_repair_warranties', id: warrantyId, data: {
+      ...(await db.query('mobile_repair_warranties', where: 'id = ?', whereArgs: [warrantyId], limit: 1)).single,
+    });
+    return claim;
+  }
+
+  /// Financial snapshot based on approved job revenue, recorded part cost and payments.
+  Future<Map<String, double>> repairProfitReport() async {
+    _requireActiveAccount();
+    final db = await DBService.instance.database;
+    final jobs = await db.query('mobile_repair_jobs');
+    final parts = await db.query('mobile_repair_job_parts');
+    final payments = await db.query('mobile_repair_payments');
+    double sumRows(List<Map<String, Object?>> rows, String key) =>
+        rows.fold<double>(0, (sum, row) => sum + ((row[key] as num?)?.toDouble() ?? 0));
+    final revenue = sumRows(jobs, 'approvedAmount');
+    final partsCost = sumRows(jobs, 'partsCost');
+    final collected = sumRows(payments, 'amount');
+    final outstanding = sumRows(jobs, 'balanceDue');
+    final partsRetail = parts.fold<double>(0, (sum, row) =>
+        sum + ((row['unitPrice'] as num?)?.toDouble() ?? 0) * ((row['quantity'] as num?)?.toInt() ?? 0));
+    return {
+      'approvedRevenue': revenue,
+      'partsCost': partsCost,
+      'partsBilled': partsRetail,
+      'estimatedGrossProfitBeforeLabourOverhead': revenue - partsCost,
+      'paymentsCollected': collected,
+      'outstandingBalance': outstanding,
+    };
+  }
+
   Future<void> updateRepairJobStatus(String jobId, String status, {String? diagnosis}) async {
     _requireActiveAccount();
     if (!mobileRepairStatuses.contains(status)) throw ArgumentError('Invalid repair status.');
