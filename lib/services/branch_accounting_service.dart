@@ -41,19 +41,53 @@ class BranchAccountingService {
     required int quantity,
     String note = 'Stock adjustment',
   }) async {
-    if (branchId.trim().isEmpty || productId.trim().isEmpty) {
+    final cleanBranchId = branchId.trim();
+    final cleanProductId = productId.trim();
+    if (cleanBranchId.isEmpty || cleanProductId.isEmpty) {
       throw ArgumentError('Branch and product are required.');
     }
     if (quantity < 0) throw ArgumentError.value(quantity, 'quantity', 'Cannot be negative.');
     final db = await _database;
     await db.transaction((txn) async {
+      final branchRows = await txn.query(
+        'branches',
+        columns: ['id', 'isActive'],
+        where: 'id = ?',
+        whereArgs: [cleanBranchId],
+        limit: 1,
+      );
+      if (branchRows.isEmpty || (branchRows.single['isActive'] as num?)?.toInt() != 1) {
+        throw StateError('Selected branch does not exist or is inactive.');
+      }
+      final productRows = await txn.query(
+        'products',
+        columns: ['stockQuantity'],
+        where: 'id = ?',
+        whereArgs: [cleanProductId],
+        limit: 1,
+      );
+      if (productRows.isEmpty) throw StateError('Selected product does not exist.');
+      final totalStock = (productRows.single['stockQuantity'] as num).toInt();
+      final otherRows = await txn.rawQuery(
+        'SELECT COALESCE(SUM(quantity), 0) AS allocated FROM branch_stock '
+        'WHERE productId = ? AND branchId != ?',
+        [cleanProductId, cleanBranchId],
+      );
+      final allocatedElsewhere = (otherRows.single['allocated'] as num).toInt();
+      final availableForBranch = totalStock - allocatedElsewhere;
+      if (quantity > availableForBranch) {
+        throw StateError(
+          'Only $availableForBranch unit(s) are available to allocate to this branch.',
+        );
+      }
       await txn.insert('branch_stock', {
-        'branchId': branchId,
-        'productId': productId,
+        'branchId': cleanBranchId,
+        'productId': cleanProductId,
         'quantity': quantity,
         'updatedAt': DateTime.now().toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
-      // Adjustment is reflected in branch_stock. It is not a transfer between branches.
+      // Global stock is the total across all branches plus unallocated stock.
+      // Allocation changes only the branch breakdown, not total inventory.
     });
   }
 
