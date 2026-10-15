@@ -42,6 +42,7 @@ class Bill {
   final String id;
   final DateTime date;
   final String? customerName;
+  final String? customerId;
   final String? customerAddress;
   final String? customerPhone;
   final String? customerEmail;
@@ -54,6 +55,7 @@ class Bill {
     required this.id,
     required this.date,
     this.customerName,
+    this.customerId,
     this.customerAddress,
     this.customerPhone,
     this.customerEmail,
@@ -98,6 +100,7 @@ class Bill {
         'id': id,
         'date': date.toIso8601String(),
         'customerName': customerName,
+        'customerId': customerId,
         'customerAddress': customerAddress,
         'customerPhone': customerPhone,
         'customerEmail': customerEmail,
