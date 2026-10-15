@@ -47,6 +47,13 @@ void main() {
       'taxPercent': 0.0,
       'branchId': 'b1',
     });
+    await db.insert('bill_items', {
+      'billId': 'bill-1',
+      'productId': 'p1',
+      'productName': 'Tea',
+      'quantity': 1,
+      'unitPrice': 100.0,
+    });
   });
 
   tearDown(() async {
