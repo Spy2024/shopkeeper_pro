@@ -21,7 +21,7 @@ class WebDashboardScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Sign out',
-            onPressed: () async => FirebaseAuth.instance.signOut(),
+            onPressed: () async => context.read<AuthProvider>().logout(),
             icon: const Icon(Icons.logout),
           ),
         ],
