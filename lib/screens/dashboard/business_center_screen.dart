@@ -203,7 +203,7 @@ class _BusinessCenterScreenState extends State<BusinessCenterScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(selected.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.ink)),
-                                Text('Recommended modules', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                                const Text('Recommended modules', style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                               ],
                             ),
                           ),
