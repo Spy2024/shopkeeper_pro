@@ -18,7 +18,6 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
-  final _searchCtrl = TextEditingController();
 
   void _openAddItemSheet() {
     final inventory = context.read<InventoryProvider>();
