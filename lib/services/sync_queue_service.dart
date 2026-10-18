@@ -187,13 +187,9 @@ class SyncQueueService {
 
   /// Clear failed operations after manual review
   Future<void> clearFailedOperations() async {
-    try {
-      final db = await DBService.instance.database;
-      // In production, mark failed ops differently for manual review
-      debugPrint('[SyncQueue] Cleared failed operations');
-    } catch (e) {
-      debugPrint('[SyncQueue] Error clearing failed ops: $e');
-    }
+    // Failure details are not persisted in the current schema, so clearing
+    // would risk deleting valid pending writes. Keep them until reviewed.
+    debugPrint('[SyncQueue] Failed-operation deletion is disabled to protect pending writes.');
   }
 }
 
