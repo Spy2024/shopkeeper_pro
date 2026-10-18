@@ -25,7 +25,11 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<PosProvider>().loadHistory();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    await context.read<PosProvider>().loadHistory();
   }
 
   @override
@@ -230,9 +234,37 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             ),
           ),
           Expanded(
-            child: results.isEmpty
-                ? const Center(child: Text('No matching bills'))
-                : ListView.builder(
+            child: pos.isLoadingHistory
+                ? const Center(child: CircularProgressIndicator())
+                : pos.historyLoadError != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.error_outline, size: 40),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Bill history could not be loaded',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(pos.historyLoadError!, textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                onPressed: _loadHistory,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Try again'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : results.isEmpty
+                        ? const Center(child: Text('No saved bills found'))
+                        : ListView.builder(
                     itemCount: results.length,
                     itemBuilder: (context, i) {
                       final bill = results[i];
