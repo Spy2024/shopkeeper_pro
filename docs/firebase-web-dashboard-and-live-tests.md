@@ -31,7 +31,7 @@ flutter build web --release <the --dart-define values above>
 firebase deploy --only firestore:rules,hosting
 ```
 
-Review the project and rules in the Firebase Console before deploying. Hosting is not considered complete until the deployed HTTPS URL is tested.
+Review the project and rules in the Firebase Console before deploying. Enable Email/Password under Firebase Authentication for the web dashboard. The cargo tracking endpoint is deployed as a Cloud Function and may require the Firebase project to be on the Blaze billing plan; set billing alerts and review estimated costs before deployment. Hosting is not considered complete until the deployed HTTPS URL and /api/track endpoint are tested.
 
 ## Emulator setup and security tests
 Install test-only packages in a separate test workspace:
