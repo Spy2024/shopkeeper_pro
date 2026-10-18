@@ -109,13 +109,14 @@ class _StartupGateState extends State<_StartupGate> {
     if (_initializedUserId == userId || _initializingUserId == userId) return;
     _initializingUserId = userId;
     try {
+      await context.read<SyncProvider>().init(userId);
+      // Sync/pull first so cloud-restored rows are reflected in provider state.
       await context.read<ShopProvider>().load();
       await context.read<InventoryProvider>().load();
       await context.read<PosProvider>().loadHistory();
       await context.read<SupplierProvider>().load();
       await context.read<SalesProvider>().load();
       await context.read<FinanceProvider>().load();
-      await context.read<SyncProvider>().init(userId);
       _initializedUserId = userId;
     } catch (error, stackTrace) {
       debugPrint('[StartupGate] Account initialization failed: $error\\n$stackTrace');
