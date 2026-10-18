@@ -194,31 +194,44 @@ class SyncQueueService {
 /// Represents a single sync operation
 class SyncOperation {
   final String id;
-  final String operation; // 'create', 'update', 'delete'
+  final String operation;
   final String tableName;
   final String documentId;
   final Map<String, dynamic> data;
   final int timestamp;
+  final int attempts;
+  final int? nextRetryAt;
+  final String? lastError;
 
-  SyncOperation({
+  const SyncOperation({
     required this.id,
     required this.operation,
     required this.tableName,
     required this.documentId,
     required this.data,
     required this.timestamp,
+    this.attempts = 0,
+    this.nextRetryAt,
+    this.lastError,
   });
 
   String get dataAsJson => jsonEncode(data);
 
   factory SyncOperation.fromMap(Map<String, dynamic> map) {
+    final rawData = map['data'];
+    final decodedData = rawData is String
+        ? jsonDecode(rawData)
+        : rawData;
     return SyncOperation(
       id: map['id'] as String,
       operation: map['operation'] as String,
       tableName: map['tableName'] as String,
       documentId: map['documentId'] as String,
-      data: Map<String, dynamic>.from(jsonDecode(map['data'] as String) as Map),
-      timestamp: map['timestamp'] as int,
+      data: Map<String, dynamic>.from(decodedData as Map),
+      timestamp: (map['timestamp'] as num).toInt(),
+      attempts: (map['attempts'] as num?)?.toInt() ?? 0,
+      nextRetryAt: (map['nextRetryAt'] as num?)?.toInt(),
+      lastError: map['lastError'] as String?,
     );
   }
 }
