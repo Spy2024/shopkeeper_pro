@@ -83,8 +83,12 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     );
     controller.dispose();
     if (amount == null) return;
-    await _ops.recordSchoolFeePayment(feeId: fee['id']! as String, amount: amount);
-    await _load();
+    try {
+      await _ops.recordSchoolFeePayment(feeId: fee['id']! as String, amount: amount);
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not record payment: $e')));
+    }
   }
 
   Future<void> _chooseStatus(String title, List<String> statuses, Future<void> Function(String) save) async {
