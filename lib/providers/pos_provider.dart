@@ -57,7 +57,7 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Bill> checkout(InventoryProvider inventory, {List<PaymentLine>? payments}) async {
+  Future<Bill> checkout(InventoryProvider inventory, {List<PaymentLine>? payments, String? branchId}) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
 
     // Aggregate duplicate cart lines so a product cannot be oversold by
@@ -93,6 +93,7 @@ class PosProvider extends ChangeNotifier {
       id: _uuid.v4(),
       date: DateTime.now(),
       customerName: customerName,
+      branchId: branchId,
       items: List.of(cart),
       discount: discount,
       taxPercent: taxPercent,
@@ -103,18 +104,35 @@ class PosProvider extends ChangeNotifier {
       // bill, bill items, and daily sales to avoid partial checkouts.
       for (final entry in quantities.entries) {
         final product = productByName[entry.key]!;
-        final rows = await txn.query('products',
-            columns: ['stockQuantity'],
-            where: 'id = ?',
-            whereArgs: [product.id],
-            limit: 1);
-        if (rows.isEmpty) throw StateError('Product no longer exists: ${entry.key}');
-        final stock = (rows.first['stockQuantity'] as num).toInt();
-        if (stock < entry.value) {
-          throw StateError('Insufficient stock for ${entry.key}: available $stock, requested ${entry.value}');
+        if (branchId != null) {
+          final branchRows = await txn.query('branch_stock',
+              columns: ['id', 'quantity'],
+              where: 'branchId = ? AND productId = ?',
+              whereArgs: [branchId, product.id],
+              limit: 1);
+          if (branchRows.isEmpty) {
+            throw StateError('No stock allocated to this branch for ${entry.key}.');
+          }
+          final stock = (branchRows.first['quantity'] as num).toInt();
+          if (stock < entry.value) {
+            throw StateError('Insufficient branch stock for ${entry.key}: available $stock, requested ${entry.value}');
+          }
+          await txn.update('branch_stock', {'quantity': stock - entry.value},
+              where: 'id = ?', whereArgs: [branchRows.first['id']]);
+        } else {
+          final rows = await txn.query('products',
+              columns: ['stockQuantity'],
+              where: 'id = ?',
+              whereArgs: [product.id],
+              limit: 1);
+          if (rows.isEmpty) throw StateError('Product no longer exists: ${entry.key}');
+          final stock = (rows.first['stockQuantity'] as num).toInt();
+          if (stock < entry.value) {
+            throw StateError('Insufficient stock for ${entry.key}: available $stock, requested ${entry.value}');
+          }
+          await txn.update('products', {'stockQuantity': stock - entry.value},
+              where: 'id = ?', whereArgs: [product.id]);
         }
-        await txn.update('products', {'stockQuantity': stock - entry.value},
-            where: 'id = ?', whereArgs: [product.id]);
       }
 
       await txn.insert('bills', bill.toMap());
@@ -154,7 +172,7 @@ class PosProvider extends ChangeNotifier {
     savedBills.insert(0, bill);
     _billItemsCache[bill.id] = bill.items;
     clearCart();
-    await inventory.load();
+    if (branchId == null) await inventory.load();
     return bill;
   }
 
@@ -178,6 +196,7 @@ class PosProvider extends ChangeNotifier {
           id: billId,
           date: DateTime.parse(row['date'] as String),
           customerName: row['customerName'] as String?,
+          branchId: row['branchId'] as String?,
           items: items,
           discount: (row['discount'] as num?)?.toDouble() ?? 0,
           taxPercent: (row['taxPercent'] as num?)?.toDouble() ?? 0,
