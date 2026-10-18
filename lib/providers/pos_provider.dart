@@ -4,6 +4,7 @@ import '../models/bill.dart';
 import '../models/product.dart';
 import '../models/daily_sale.dart';
 import '../services/db_service.dart';
+import '../services/business_operations_service.dart';
 import 'inventory_provider.dart';
 
 class PosProvider extends ChangeNotifier {
@@ -56,7 +57,7 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Bill> checkout(InventoryProvider inventory) async {
+  Future<Bill> checkout(InventoryProvider inventory, {List<PaymentLine>? payments}) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
 
     // Aggregate duplicate cart lines so a product cannot be oversold by
@@ -75,6 +76,16 @@ class PosProvider extends ChangeNotifier {
       final matches = inventory.products.where((p) => p.name == name);
       if (matches.isEmpty) throw StateError('Product not found: $name');
       productByName[name] = matches.first;
+    }
+
+    if (payments != null && payments.isNotEmpty) {
+      if (payments.any((p) => p.amount <= 0 || p.method.trim().isEmpty)) {
+        throw ArgumentError('Payment methods and amounts must be valid.');
+      }
+      final paid = payments.fold<double>(0, (sum, p) => sum + p.amount);
+      if ((paid - grandTotal).abs() > 0.01) {
+        throw StateError('Payments must equal the bill total.');
+      }
     }
 
     final db = await DBService.instance.database;
@@ -107,6 +118,17 @@ class PosProvider extends ChangeNotifier {
       }
 
       await txn.insert('bills', bill.toMap());
+      if (payments != null) {
+        for (final payment in payments) {
+          await txn.insert('payments', {
+            'id': _uuid.v4(),
+            'billId': bill.id,
+            'method': payment.method.trim(),
+            'amount': payment.amount,
+            'reference': payment.reference,
+          });
+        }
+      }
       for (final item in bill.items) {
         await txn.insert('bill_items', {...item.toMap(), 'billId': bill.id});
         final product = productByName[item.productName]!;
