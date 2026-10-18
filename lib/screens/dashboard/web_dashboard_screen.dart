@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 
 /// Read-only web overview. Firestore rules remain the authorization boundary;
 /// all queries are scoped to the current Firebase UID.
@@ -21,7 +19,7 @@ class WebDashboardScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Sign out',
-            onPressed: () async => context.read<AuthProvider>().logout(),
+            onPressed: () async => FirebaseAuth.instance.signOut(),
             icon: const Icon(Icons.logout),
           ),
         ],
@@ -153,8 +151,8 @@ class _WebSignInScreenState extends State<_WebSignInScreen> {
   Future<void> _signIn() async {
     setState(() { _busy = true; _error = null; });
     try {
-      await context.read<AuthProvider>().signInWithEmailPassword(
-        email: _email.text,
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _email.text.trim(),
         password: _password.text,
       );
     } catch (_) {
