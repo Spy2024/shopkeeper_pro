@@ -582,13 +582,67 @@ class BusinessOperationsService {
     final changed = await (await DBService.instance.database).update('restaurant_order_items', {'kitchenStatus': status}, where: 'id = ?', whereArgs: [orderItemId]);
     if (changed != 1) throw StateError('Restaurant order item not found.');
   }
+  /// Records one or more restaurant tenders atomically. The total must match
+  /// the current saved order total, and a second payment attempt is rejected.
+  Future<void> recordRestaurantPayment({
+    required String orderId,
+    required List<PaymentLine> payments,
+  }) async {
+    if (payments.isEmpty ||
+        payments.any((p) => p.method.trim().isEmpty || p.amount <= 0)) {
+      throw ArgumentError('Each restaurant payment needs a method and positive amount.');
+    }
+    final paid = payments.fold<double>(0, (sum, payment) => sum + payment.amount);
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final orders = await txn.query('restaurant_orders',
+          where: 'id = ?', whereArgs: [orderId], limit: 1);
+      if (orders.isEmpty || orders.first['status'] != 'open') {
+        throw StateError('An open restaurant order is required for payment.');
+      }
+      final total = (orders.first['total'] as num).toDouble();
+      if ((paid - total).abs() > 0.01) {
+        throw StateError('Payment total ($paid) must equal order total ($total).');
+      }
+      final existing = await txn.query('restaurant_order_payments',
+          columns: ['id'], where: 'orderId = ?', whereArgs: [orderId], limit: 1);
+      if (existing.isNotEmpty) {
+        throw StateError('Restaurant order payment has already been recorded.');
+      }
+      for (final payment in payments) {
+        await txn.insert('restaurant_order_payments', {
+          'id': _uuid.v4(),
+          'orderId': orderId,
+          'method': payment.method.trim(),
+          'amount': payment.amount,
+          'reference': payment.reference,
+          'paidAt': DateTime.now().toIso8601String(),
+        });
+      }
+    });
+  }
+
   Future<void> completeRestaurantOrder(String orderId) async {
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
       final rows = await txn.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId], limit: 1);
       if (rows.isEmpty) throw StateError('Restaurant order not found.');
-      final pending = await txn.query('restaurant_order_items', where: 'orderId = ? AND kitchenStatus NOT IN (?, ?)', whereArgs: [orderId,'served','cancelled']);
-      if (pending.isNotEmpty) throw StateError('Kitchen items must be served or cancelled before closing.');
+      final pending = await txn.query('restaurant_order_items',
+          where: 'orderId = ? AND kitchenStatus NOT IN (?, ?)',
+          whereArgs: [orderId, 'served', 'cancelled']);
+      if (pending.isNotEmpty) {
+        throw StateError('Kitchen items must be served or cancelled before closing.');
+      }
+      final total = (rows.first['total'] as num).toDouble();
+      if (total > 0) {
+        final payments = await txn.query('restaurant_order_payments',
+            where: 'orderId = ?', whereArgs: [orderId]);
+        final paid = payments.fold<double>(0, (sum, payment) =>
+            sum + (payment['amount'] as num).toDouble());
+        if ((paid - total).abs() > 0.01) {
+          throw StateError('Restaurant order must be paid in full before closing.');
+        }
+      }
       await txn.update('restaurant_orders', {'status':'completed'}, where:'id = ?', whereArgs:[orderId]);
       final tableId = rows.first['tableId'] as String?; if (tableId != null) await txn.update('restaurant_tables', {'status':'available'}, where:'id = ?', whereArgs:[tableId]);
     });
