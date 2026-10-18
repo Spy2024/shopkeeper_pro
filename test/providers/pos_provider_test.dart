@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:shopkeeper_pro/services/db_service.dart';
+import 'package:shopkeeper_pro/providers/inventory_provider.dart';
 import 'package:shopkeeper_pro/models/bill.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
@@ -289,6 +292,57 @@ void main() {
       );
 
       expect(resolveProductForReturn(catalogueItem, products)?.id, 'tea-new');
+    });
+  });
+
+
+  group('SQLite bill restart persistence', () {
+    late String userId;
+
+    setUpAll(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    });
+
+    setUp(() async {
+      userId = 'bill-restart-${DateTime.now().microsecondsSinceEpoch}';
+      await DBService.instance.clearActiveUser();
+      await DBService.instance.configureForUser(userId);
+    });
+
+    tearDown(() async {
+      if (DBService.instance.activeUserId == userId) {
+        await DBService.instance.deleteActiveUserDatabase(userId);
+      }
+    });
+
+    test('checkout bill and line remain visible after closing and reopening SQLite', () async {
+      final checkoutProvider = PosProvider();
+      checkoutProvider.addItem('Manual persistence test', 1, 125);
+      final savedBill = await checkoutProvider.checkout(InventoryProvider());
+
+      final dbBeforeRestart = await DBService.instance.database;
+      expect(
+        await dbBeforeRestart.query('bills', where: 'id = ?', whereArgs: [savedBill.id]),
+        hasLength(1),
+      );
+      expect(
+        await dbBeforeRestart.query('bill_items', where: 'billId = ?', whereArgs: [savedBill.id]),
+        hasLength(1),
+      );
+
+      // Simulate a process restart by closing the connection and reopening the
+      // same authenticated account's database file.
+      await DBService.instance.clearActiveUser();
+      await DBService.instance.configureForUser(userId);
+
+      final historyProvider = PosProvider();
+      await historyProvider.loadHistory();
+      expect(historyProvider.savedBills, hasLength(1));
+      expect(historyProvider.savedBills.single.id, savedBill.id);
+      expect(historyProvider.savedBills.single.items, hasLength(1));
+      expect(historyProvider.savedBills.single.grandTotal, 125);
     });
   });
 
