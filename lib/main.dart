@@ -102,7 +102,16 @@ class _StartupGateState extends State<_StartupGate> {
 
   Future<void> _bootstrap() async {
     final auth = context.read<AuthProvider>();
-    await auth.checkExistingSession();
+
+    // A release build may be missing Firebase dart-defines. Do not let a
+    // Firebase initialization/session exception keep the app on an endless
+    // startup spinner; show the sign-in/setup UI and log the real failure.
+    try {
+      await auth.checkExistingSession();
+    } catch (error, stackTrace) {
+      debugPrint('[StartupGate] Existing session check failed: $error\\n$stackTrace');
+    }
+
     if (!mounted) return;
     _authProvider = auth;
     auth.addListener(_onAuthChanged);
