@@ -161,6 +161,27 @@ void main() {
     );
   });
 
+  test('initial repair advance is recorded as a payment atomically', () async {
+    final db = await DBService.instance.database;
+    final job = await MobileShopService.instance.createRepairJob(
+      jobNumber: 'JOB-INITIAL-ADVANCE',
+      customerName: 'Test Customer',
+      reportedIssue: 'Battery replacement',
+      approvedAmount: 3000,
+      advancePaid: 500,
+      customerConsent: true,
+    );
+    final payments = await db.query(
+      'mobile_repair_payments',
+      where: 'jobId = ?',
+      whereArgs: [job.id],
+    );
+    expect(payments, hasLength(1));
+    expect(payments.single['amount'], 500);
+    expect(payments.single['method'], 'cash');
+    expect(job.balanceDue, 2500);
+  });
+
   test('repair parts consume inventory and repair payments update balance', () async {
     final db = await DBService.instance.database;
     await db.insert('products', {
