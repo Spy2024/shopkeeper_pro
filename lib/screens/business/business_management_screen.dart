@@ -247,6 +247,72 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     await _reload(); _showMessage('Kitchen order item queued.');
   }
 
+  Future<void> _recordRestaurantPaymentFromList() async {
+    final db = await DBService.instance.database;
+    final orders = await db.query('restaurant_orders',
+        where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    if (orders.isEmpty) {
+      _showError('Koi open restaurant order nahi hai.');
+      return;
+    }
+    final order = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choose order for payment'),
+        children: orders.map((row) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, row),
+          child: Text('Order ${row['id']} · Rs. ${row['total']}'),
+        )).toList(),
+      ),
+    );
+    if (order == null || !mounted) return;
+    final v = await _form('Restaurant payment', [
+      ('Method (cash/card/bank)', 'required'),
+      ('Amount (Rs.)', 'required_number'),
+      ('Reference (optional)', 'text'),
+    ]);
+    if (v == null) return;
+    final amount = double.tryParse(v['Amount (Rs.)'] ?? '');
+    if (amount == null || amount <= 0) {
+      _showError('Payment amount positive hona chahiye.');
+      return;
+    }
+    await _ops.recordRestaurantPayment(
+      orderId: order['id']! as String,
+      payments: [PaymentLine(
+        method: v['Method (cash/card/bank)']!,
+        amount: amount,
+        reference: v['Reference (optional)'],
+      )],
+    );
+    await _reload();
+    _showMessage('Restaurant payment recorded. Kitchen items served/cancelled hon to order close karein.');
+  }
+
+  Future<void> _completeRestaurantOrderFromList() async {
+    final db = await DBService.instance.database;
+    final orders = await db.query('restaurant_orders',
+        where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    if (orders.isEmpty) {
+      _showError('Koi open restaurant order nahi hai.');
+      return;
+    }
+    final order = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Complete restaurant order'),
+        children: orders.map((row) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, row),
+          child: Text('Order ${row['id']} · Rs. ${row['total']}'),
+        )).toList(),
+      ),
+    );
+    if (order == null) return;
+    await _ops.completeRestaurantOrder(order['id']! as String);
+    await _reload();
+    _showMessage('Paid restaurant order completed and table released.');
+  }
+
   Future<void> _updateRestaurantKitchen() async {
     final db = await DBService.instance.database;
     final items = await db.query('restaurant_order_items', where: 'kitchenStatus NOT IN (?, ?)', whereArgs: ['served','cancelled']);
@@ -434,6 +500,12 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         case 'Update restaurant kitchen':
           await _updateRestaurantKitchen();
           break;
+        case 'Restaurant payment':
+          await _recordRestaurantPaymentFromList();
+          break;
+        case 'Complete restaurant order':
+          await _completeRestaurantOrderFromList();
+          break;
         case 'Restaurant menu item':
           v = await _form('Add restaurant menu item', [('Item name', 'required'), ('Category', 'text'), ('Price', 'required_number')]);
           if (v != null) await _ops.addRestaurantMenuItem(name: v['Item name']!, category: v['Category'], price: double.tryParse(v['Price'] ?? '') ?? 0);
@@ -558,6 +630,8 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         ('Restaurant menu item', Icons.restaurant_menu, 'Menu price and kitchen order support'),
         ('Add item to restaurant order', Icons.add_shopping_cart, 'Send menu items into kitchen queue'),
         ('Update restaurant kitchen', Icons.soup_kitchen, 'Move queued items to preparing, ready or served'),
+        ('Restaurant payment', Icons.payments_outlined, 'Record full cash/card/bank payment for an open order'),
+        ('Complete restaurant order', Icons.task_alt, 'Close only fully paid orders with kitchen items served/cancelled'),
         ('Vehicle purchase/sale', Icons.directions_car, 'Record purchase/sale transaction'),
         ('Cargo status tracking', Icons.local_shipping, 'Record status, location and tracking history'),
         ('Spare part compatibility', Icons.settings_suggest_outlined, 'Map bike/car/mobile parts to make, model and year'),
