@@ -103,7 +103,7 @@ void main() {
     final bill = await pos.checkout(
       inventory,
       branchId: 'branch-1',
-      paymentAllocations: [PaymentAllocationInput(method: 'cash', amount: 48000)],
+      paymentAllocations: const [PaymentAllocationInput(method: 'cash', amount: 48000)],
     );
 
     expect(bill.items.single.mobileDeviceId, 'handset-1');
@@ -155,7 +155,7 @@ void main() {
       pos.checkout(
         inventory,
         branchId: 'branch-1',
-        paymentAllocations: [PaymentAllocationInput(method: 'cash', amount: 48000)],
+        paymentAllocations: const [PaymentAllocationInput(method: 'cash', amount: 48000)],
       ),
       throwsA(isA<StateError>()),
     );
