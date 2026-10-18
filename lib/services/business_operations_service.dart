@@ -432,7 +432,7 @@ class BusinessOperationsService {
     return id;
   }
 
-  Future<String> createRestaurantOrder({String? tableId, required double total}) async {
+  Future<String> createRestaurantOrder({String? tableId, double total = 0}) async {
     if (total < 0) throw ArgumentError('Order total cannot be negative.');
     final db = await DBService.instance.database;
     final id = _uuid.v4();
