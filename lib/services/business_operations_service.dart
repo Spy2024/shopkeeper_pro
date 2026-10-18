@@ -503,10 +503,12 @@ class BusinessOperationsService {
       if (routes.isEmpty) throw StateError('Route not found.');
     }
     final id = _uuid.v4();
+    final trackingToken = '${_uuid.v4()}${_uuid.v4()}';
     await db.insert('cargo_jobs', {
       'id': id, 'routeId': routeId, 'customerName': customerName.trim(),
       'loadDescription': loadDescription, 'weight': weight,
       'freightAmount': freightAmount, 'status': 'created',
+      'trackingToken': trackingToken,
     });
     return id;
   }
