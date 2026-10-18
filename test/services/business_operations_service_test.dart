@@ -147,6 +147,25 @@ void main() {
     expect(productRows.single['stockQuantity'], 100);
   });
 
+  test('spare part compatibility validates type and year range', () async {
+    await dbService.configureForUser(userId());
+    final db = await dbService.database;
+    await db.insert('products', {
+      'id': 'brake-pad', 'name': 'Brake Pad', 'category': 'spare-parts',
+      'stockQuantity': 20, 'costPrice': 100, 'sellingPrice': 150, 'lowStockThreshold': 3,
+    });
+    final id = await operations.addSparePartCompatibility(
+      productId: 'brake-pad', partType: 'car', make: 'Toyota',
+      model: 'Corolla', yearFrom: 2018, yearTo: 2024,
+    );
+    final rows = await db.query('spare_part_compatibility', where: 'id = ?', whereArgs: [id]);
+    expect(rows.single['make'], 'Toyota');
+    await expectLater(
+      operations.addSparePartCompatibility(productId: 'brake-pad', partType: 'car', yearFrom: 2025, yearTo: 2020),
+      throwsArgumentError,
+    );
+  });
+
   test('branch report combines stock units and cash in/out', () async {
     await dbService.configureForUser(userId());
     final db = await dbService.database;
