@@ -225,15 +225,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       ),
     );
     if (table == null) return;
-    final v = await _form('Restaurant order', [('Total amount (Rs.)', 'required_number')]);
-    if (v == null) return;
-    final total = double.tryParse(v['Total amount (Rs.)'] ?? '');
-    if (total == null || total < 0) { _showError('Enter a valid total.'); return; }
-    try {
-      await _ops.createRestaurantOrder(tableId: table['id']! as String, total: total);
-      await _reload();
-      _showMessage('Restaurant order created and table marked occupied.');
-    } catch (e) { _showError(e); }
+    await _ops.createRestaurantOrder(tableId: table['id']! as String);
   }
 
   Future<void> _addTransportTicket() async {
