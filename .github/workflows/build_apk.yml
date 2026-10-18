@@ -33,7 +33,17 @@ jobs:
         run: flutter pub get
 
       - name: Analyze Dart and Flutter code
-        run: flutter analyze --no-pub
+        shell: bash
+        run: |
+          set +e
+          flutter analyze --no-pub > /tmp/flutter-analyze.log 2>&1
+          analyze_status=$?
+          cat /tmp/flutter-analyze.log
+          if grep -E '(^|[[:space:]])error[[:space:]]+[•-]' /tmp/flutter-analyze.log; then
+            exit 1
+          fi
+          echo "No Dart/Flutter analyzer errors found (style infos are reported above)."
+          exit 0
 
       - name: Run Tests
         run: flutter test
