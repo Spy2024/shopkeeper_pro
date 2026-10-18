@@ -87,7 +87,7 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     await _load();
   }
 
-  Future<void> _chooseStatus(String title, String id, List<String> statuses, Future<void> Function(String) save) async {
+  Future<void> _chooseStatus(String title, List<String> statuses, Future<void> Function(String) save) async {
     final status = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -181,7 +181,7 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     subtitle: Text('Patient ${r['patientId']} · ${r['status']} · Paid ${_money(r['paidAmount'])}/${_money(r['fee'])}'),
     trailing: PopupMenuButton<String>(onSelected: (v) {
       if (v == 'payment') _recordClinicPayment(r);
-      else _chooseStatus('Appointment status', r['id']! as String, ['scheduled','checked_in','completed','cancelled','no_show'], (s) => _ops.updateClinicAppointmentStatus(appointmentId: r['id']! as String, status: s));
+      else _chooseStatus('Appointment status', ['scheduled,'checked_in','completed','cancelled','no_show'], (s) => _ops.updateClinicAppointmentStatus(appointmentId: r['id']! as String, status: s));
     }, itemBuilder: (_) => const [PopupMenuItem(value: 'payment', child: Text('Record payment')), PopupMenuItem(value: 'status', child: Text('Change status'))]),
   ));
 
@@ -190,7 +190,7 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     final amount = await showDialog<double>(context: context, builder: (context) => AlertDialog(
       title: const Text('Record clinic payment'),
       content: TextField(controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount (Rs.)')),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: () { final v = double.tryParse(controller.text); if (v != null) Navigator.pop(context, v); }, child: const Text('Record')],
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: () { final v = double.tryParse(controller.text); if (v != null) Navigator.pop(context, v); }, child: const Text('Record'))],
     ));
     controller.dispose();
     if (amount == null) return;
@@ -201,7 +201,7 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
   Widget _salonTab() => _recordList(_rows['salonBookings'] ?? [], empty: 'No salon bookings yet', tile: (r) => ListTile(
     leading: const Icon(Icons.content_cut), title: Text('${r['customerName']} · ${r['bookingAt']}'),
     subtitle: Text('Service ${r['serviceId'] ?? '—'} · ${r['status']} · ${_money(r['amount'])}'),
-    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Salon booking status', r['id']! as String, ['booked','in_progress','completed','cancelled','no_show'], (status) => _ops.updateSalonBookingStatus(bookingId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
+    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Salon booking status', ['booked,'in_progress','completed','cancelled','no_show'], (status) => _ops.updateSalonBookingStatus(bookingId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
   ));
 
   Widget _farmTab() => _recordList(_rows['farmActivities'] ?? [], empty: 'No farm activities yet', tile: (r) => ListTile(
@@ -213,12 +213,12 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
   Widget _constructionTab() => _recordList(_rows['tasks'] ?? [], empty: 'No construction tasks yet', tile: (r) => ListTile(
     leading: const Icon(Icons.construction), title: Text('${r['title']}'),
     subtitle: Text('Project ${r['projectId']} · ${r['status']} · ${_money(r['cost'])}'),
-    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Task status', r['id']! as String, ['todo','in_progress','completed','cancelled'], (status) => _ops.updateConstructionTaskStatus(taskId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
+    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Task status', ['todo,'in_progress','completed','cancelled'], (status) => _ops.updateConstructionTaskStatus(taskId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
   ));
 
   Widget _publicTab() => _recordList(_rows['cases'] ?? [], empty: 'No public-service cases yet', tile: (r) => ListTile(
     leading: const Icon(Icons.account_balance), title: Text('${r['caseNumber']} · ${r['serviceType']}'),
     subtitle: Text('${r['applicantName']} · ${r['status']} · Fee ${_money(r['fee'])}'),
-    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Case status', r['id']! as String, ['open','in_progress','resolved','rejected'], (status) => _ops.updatePublicServiceCaseStatus(caseId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
+    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Case status', ['open,'in_progress','resolved','rejected'], (status) => _ops.updatePublicServiceCaseStatus(caseId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
   ));
 }
