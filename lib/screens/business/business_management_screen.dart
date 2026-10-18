@@ -262,7 +262,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Future<void> _processReturn() async {
     final v = await _form('Process return / refund', [
       ('Bill ID', 'required'), ('Product name', 'required'),
-      ('Quantity', 'required'), ('Unit price (Rs.)', 'required_number'),
+      ('Quantity', 'required_number'), ('Unit price (Rs.)', 'required_number'),
       ('Refund amount (Rs.)', 'required_number'), ('IMEI (if phone return)', 'text'), ('Customer name', 'text'), ('Reason', 'text'),
     ]);
     if (v == null) return;
@@ -274,7 +274,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     }
     try {
       await _ops.processReturn(
-        billId: v['Bill ID']!, items: [ReturnLine(productName: v['Product name']!, imei: (v['IMEI (if phone return'] ?? '').trim().isEmpty ? null : v['IMEI (if phone return)']!.trim(), quantity: quantity, unitPrice: price)],
+        billId: v['Bill ID']!, items: [ReturnLine(productName: v['Product name']!, imei: (v['IMEI (if phone return)'] ?? '').trim().isEmpty ? null : v['IMEI (if phone return)']!.trim(), quantity: quantity, unitPrice: price)],
         refundAmount: refund, customerName: v['Customer name'], reason: v['Reason'],
       );
       await _reload();
