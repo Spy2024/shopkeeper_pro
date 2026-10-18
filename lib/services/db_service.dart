@@ -65,7 +65,7 @@ class DBService {
     final path = _userDatabasePath(root, userId);
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (db, version) async => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -83,6 +83,9 @@ class DBService {
           await _ensureColumn(db, 'bill_items', 'imei', 'TEXT');
           await _ensureColumn(db, 'return_items', 'imei', 'TEXT');
           await _ensureColumn(db, 'mobile_devices', 'branchId', 'TEXT');
+        }
+        if (oldVersion < 7) {
+          await _createBusinessTables(db);
         }
       },
     );
@@ -128,5 +131,6 @@ class DBService {
     await db.execute('CREATE TABLE IF NOT EXISTS transport_tickets (id TEXT PRIMARY KEY, routeId TEXT NOT NULL, passengerName TEXT NOT NULL, seatNumber TEXT, travelDate TEXT NOT NULL, fare REAL NOT NULL, status TEXT NOT NULL DEFAULT "booked")');
     await db.execute('CREATE TABLE IF NOT EXISTS cargo_jobs (id TEXT PRIMARY KEY, routeId TEXT, customerName TEXT NOT NULL, loadDescription TEXT, weight REAL NOT NULL DEFAULT 0, freightAmount REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT "created")');
     await db.execute('CREATE TABLE IF NOT EXISTS service_jobs (id TEXT PRIMARY KEY, customerName TEXT NOT NULL, deviceOrVehicle TEXT, issue TEXT NOT NULL, status TEXT NOT NULL DEFAULT "received", estimatedCost REAL NOT NULL DEFAULT 0, finalCost REAL NOT NULL DEFAULT 0, createdAt TEXT NOT NULL)');
+    await db.execute('CREATE TABLE IF NOT EXISTS spare_part_compatibility (id TEXT PRIMARY KEY, productId TEXT NOT NULL, partType TEXT NOT NULL, make TEXT, model TEXT, yearFrom INTEGER, yearTo INTEGER, engineCode TEXT, notes TEXT)');
   }
 }
