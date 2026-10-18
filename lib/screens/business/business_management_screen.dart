@@ -318,6 +318,36 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           v = await _form('Create cargo/load job', [('Customer name', 'required'), ('Load description', 'text'), ('Weight', 'number'), ('Freight amount', 'number')]);
           if (v != null) await _ops.createCargoJob(customerName: v['Customer name']!, loadDescription: v['Load description'], weight: double.tryParse(v['Weight'] ?? '') ?? 0, freightAmount: double.tryParse(v['Freight amount'] ?? '') ?? 0);
           break;
+        case 'Spare part compatibility':
+          if (_products.isEmpty) { _showError('Pehle spare-part product inventory mein add karein.'); return; }
+          final partProduct = await showDialog<Map<String, Object?>>(
+            context: context,
+            builder: (context) => SimpleDialog(
+              title: const Text('Choose spare-part product'),
+              children: _products.map((p) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, p),
+                child: Text(p['name']! as String),
+              )).toList(),
+            ),
+          );
+          if (partProduct == null) return;
+          v = await _form('Spare part compatibility', [
+            ('Part type: bike/car/mobile/other', 'required'),
+            ('Make', 'text'), ('Model', 'text'),
+            ('Year from', 'number'), ('Year to', 'number'),
+            ('Engine code', 'text'), ('Notes', 'text'),
+          ]);
+          if (v != null) {
+            await _ops.addSparePartCompatibility(
+              productId: partProduct['id']! as String,
+              partType: v['Part type: bike/car/mobile/other']!.toLowerCase(),
+              make: v['Make'], model: v['Model'],
+              yearFrom: int.tryParse(v['Year from'] ?? ''),
+              yearTo: int.tryParse(v['Year to'] ?? ''),
+              engineCode: v['Engine code'], notes: v['Notes'],
+            );
+          }
+          break;
         case 'Repair/service job':
           v = await _form('Create repair/service job', [('Customer name', 'required'), ('Device/vehicle', 'text'), ('Issue / complaint', 'required'), ('Estimated cost', 'number')]);
           if (v != null) await _ops.createServiceJob(customerName: v['Customer name']!, deviceOrVehicle: v['Device/vehicle'], issue: v['Issue / complaint']!, estimatedCost: double.tryParse(v['Estimated cost'] ?? '') ?? 0);
@@ -427,6 +457,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         ('Transport route', Icons.route, 'Create passenger/cargo route'),
         ('Cargo job', Icons.local_shipping, 'Record load, weight and freight'),
         ('Repair/service job', Icons.build, 'Track repair issue and estimate'),
+        ('Spare part compatibility', Icons.settings_suggest_outlined, 'Map bike/car/mobile parts to make, model and year'),
       ])
         Card(child: ListTile(
           leading: Icon(item.$2),
