@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../profile/shop_profile_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
@@ -16,6 +15,12 @@ class _OtpScreenState extends State<OtpScreen> {
   String? _error;
 
   @override
+  void dispose() {
+    _otpController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = context.read<AuthProvider>();
     return Scaffold(
@@ -28,7 +33,8 @@ class _OtpScreenState extends State<OtpScreen> {
             Text('Enter the 6-digit code sent to ${widget.phoneNumber}',
                 style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 8),
-            const SizedBox(height: 24),            TextField(
+            const SizedBox(height: 24),
+            TextField(
               controller: _otpController,
               keyboardType: TextInputType.number,
               maxLength: 6,
@@ -42,16 +48,17 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () async {
-                final ok = await auth.confirmOtp(widget.phoneNumber, _otpController.text.trim());
-                if (!context.mounted) return;
-                if (ok) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ShopProfileScreen(isFirstSetup: true)),
-                    (route) => false,
-                  );
-                } else {
-                  setState(() => _error = 'Incorrect code. Try again.');
+                try {
+                  final ok = await auth.confirmOtp(widget.phoneNumber, _otpController.text.trim());
+                  if (!context.mounted) return;
+                  if (ok) {
+                    Navigator.popUntil(context, (route) => route.isFirst);
+                  } else {
+                    setState(() => _error = 'Incorrect code. Try again.');
+                  }
+                } catch (error) {
+                  if (!context.mounted) return;
+                  setState(() => _error = 'OTP verification failed: $error');
                 }
               },
               child: const Text('Verify & Continue'),
