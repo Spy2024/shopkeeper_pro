@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/firebase_auth_service.dart';
+import '../services/db_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool isLoggedIn = false;
@@ -10,8 +11,11 @@ class AuthProvider extends ChangeNotifier {
   Future<void> checkExistingSession() async {
     final saved = await FirebaseAuthService.instance.getSession();
     if (saved != null && saved.isNotEmpty) {
+      final uid = await FirebaseAuthService.instance.getUserUid();
+      if (uid == null || uid.isEmpty) return;
+      await DBService.instance.configureForUser(uid);
       phoneNumber = saved;
-      userUid = await FirebaseAuthService.instance.getUserUid();
+      userUid = uid;
       isLoggedIn = true;
       notifyListeners();
     }
@@ -32,8 +36,11 @@ class AuthProvider extends ChangeNotifier {
     final ok = await FirebaseAuthService.instance.verifyOtp(otp, expectedPhone: phone);
     if (!ok) return false;
 
+    final uid = await FirebaseAuthService.instance.getUserUid();
+    if (uid == null || uid.isEmpty) return false;
+    await DBService.instance.configureForUser(uid);
     phoneNumber = phone;
-    userUid = await FirebaseAuthService.instance.getUserUid();
+    userUid = uid;
     isLoggedIn = true;
     notifyListeners();
     return true;
@@ -41,6 +48,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     await FirebaseAuthService.instance.clearSession();
+    await DBService.instance.clearActiveUser();
     isLoggedIn = false;
     phoneNumber = null;
     userUid = null;
