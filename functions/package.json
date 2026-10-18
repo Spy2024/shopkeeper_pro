@@ -1,7 +1,7 @@
 {
   "name": "shopkeeper-pro-tracking",
   "private": true,
-  "engines": { "node": "20" },
+  "engines": { "node": "22" },
   "main": "index.js",
   "scripts": { "serve": "firebase emulators:start --only functions,firestore,auth", "deploy": "firebase deploy --only functions:trackCargo" },
   "dependencies": {
