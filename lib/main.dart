@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'screens/dashboard/web_dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -142,6 +143,8 @@ class _StartupGateState extends State<_StartupGate> {
 
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) return const PhoneEntryScreen();
+
+    if (kIsWeb) return const WebDashboardScreen();
 
     final shop = context.watch<ShopProvider>().shop;
     if (shop == null) {
