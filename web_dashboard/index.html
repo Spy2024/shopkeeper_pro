@@ -86,7 +86,7 @@
       body.append(tr);
     }
   }
-  onAuthStateChanged(auth, async (user) => {
+  if (auth) onAuthStateChanged(auth, async (user) => {
     $('loginPanel').classList.toggle('hidden', !!user);
     $('dashboard').classList.toggle('hidden', !user);
     $('signOut').classList.toggle('hidden', !user);
