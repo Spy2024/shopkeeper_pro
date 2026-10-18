@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:shopkeeper_pro/models/bill.dart';
+import 'package:shopkeeper_pro/models/mobile_device.dart';
 import 'package:shopkeeper_pro/providers/inventory_provider.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 import 'package:shopkeeper_pro/services/branch_accounting_service.dart';
@@ -71,6 +72,96 @@ void main() {
       paymentAllocations: [PaymentAllocationInput(method: method, amount: 100)],
     );
   }
+
+  Future<void> insertHandset({String id = 'handset-1', String status = 'in_stock'}) async {
+    final db = await DBService.instance.database;
+    final now = DateTime.now().toIso8601String();
+    await db.insert('mobile_devices', {
+      'id': id,
+      'deviceType': 'used',
+      'brand': 'Samsung',
+      'model': 'Galaxy S22',
+      'imei1': '351234567890123',
+      'status': status,
+      'purchasePrice': 40000.0,
+      'repairCost': 1000.0,
+      'sellingPrice': 48000.0,
+      'branchId': 'branch-1',
+      'inspectionJson': '{}',
+      'createdAt': now,
+      'updatedAt': now,
+    });
+  }
+
+  test('exact IMEI handset sale saves bill and sold status atomically; return links to original bill', () async {
+    await insertHandset();
+    final db = await DBService.instance.database;
+    final handset = MobileDevice.fromMap(
+      (await db.query('mobile_devices', where: 'id = ?', whereArgs: ['handset-1'])).single,
+    );
+    final pos = PosProvider()..addMobileDevice(handset);
+    final bill = await pos.checkout(
+      inventory,
+      branchId: 'branch-1',
+      paymentAllocations: [PaymentAllocationInput(method: 'cash', amount: 48000)],
+    );
+
+    expect(bill.items.single.mobileDeviceId, 'handset-1');
+    expect(bill.items.single.mobileImei, '351234567890123');
+    final sold = (await db.query('mobile_devices', where: 'id = ?', whereArgs: ['handset-1'])).single;
+    expect(sold['status'], 'sold');
+    expect(sold['soldBillId'], bill.id);
+    final billItemRows = await db.query('bill_items', where: 'billId = ?', whereArgs: [bill.id]);
+    expect(billItemRows.single['mobileDeviceId'], 'handset-1');
+    expect(billItemRows.single['mobileImei'], '351234567890123');
+
+    final refund = await PosProvider().returnItem(
+      bill: bill,
+      item: bill.items.single,
+      quantity: 1,
+      reason: 'Handset returned',
+      inventory: inventory,
+      refundMethod: 'cash',
+    );
+    expect(refund, 48000);
+    final returned = (await db.query('mobile_devices', where: 'id = ?', whereArgs: ['handset-1'])).single;
+    expect(returned['status'], 'returned');
+    expect(returned['soldBillId'], bill.id);
+    final returnRows = await db.query('bill_returns', where: 'billId = ?', whereArgs: [bill.id]);
+    expect(returnRows.single['mobileDeviceId'], 'handset-1');
+    expect(returnRows.single['productId'], 'mobile:handset-1');
+    await expectLater(
+      PosProvider().returnItem(
+        bill: bill,
+        item: bill.items.single,
+        quantity: 1,
+        reason: 'Duplicate return',
+        inventory: inventory,
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('handset sale conflict rolls back bill and does not mark a changed handset sold', () async {
+    await insertHandset();
+    final db = await DBService.instance.database;
+    final handset = MobileDevice.fromMap(
+      (await db.query('mobile_devices', where: 'id = ?', whereArgs: ['handset-1'])).single,
+    );
+    final pos = PosProvider()..addMobileDevice(handset);
+    await db.update('mobile_devices', {'status': 'repair'}, where: 'id = ?', whereArgs: ['handset-1']);
+    final before = await db.query('bills');
+    await expectLater(
+      pos.checkout(
+        inventory,
+        branchId: 'branch-1',
+        paymentAllocations: [PaymentAllocationInput(method: 'cash', amount: 48000)],
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(await db.query('bills'), hasLength(before.length));
+    expect((await db.query('mobile_devices', where: 'id = ?', whereArgs: ['handset-1'])).single['status'], 'repair');
+  });
 
   test('credit refund reverses customer balance and restores stock atomically', () async {
     final bill = await createBill('credit');
