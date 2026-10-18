@@ -62,7 +62,7 @@ class BusinessOperationsService {
     String? note,
     DateTime? date,
   }) async {
-    if (!{'credit', 'payment', 'adjustment'}.contains(type)) {
+    if (!{'credit', 'payment', 'refund', 'adjustment'}.contains(type)) {
       throw ArgumentError('Unsupported ledger entry type: $type');
     }
     if (amount <= 0) throw ArgumentError.value(amount, 'amount', 'Must be positive.');
@@ -93,6 +93,7 @@ class BusinessOperationsService {
           balance += amount;
           break;
         case 'payment':
+        case 'refund':
           balance -= amount;
           break;
         case 'adjustment':
@@ -121,6 +122,16 @@ class BusinessOperationsService {
       final bill = await txn.query('bills',
           where: 'id = ?', whereArgs: [billId], limit: 1);
       if (bill.isEmpty) throw StateError('Bill not found.');
+      final billItems = await txn.query('bill_items',
+          where: 'billId = ?', whereArgs: [billId]);
+      final subtotal = billItems.fold<double>(0, (sum, item) =>
+          sum + (item['quantity'] as num).toDouble() * (item['unitPrice'] as num).toDouble());
+      final discount = (bill.first['discount'] as num?)?.toDouble() ?? 0;
+      final taxPercent = (bill.first['taxPercent'] as num?)?.toDouble() ?? 0;
+      final storedTotal = (subtotal - discount) + ((subtotal - discount) * taxPercent / 100);
+      if ((storedTotal - billTotal).abs() > 0.01) {
+        throw StateError('Supplied bill total does not match the saved bill total.');
+      }
       final existing = await txn.query('payments',
           columns: ['id'], where: 'billId = ?', whereArgs: [billId], limit: 1);
       if (existing.isNotEmpty) throw StateError('Payments already recorded for this bill.');
@@ -198,19 +209,20 @@ class BusinessOperationsService {
         final products = item.productId != null
             ? await txn.query('products', where: 'id = ?', whereArgs: [item.productId], limit: 1)
             : await txn.query('products', where: 'name = ?', whereArgs: [item.productName], limit: 1);
-        if (products.isNotEmpty) {
-          final product = products.first;
-          final oldQty = (product['stockQuantity'] as num).toInt();
-          await txn.update('products', {'stockQuantity': oldQty + item.quantity},
-              where: 'id = ?', whereArgs: [product['id']]);
+        if (products.isEmpty) {
+          throw StateError('Product not found for returned item: ${item.productName}.');
         }
+        final product = products.first;
+        final oldQty = (product['stockQuantity'] as num).toInt();
+        await txn.update('products', {'stockQuantity': oldQty + item.quantity},
+            where: 'id = ?', whereArgs: [product['id']]);
       }
       if (customerId != null && refundAmount > 0) {
         await txn.insert('customer_ledger', {
           'id': _uuid.v4(),
           'customerId': customerId,
           'date': (date ?? DateTime.now()).toIso8601String(),
-          'type': 'payment',
+          'type': 'refund',
           'amount': refundAmount,
           'referenceId': returnId,
           'note': 'Refund for bill $billId',
@@ -375,6 +387,7 @@ class BusinessOperationsService {
   Future<String> createRestaurantOrder({String? tableId, required double total}) async {
     if (total < 0) throw ArgumentError('Order total cannot be negative.');
     final db = await DBService.instance.database;
+    final id = _uuid.v4();
     await db.transaction((txn) async {
       if (tableId != null) {
         final tables = await txn.query('restaurant_tables',
@@ -384,11 +397,10 @@ class BusinessOperationsService {
         await txn.update('restaurant_tables', {'status': 'occupied'},
             where: 'id = ?', whereArgs: [tableId]);
       }
-    });
-    final id = _uuid.v4();
-    await db.insert('restaurant_orders', {
-      'id': id, 'tableId': tableId, 'status': 'open',
-      'total': total, 'createdAt': DateTime.now().toIso8601String(),
+      await txn.insert('restaurant_orders', {
+        'id': id, 'tableId': tableId, 'status': 'open',
+        'total': total, 'createdAt': DateTime.now().toIso8601String(),
+      });
     });
     return id;
   }
