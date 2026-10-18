@@ -15,10 +15,10 @@ flutter build apk --release --dart-define=FIREBASE_PROJECT_ID=shopkeeper-2de9a -
 
 Example web build (replace values with the Web App config from Firebase Console → Project settings → Your apps):
 ```powershell
-flutter build web --release --dart-define=FIREBASE_PROJECT_ID=shopkeeper-2de9a --dart-define=FIREBASE_WEB_API_KEY=YOUR_REAL_WEB_API_KEY --dart-define=FIREBASE_WEB_APP_ID=YOUR_REAL_WEB_APP_ID --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_REAL_SENDER_ID --dart-define=FIREBASE_AUTH_DOMAIN=shopkeeper-2de9a.firebaseapp.com --dart-define=FIREBASE_STORAGE_BUCKET=shopkeeper-2de9a.appspot.com
+flutter build web --release --target=lib/web_main.dart --dart-define=FIREBASE_PROJECT_ID=shopkeeper-2de9a --dart-define=FIREBASE_WEB_API_KEY=YOUR_REAL_WEB_API_KEY --dart-define=FIREBASE_WEB_APP_ID=YOUR_REAL_WEB_APP_ID --dart-define=FIREBASE_MESSAGING_SENDER_ID=YOUR_REAL_SENDER_ID --dart-define=FIREBASE_AUTH_DOMAIN=shopkeeper-2de9a.firebaseapp.com --dart-define=FIREBASE_STORAGE_BUCKET=shopkeeper-2de9a.appspot.com
 ```
 
-Do not deploy a web build until all values are present and Firebase Phone Auth's authorized domains include the hosting domain. The repository does not contain real Firebase app identifiers, so a working production build cannot be produced from placeholders alone.
+Do not deploy a web build until all values are present and Firebase Phone Auth's authorized domains include the hosting domain. The repository does not contain real Firebase app identifiers, so a working production build cannot be produced from placeholders alone. The web target is separate from the mobile entry point so it does not initialize SQLite in the browser.
 
 ## Hosting
 `firebase.json` configures Firestore rules, Flutter web hosting from `build/web`, SPA rewrites, security headers and local Auth/Firestore emulators.
