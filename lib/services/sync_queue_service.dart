@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
@@ -11,6 +13,8 @@ class SyncQueueService {
 
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
+  String? _activeUserId;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Queue operations table schema
   static const String queueTableName = 'sync_queue';
@@ -26,6 +30,7 @@ class SyncQueueService {
 
   /// Initialize queue from database
   Future<void> init(String userId) async {
+    _activeUserId = userId;
     await _loadPendingQueue();
     debugPrint('[SyncQueue] Initialized with ${_pendingQueue.length} pending operations');
   }
@@ -46,8 +51,9 @@ class SyncQueueService {
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
 
-    _pendingQueue.add(syncOp);
     await _saveSyncOperation(syncOp);
+    _pendingQueue.removeWhere((existing) => existing.id == syncOp.id);
+    _pendingQueue.add(syncOp);
 
     debugPrint('[SyncQueue] Queued: $operation on $tableName/$documentId');
   }
@@ -71,6 +77,7 @@ class SyncQueueService {
       );
     } catch (e) {
       debugPrint('[SyncQueue] Error saving operation: $e');
+      rethrow;
     }
   }
 
@@ -109,13 +116,10 @@ class SyncQueueService {
 
     for (final op in List<SyncOperation>.from(_pendingQueue)) {
       try {
-        // TODO: Call _executeSync(userId, op) once Firestore is configured
-        successCount++;
-
-        // Mark as synced
+        await _executeSync(userId, op);
         await _markSynced(op.id);
-        _pendingQueue.remove(op);
-
+        _pendingQueue.removeWhere((queued) => queued.id == op.id);
+        successCount++;
         debugPrint('[SyncQueue] ✓ Synced: ${op.tableName}/${op.documentId}');
       } catch (e) {
         failureCount++;
@@ -133,6 +137,27 @@ class SyncQueueService {
     }
   }
 
+  Future<void> _executeSync(String userId, SyncOperation op) async {
+    if (userId.trim().isEmpty) throw ArgumentError('A signed-in user ID is required for sync.');
+    if (_activeUserId != null && _activeUserId != userId) {
+      throw StateError('Sync queue user does not match the active account.');
+    }
+    const allowedTables = <String>{'shop', 'products', 'bills', 'bill_items', 'suppliers', 'supplier_orders', 'supplier_order_items', 'daily_sales', 'expenses', 'customers', 'customer_ledger', 'returns', 'branches'};
+    if (!allowedTables.contains(op.tableName)) throw StateError('Unsupported sync table: ${op.tableName}');
+    final ref = _firestore.collection('users').doc(userId).collection(op.tableName).doc(op.documentId);
+    switch (op.operation) {
+      case 'create':
+      case 'update':
+        await ref.set(op.data, SetOptions(merge: op.operation == 'update'));
+        break;
+      case 'delete':
+        await ref.delete();
+        break;
+      default:
+        throw StateError('Unsupported sync operation: ${op.operation}');
+    }
+  }
+
   /// Mark operation as synced
   Future<void> _markSynced(String opId) async {
     try {
@@ -145,6 +170,7 @@ class SyncQueueService {
       );
     } catch (e) {
       debugPrint('[SyncQueue] Error marking as synced: $e');
+      rethrow;
     }
   }
 
@@ -183,7 +209,7 @@ class SyncOperation {
     required this.timestamp,
   });
 
-  String get dataAsJson => data.toString();
+  String get dataAsJson => jsonEncode(data);
 
   factory SyncOperation.fromMap(Map<String, dynamic> map) {
     return SyncOperation(
@@ -191,7 +217,7 @@ class SyncOperation {
       operation: map['operation'] as String,
       tableName: map['tableName'] as String,
       documentId: map['documentId'] as String,
-      data: {},
+      data: Map<String, dynamic>.from(jsonDecode(map['data'] as String) as Map),
       timestamp: map['timestamp'] as int,
     );
   }
