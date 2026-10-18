@@ -52,6 +52,21 @@ class SyncService {
     'cargo_jobs': 'cargo_jobs',
     'service_jobs': 'service_jobs',
     'spare_part_compatibility': 'spare_part_compatibility',
+    'school_students': 'school_students',
+    'school_fees': 'school_fees',
+    'clinic_patients': 'clinic_patients',
+    'clinic_appointments': 'clinic_appointments',
+    'salon_services': 'salon_services',
+    'salon_bookings': 'salon_bookings',
+    'farm_plots': 'farm_plots',
+    'farm_activities': 'farm_activities',
+    'construction_projects': 'construction_projects',
+    'construction_tasks': 'construction_tasks',
+    'public_service_cases': 'public_service_cases',
+    'restaurant_menu_items': 'restaurant_menu_items',
+    'restaurant_order_items': 'restaurant_order_items',
+    'vehicle_transactions': 'vehicle_transactions',
+    'cargo_status_history': 'cargo_status_history',
   };
 
   Future<void> init(String userId) async {
