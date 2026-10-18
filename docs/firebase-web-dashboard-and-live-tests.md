@@ -26,9 +26,8 @@ Do not deploy a web build until all values are present and Firebase Phone Auth's
 ```powershell
 npm install -g firebase-tools
 firebase login
-firebase use shopkeeper-2de9a
 flutter build web --release <the --dart-define values above>
-firebase deploy --only firestore:rules,hosting
+firebase deploy --project shopkeeper-2de9a --only firestore:rules,hosting,functions:trackCargo
 ```
 
 Review the project and rules in the Firebase Console before deploying. Enable Email/Password under Firebase Authentication for the web dashboard. The cargo tracking endpoint is deployed as a Cloud Function and may require the Firebase project to be on the Blaze billing plan; set billing alerts and review estimated costs before deployment. Hosting is not considered complete until the deployed HTTPS URL and /api/track endpoint are tested.
