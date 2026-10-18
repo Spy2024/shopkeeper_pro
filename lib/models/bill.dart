@@ -1,21 +1,27 @@
 class BillItem {
   final String productName;
+  final String? productId;
+  final String? imei;
   final int quantity;
   final double unitPrice;
 
-  BillItem({required this.productName, required this.quantity, required this.unitPrice});
+  BillItem({required this.productName, this.productId, this.imei, required this.quantity, required this.unitPrice});
 
   double get lineTotal => quantity * unitPrice;
 
   Map<String, dynamic> toMap() => {
         'productName': productName,
+        'productId': productId,
+        'imei': imei,
         'quantity': quantity,
         'unitPrice': unitPrice,
       };
 
   factory BillItem.fromMap(Map<String, dynamic> map) => BillItem(
         productName: map['productName'] as String,
-        quantity: map['quantity'] as int,
+        productId: map['productId'] as String?,
+        imei: map['imei'] as String?,
+        quantity: (map['quantity'] as num).toInt(),
         unitPrice: (map['unitPrice'] as num).toDouble(),
       );
 }
