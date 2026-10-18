@@ -61,12 +61,12 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
                           final phone = _phoneController.text.trim();
-                          final otp = await auth.requestOtp(phone);
+                          await auth.requestOtp(phone);
                           if (!context.mounted) return;
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => OtpScreen(phoneNumber: phone, demoOtp: otp),
+                              builder: (_) => OtpScreen(phoneNumber: phone),
                             ),
                           );
                         },
