@@ -30,11 +30,12 @@
       <article class="metric"><span>Expenses recorded</span><strong id="expensesTotal">—</strong></article>
       <article class="metric"><span>Branches</span><strong id="branchesCount">—</strong></article>
       <article class="metric"><span>Returns recorded</span><strong id="returnsCount">—</strong></article>
+      <article class="metric"><span>Customer udhaar balance</span><strong id="udhaarTotal">—</strong></article>
     </div>
     <div class="layout">
       <section class="panel"><h2>Recent bills</h2><div class="scroll"><table><thead><tr><th>Date</th><th>Customer</th><th>Bill ID</th></tr></thead><tbody id="billsRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
       <section class="panel"><h2>Low stock</h2><div class="scroll"><table><thead><tr><th>Product</th><th>Available</th><th>Alert at</th></tr></thead><tbody id="stockRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
-      <section class="panel"><h2>Branches</h2><div class="scroll"><table><thead><tr><th>Branch</th><th>Phone</th><th>Address</th></tr></thead><tbody id="branchRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
+      <section class="panel"><h2>Branches</h2><div class="scroll"><table><thead><tr><th>Branch</th><th>Stock units</th><th>Cash balance</th></tr></thead><tbody id="branchRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
       <section class="panel"><h2>Data / access status</h2><p id="dataStatus" class="muted">Waiting for sign-in.</p><p class="muted">This initial dashboard is read-only. It does not replace the Android app, and it does not claim local/offline phone data has synced unless it exists in Firestore.</p></section>
     </div>
   </section>
@@ -124,9 +125,11 @@
     $('userLabel').textContent = user ? user.email || user.uid : '';
     if (!user) return;
     $('loadStatus').textContent = 'Loading cloud data for this account…';
-    const [products,bills,sales,expenses,branches,returns] = await Promise.all([
+    const [products,bills,sales,expenses,branches,returns,branchStock,branchCash,customers,ledger] = await Promise.all([
       getRows(user.uid,'products'), getRows(user.uid,'bills'), getRows(user.uid,'sales'),
-      getRows(user.uid,'expenses'), getRows(user.uid,'branches'), getRows(user.uid,'returns')
+      getRows(user.uid,'expenses'), getRows(user.uid,'branches'), getRows(user.uid,'returns'),
+      getRows(user.uid,'branch_stock'), getRows(user.uid,'branch_cash_entries'),
+      getRows(user.uid,'customers'), getRows(user.uid,'customer_ledger')
     ]);
     $('productsCount').textContent = products === null ? '—' : products.length;
     $('billsCount').textContent = bills === null ? '—' : bills.length;
@@ -134,10 +137,16 @@
     $('expensesTotal').textContent = expenses === null ? '—' : money(expenses.reduce((sum,e)=>sum+(Number(e.amount)||0),0));
     $('branchesCount').textContent = branches === null ? '—' : branches.length;
     $('returnsCount').textContent = returns === null ? '—' : returns.length;
+    $('udhaarTotal').textContent = ledger === null ? '—' : money(ledger.reduce((sum,row)=>sum+(['credit','adjustment'].includes(row.type)?Number(row.amount)||0:(['payment','refund'].includes(row.type)?-(Number(row.amount)||0):0)),0));
     fillRows('billsRows', bills === null ? null : [...bills].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,12).map(b=>[dateText(b.date),b.customerName||'Walk-in',b.id]),3,'No saved bills in cloud yet.');
     fillRows('stockRows', products === null ? null : products.filter(p=>Number(p.stockQuantity||0)<=Number(p.lowStockThreshold??5)).slice(0,20).map(p=>[p.name, p.stockQuantity, p.lowStockThreshold??5]),3,'No low-stock products.');
-    fillRows('branchRows', branches === null ? null : branches.map(b=>[b.name,b.phone,b.address]),3,'No branches in cloud yet.');
-    const failed = [products,bills,sales,expenses,branches,returns].filter(v=>v===null).length;
+    const branchRows = branches === null || branchStock === null || branchCash === null ? null : branches.map(b => {
+      const stock = branchStock.filter(s=>s.branchId===b.id).reduce((sum,s)=>sum+(Number(s.quantity)||0),0);
+      const cash = branchCash.filter(s=>s.branchId===b.id).reduce((sum,s)=>sum+(s.type==='in'?(Number(s.amount)||0):-(Number(s.amount)||0)),0);
+      return [b.name, stock, money(cash)];
+    });
+    fillRows('branchRows', branchRows,3,'No branches in cloud yet.');
+    const failed = [products,bills,sales,expenses,branches,returns,branchStock,branchCash,customers,ledger].filter(v=>v===null).length;
     $('loadStatus').textContent = failed ? 'Dashboard loaded with limited permissions. Review Firestore rules and cloud sync.' : 'Cloud data loaded for the signed-in account.';
     $('dataStatus').textContent = failed ? failed + ' collection(s) could not be read. No other account is queried by this dashboard.' : 'Signed in; reads are scoped to users/' + user.uid + '/…';
   });
