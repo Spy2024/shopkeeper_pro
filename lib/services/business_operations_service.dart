@@ -171,6 +171,7 @@ class BusinessOperationsService {
       final billRows = await txn.query('bills',
           where: 'id = ?', whereArgs: [billId], limit: 1);
       if (billRows.isEmpty) throw StateError('Original bill not found.');
+      final branchId = billRows.first['branchId'] as String?;
       final requestedReturns = <String, int>{};
       for (final item in items) {
         requestedReturns.update(item.productName, (quantity) => quantity + item.quantity,
@@ -217,9 +218,25 @@ class BusinessOperationsService {
           throw StateError('Product not found for returned item: ${item.productName}.');
         }
         final product = products.first;
-        final oldQty = (product['stockQuantity'] as num).toInt();
-        await txn.update('products', {'stockQuantity': oldQty + item.quantity},
-            where: 'id = ?', whereArgs: [product['id']]);
+        if (branchId != null) {
+          final branchRows = await txn.query('branch_stock',
+              where: 'branchId = ? AND productId = ?',
+              whereArgs: [branchId, product['id']], limit: 1);
+          if (branchRows.isEmpty) {
+            await txn.insert('branch_stock', {
+              'id': _uuid.v4(), 'branchId': branchId,
+              'productId': product['id'], 'quantity': item.quantity,
+            });
+          } else {
+            final oldQty = (branchRows.first['quantity'] as num).toInt();
+            await txn.update('branch_stock', {'quantity': oldQty + item.quantity},
+                where: 'id = ?', whereArgs: [branchRows.first['id']]);
+          }
+        } else {
+          final oldQty = (product['stockQuantity'] as num).toInt();
+          await txn.update('products', {'stockQuantity': oldQty + item.quantity},
+              where: 'id = ?', whereArgs: [product['id']]);
+        }
       }
       if (customerId != null && refundAmount > 0) {
         await txn.insert('customer_ledger', {
