@@ -214,8 +214,8 @@ class BusinessOperationsService {
         final products = item.productId != null
             ? await txn.query('products', where: 'id = ?', whereArgs: [item.productId], limit: 1)
             : await txn.query('products', where: 'name = ?', whereArgs: [item.productName], limit: 1);
-        if (products.isEmpty) {
-          throw StateError('Product not found for returned item: ${item.productName}.');
+        if (products.isEmpty || products.first['name'] != item.productName) {
+          throw StateError('Product not found or does not match returned item: ${item.productName}.');
         }
         final product = products.first;
         if (branchId != null) {
