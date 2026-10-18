@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 
 /// Read-only web overview. Firestore rules remain the authorization boundary;
 /// all queries are scoped to the current Firebase UID.
@@ -10,9 +12,7 @@ class WebDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Scaffold(body: Center(child: Text('Please sign in to view your dashboard.')));
-    }
+    if (user == null) return const _WebSignInScreen();
     final uid = user.uid;
     final db = FirebaseFirestore.instance;
     return Scaffold(
@@ -124,6 +124,77 @@ class _MetricCard extends StatelessWidget {
               Text(value, style: Theme.of(context).textTheme.titleLarge),
             ])),
           ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _WebSignInScreen extends StatefulWidget {
+  const _WebSignInScreen();
+
+  @override
+  State<_WebSignInScreen> createState() => _WebSignInScreenState();
+}
+
+class _WebSignInScreenState extends State<_WebSignInScreen> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signIn() async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      await context.read<AuthProvider>().signInWithEmailPassword(
+        email: _email.text,
+        password: _password.text,
+      );
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Sign-in failed. Check credentials and Firebase web configuration.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Card(
+          margin: const EdgeInsets.all(24),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Shopkeeper Pro', style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 8),
+                const Text('Sign in to your secure web dashboard'),
+                const SizedBox(height: 20),
+                TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(controller: _password, obscureText: true, onSubmitted: (_) => _signIn(), decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder())),
+                if (_error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _busy ? null : _signIn,
+                  child: _busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Sign in'),
+                ),
+                const SizedBox(height: 8),
+                const Text('Email/password sign-in must be enabled for this Firebase project.', textAlign: TextAlign.center),
+              ],
+            ),
+          ),
         ),
       ),
     ),
