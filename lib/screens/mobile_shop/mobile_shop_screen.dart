@@ -614,7 +614,7 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                 if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
                 if (!mounted) return;
-                ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Repair warranty issued.')));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Repair warranty issued.')));
               } catch (error) {
                 if (!dialogContext.mounted) return;
                 ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
