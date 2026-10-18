@@ -172,19 +172,24 @@ class BusinessOperationsService {
       final billRows = await txn.query('bills',
           where: 'id = ?', whereArgs: [billId], limit: 1);
       if (billRows.isEmpty) throw StateError('Original bill not found.');
+      final requestedReturns = <String, int>{};
       for (final item in items) {
+        requestedReturns.update(item.productName, (quantity) => quantity + item.quantity,
+            ifAbsent: () => item.quantity);
+      }
+      for (final entry in requestedReturns.entries) {
         final soldRows = await txn.rawQuery(
           'SELECT COALESCE(SUM(quantity), 0) AS qty FROM bill_items WHERE billId = ? AND productName = ?',
-          [billId, item.productName],
+          [billId, entry.key],
         );
         final sold = (soldRows.first['qty'] as num).toInt();
         final returnedRows = await txn.rawQuery(
           'SELECT COALESCE(SUM(ri.quantity), 0) AS qty FROM return_items ri JOIN returns r ON r.id = ri.returnId WHERE r.billId = ? AND ri.productName = ?',
-          [billId, item.productName],
+          [billId, entry.key],
         );
         final alreadyReturned = (returnedRows.first['qty'] as num).toInt();
-        if (item.quantity + alreadyReturned > sold) {
-          throw StateError('Return quantity exceeds remaining sold quantity for ${item.productName}.');
+        if (entry.value + alreadyReturned > sold) {
+          throw StateError('Return quantity exceeds remaining sold quantity for ${entry.key}.');
         }
       }
 
