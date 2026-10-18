@@ -14,6 +14,8 @@ class PosProvider extends ChangeNotifier {
   final _uuid = const Uuid();
   final List<Bill> savedBills = [];
   final Map<String, List<BillItem>> _billItemsCache = {};
+  bool isLoadingHistory = false;
+  String? historyLoadError;
 
   double get subtotal => cart.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get taxAmount => (subtotal - discount) * (taxPercent / 100);
@@ -57,13 +59,22 @@ class PosProvider extends ChangeNotifier {
   Future<Bill> checkout(InventoryProvider inventory) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
 
+    // Aggregate duplicate cart lines so a product cannot be oversold by
+    // validating each line independently.
+    final quantities = <String, int>{};
     for (final item in cart) {
-      final matches = inventory.products.where((p) => p.name == item.productName);
-      if (matches.isEmpty) throw StateError('Product not found: ${item.productName}');
-      final product = matches.first;
-      if (product.stockQuantity < item.quantity) {
-        throw StateError('Insufficient stock for ${item.productName}');
+      if (item.quantity <= 0 || item.unitPrice < 0) {
+        throw StateError('Invalid quantity or price for ${item.productName}');
       }
+      quantities.update(item.productName, (q) => q + item.quantity,
+          ifAbsent: () => item.quantity);
+    }
+
+    final productByName = <String, Product>{};
+    for (final name in quantities.keys) {
+      final matches = inventory.products.where((p) => p.name == name);
+      if (matches.isEmpty) throw StateError('Product not found: $name');
+      productByName[name] = matches.first;
     }
 
     final db = await DBService.instance.database;
@@ -77,52 +88,93 @@ class PosProvider extends ChangeNotifier {
     );
 
     await db.transaction((txn) async {
+      // Re-check persisted stock and deduct it in the same transaction as
+      // bill, bill items, and daily sales to avoid partial checkouts.
+      for (final entry in quantities.entries) {
+        final product = productByName[entry.key]!;
+        final rows = await txn.query('products',
+            columns: ['stockQuantity'],
+            where: 'id = ?',
+            whereArgs: [product.id],
+            limit: 1);
+        if (rows.isEmpty) throw StateError('Product no longer exists: ${entry.key}');
+        final stock = (rows.first['stockQuantity'] as num).toInt();
+        if (stock < entry.value) {
+          throw StateError('Insufficient stock for ${entry.key}: available $stock, requested ${entry.value}');
+        }
+        await txn.update('products', {'stockQuantity': stock - entry.value},
+            where: 'id = ?', whereArgs: [product.id]);
+      }
+
       await txn.insert('bills', bill.toMap());
       for (final item in bill.items) {
         await txn.insert('bill_items', {...item.toMap(), 'billId': bill.id});
-        final product = inventory.products.firstWhere((p) => p.name == item.productName);
-        for (int i = 0; i < item.quantity; i++) {
-          await txn.insert('daily_sales', DailySale(
-            id: _uuid.v4(),
-            date: bill.date,
-            productName: item.productName,
-            costPrice: product.costPrice,
-            salePrice: item.unitPrice,
-          ).toMap());
-        }
+        final product = productByName[item.productName]!;
+        await txn.insert('daily_sales', DailySale(
+          id: _uuid.v4(),
+          date: bill.date,
+          productName: item.productName,
+          costPrice: product.costPrice,
+          salePrice: item.unitPrice,
+        ).toMap());
+      }
+
+      final saved = await txn.query('bills',
+          where: 'id = ?', whereArgs: [bill.id], limit: 1);
+      final savedItems = await txn.query('bill_items',
+          where: 'billId = ?', whereArgs: [bill.id]);
+      if (saved.length != 1 || savedItems.length != bill.items.length) {
+        throw StateError('Checkout persistence verification failed.');
       }
     });
 
-    for (final item in bill.items) {
-      await inventory.deductStock(item.productName, item.quantity);
-    }
-
+    savedBills.removeWhere((existing) => existing.id == bill.id);
     savedBills.insert(0, bill);
     _billItemsCache[bill.id] = bill.items;
     clearCart();
+    await inventory.load();
     return bill;
   }
 
   Future<void> loadHistory() async {
-    final db = await DBService.instance.database;
-    final billRows = await db.query('bills', orderBy: 'date DESC');
-    savedBills.clear();
-    _billItemsCache.clear();
-    for (final row in billRows) {
-      final itemRows = await db.query('bill_items', where: 'billId = ?', whereArgs: [row['id']]);
-      final items = itemRows.map((r) => BillItem.fromMap(r)).toList();
-      final bill = Bill(
-        id: row['id'] as String,
-        date: DateTime.parse(row['date'] as String),
-        customerName: row['customerName'] as String?,
-        items: items,
-        discount: (row['discount'] as num).toDouble(),
-        taxPercent: (row['taxPercent'] as num).toDouble(),
-      );
-      savedBills.add(bill);
-      _billItemsCache[bill.id] = items;
-    }
+    isLoadingHistory = true;
+    historyLoadError = null;
     notifyListeners();
+    try {
+      final db = await DBService.instance.database;
+      final billRows = await db.query('bills', orderBy: 'date DESC');
+      final loadedBills = <Bill>[];
+      final loadedItems = <String, List<BillItem>>{};
+      for (final row in billRows) {
+        final billId = row['id'] as String;
+        final itemRows = await db.query('bill_items',
+            where: 'billId = ?', whereArgs: [billId]);
+        final items = itemRows
+            .map((r) => BillItem.fromMap(Map<String, dynamic>.from(r)))
+            .toList();
+        loadedBills.add(Bill(
+          id: billId,
+          date: DateTime.parse(row['date'] as String),
+          customerName: row['customerName'] as String?,
+          items: items,
+          discount: (row['discount'] as num?)?.toDouble() ?? 0,
+          taxPercent: (row['taxPercent'] as num?)?.toDouble() ?? 0,
+        ));
+        loadedItems[billId] = items;
+      }
+      savedBills
+        ..clear()
+        ..addAll(loadedBills);
+      _billItemsCache
+        ..clear()
+        ..addAll(loadedItems);
+    } catch (error, stackTrace) {
+      historyLoadError = 'Bill history load nahi ho saki: $error';
+      debugPrint('[PosProvider] loadHistory failed: $error\n$stackTrace');
+    } finally {
+      isLoadingHistory = false;
+      notifyListeners();
+    }
   }
 
   List<Bill> filterHistory({DateTime? date, String? customer, double? minAmount}) {
