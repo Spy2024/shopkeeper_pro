@@ -69,17 +69,17 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       showDragHandle: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => SafeArea(
+      builder: (context) => const SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text('More modules', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               _MoreModuleTile(icon: Icons.people_outline, title: 'Customers', index: 2),
               _MoreModuleTile(icon: Icons.handshake_outlined, title: 'Suppliers', index: 5),
               _MoreModuleTile(icon: Icons.account_balance_wallet_outlined, title: 'Finance', index: 6),
@@ -88,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-      ),
+      )
     );
     if (selected != null && mounted) _openModule(selected);
   }
