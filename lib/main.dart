@@ -20,6 +20,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  var firebaseReady = false;
 
   // Firebase is optional until real project credentials are configured.
   // Keep the offline-first app usable instead of blocking startup.
@@ -27,15 +28,17 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    firebaseReady = true;
   } catch (e) {
     debugPrint('Firebase initialization skipped: $e');
   }
 
-  runApp(kIsWeb ? const ShopkeeperProWebApp() : const ShopkeeperProApp());
+  runApp(kIsWeb ? ShopkeeperProWebApp(firebaseReady: firebaseReady) : const ShopkeeperProApp());
 }
 
 class ShopkeeperProWebApp extends StatelessWidget {
-  const ShopkeeperProWebApp({super.key});
+  const ShopkeeperProWebApp({super.key, required this.firebaseReady});
+  final bool firebaseReady;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -44,7 +47,9 @@ class ShopkeeperProWebApp extends StatelessWidget {
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
     themeMode: ThemeMode.system,
-    home: const WebDashboardScreen(),
+    home: firebaseReady
+        ? const WebDashboardScreen()
+        : const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text('Firebase web configuration is missing or invalid. Build with the FIREBASE_WEB_* and FIREBASE_PROJECT_ID dart-defines described in docs/firebase-web-dashboard-and-live-tests.md.')))),
   );
 }
 
