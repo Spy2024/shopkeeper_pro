@@ -8,9 +8,19 @@ class WebDashboardScreen extends StatelessWidget {
   const WebDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const _WebSignInScreen();
+  Widget build(BuildContext context) => StreamBuilder<User?>(
+    stream: FirebaseAuth.instance.authStateChanges(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+      final user = snapshot.data;
+      if (user == null) return const _WebSignInScreen();
+      return _buildDashboard(context, user);
+    },
+  );
+
+  Widget _buildDashboard(BuildContext context, User user) {
     final uid = user.uid;
     final db = FirebaseFirestore.instance;
     return Scaffold(
