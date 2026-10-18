@@ -103,6 +103,7 @@ class DBService {
     await db.execute('CREATE TABLE IF NOT EXISTS return_items (id TEXT PRIMARY KEY, returnId TEXT NOT NULL, productId TEXT, productName TEXT NOT NULL, quantity INTEGER NOT NULL, unitPrice REAL NOT NULL)');
     await db.execute('CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS branch_stock (id TEXT PRIMARY KEY, branchId TEXT NOT NULL, productId TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0)');
+    await db.execute('CREATE TABLE IF NOT EXISTS branch_cash_entries (id TEXT PRIMARY KEY, branchId TEXT NOT NULL, date TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, note TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS product_variants (id TEXT PRIMARY KEY, productId TEXT NOT NULL, size TEXT, color TEXT, sku TEXT, quantity INTEGER NOT NULL DEFAULT 0)');
     await db.execute('CREATE TABLE IF NOT EXISTS mobile_devices (id TEXT PRIMARY KEY, productId TEXT, imei TEXT UNIQUE NOT NULL, serialNumber TEXT, status TEXT NOT NULL DEFAULT "in_stock", purchasePrice REAL NOT NULL DEFAULT 0, salePrice REAL NOT NULL DEFAULT 0, billId TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS restaurant_tables (id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER NOT NULL DEFAULT 2, status TEXT NOT NULL DEFAULT "available")');
