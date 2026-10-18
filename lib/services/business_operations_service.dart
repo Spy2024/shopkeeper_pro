@@ -342,4 +342,133 @@ class BusinessOperationsService {
     });
     return id;
   }
+
+  Future<String> addProductVariant({
+    required String productId,
+    String? size,
+    String? color,
+    String? sku,
+    int quantity = 0,
+  }) async {
+    if (quantity < 0) throw ArgumentError('Variant quantity cannot be negative.');
+    final db = await DBService.instance.database;
+    final product = await db.query('products', where: 'id = ?', whereArgs: [productId], limit: 1);
+    if (product.isEmpty) throw StateError('Parent product not found.');
+    final id = _uuid.v4();
+    await db.insert('product_variants', {
+      'id': id, 'productId': productId, 'size': size, 'color': color,
+      'sku': sku, 'quantity': quantity,
+    });
+    return id;
+  }
+
+  Future<String> createRestaurantTable({required String name, int capacity = 2}) async {
+    if (name.trim().isEmpty || capacity < 1) throw ArgumentError('Table name and positive capacity are required.');
+    final id = _uuid.v4();
+    final db = await DBService.instance.database;
+    await db.insert('restaurant_tables', {
+      'id': id, 'name': name.trim(), 'capacity': capacity, 'status': 'available',
+    });
+    return id;
+  }
+
+  Future<String> createRestaurantOrder({String? tableId, required double total}) async {
+    if (total < 0) throw ArgumentError('Order total cannot be negative.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      if (tableId != null) {
+        final tables = await txn.query('restaurant_tables',
+            where: 'id = ?', whereArgs: [tableId], limit: 1);
+        if (tables.isEmpty) throw StateError('Restaurant table not found.');
+        if (tables.first['status'] != 'available') throw StateError('Restaurant table is already occupied.');
+        await txn.update('restaurant_tables', {'status': 'occupied'},
+            where: 'id = ?', whereArgs: [tableId]);
+      }
+    });
+    final id = _uuid.v4();
+    await db.insert('restaurant_orders', {
+      'id': id, 'tableId': tableId, 'status': 'open',
+      'total': total, 'createdAt': DateTime.now().toIso8601String(),
+    });
+    return id;
+  }
+
+  Future<String> addVehicleRecord({
+    required String type,
+    String? make,
+    String? model,
+    String? registrationNumber,
+    String? vin,
+    double purchasePrice = 0,
+    double salePrice = 0,
+  }) async {
+    if (type.trim().isEmpty) throw ArgumentError('Vehicle type is required.');
+    final db = await DBService.instance.database;
+    final id = _uuid.v4();
+    await db.insert('vehicle_records', {
+      'id': id, 'type': type.trim(), 'make': make, 'model': model,
+      'registrationNumber': registrationNumber, 'vin': vin,
+      'status': 'in_stock', 'purchasePrice': purchasePrice, 'salePrice': salePrice,
+    });
+    return id;
+  }
+
+  Future<String> addTransportRoute({
+    required String name,
+    String? origin,
+    String? destination,
+  }) async {
+    if (name.trim().isEmpty) throw ArgumentError('Route name is required.');
+    final id = _uuid.v4();
+    final db = await DBService.instance.database;
+    await db.insert('transport_routes', {
+      'id': id, 'name': name.trim(), 'origin': origin, 'destination': destination,
+    });
+    return id;
+  }
+
+  Future<String> createCargoJob({
+    String? routeId,
+    required String customerName,
+    String? loadDescription,
+    required double weight,
+    required double freightAmount,
+  }) async {
+    if (customerName.trim().isEmpty || weight < 0 || freightAmount < 0) {
+      throw ArgumentError('Customer, non-negative weight, and freight amount are required.');
+    }
+    final db = await DBService.instance.database;
+    if (routeId != null) {
+      final routes = await db.query('transport_routes', where: 'id = ?', whereArgs: [routeId], limit: 1);
+      if (routes.isEmpty) throw StateError('Route not found.');
+    }
+    final id = _uuid.v4();
+    await db.insert('cargo_jobs', {
+      'id': id, 'routeId': routeId, 'customerName': customerName.trim(),
+      'loadDescription': loadDescription, 'weight': weight,
+      'freightAmount': freightAmount, 'status': 'created',
+    });
+    return id;
+  }
+
+  Future<String> createServiceJob({
+    required String customerName,
+    String? deviceOrVehicle,
+    required String issue,
+    double estimatedCost = 0,
+  }) async {
+    if (customerName.trim().isEmpty || issue.trim().isEmpty || estimatedCost < 0) {
+      throw ArgumentError('Customer, issue, and non-negative estimated cost are required.');
+    }
+    final id = _uuid.v4();
+    final db = await DBService.instance.database;
+    await db.insert('service_jobs', {
+      'id': id, 'customerName': customerName.trim(),
+      'deviceOrVehicle': deviceOrVehicle, 'issue': issue.trim(),
+      'status': 'received', 'estimatedCost': estimatedCost,
+      'finalCost': 0, 'createdAt': DateTime.now().toIso8601String(),
+    });
+    return id;
+  }
+
 }
