@@ -74,10 +74,8 @@ class DBService {
             documentId TEXT NOT NULL, data TEXT NOT NULL, timestamp INTEGER NOT NULL,
             synced INTEGER NOT NULL DEFAULT 0)''');
         }
-        if (oldVersion < 4) {
-          await _createBusinessTables(db);
-        }
         if (oldVersion < 5) {
+          await _createBusinessTables(db);
           await db.execute('ALTER TABLE bills ADD COLUMN branchId TEXT');
         }
       },
