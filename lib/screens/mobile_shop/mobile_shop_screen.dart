@@ -505,12 +505,13 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                     amount: double.parse(amount.text.trim()),
                     method: method,
                   );
-                  if (!mounted || !dialogContext.mounted) return;
+                  if (!dialogContext.mounted) return;
                   Navigator.pop(dialogContext);
+                  if (!mounted) return;
                   await _reload();
                 } catch (error) {
-                  if (!mounted || !context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
                 }
               },
               child: const Text('Save payment'),
@@ -610,12 +611,13 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                   warrantyDays: int.parse(days.text.trim()),
                   terms: terms.text.trim(),
                 );
-                if (!mounted || !dialogContext.mounted || !context.mounted) return;
+                if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Repair warranty issued.')));
+                if (!mounted) return;
+                ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Repair warranty issued.')));
               } catch (error) {
-                if (!mounted || !context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+                if (!dialogContext.mounted) return;
+                ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
               }
             },
             child: const Text('Issue warranty'),
