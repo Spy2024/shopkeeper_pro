@@ -7,6 +7,7 @@ import '../../providers/inventory_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
 import '../../services/business_operations_service.dart';
+import '../../services/db_service.dart';
 import 'bill_history_screen.dart';
 
 class PosScreen extends StatefulWidget {
@@ -18,6 +19,24 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
+  List<Map<String, Object?>> _branches = [];
+  String? _selectedBranchId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBranches();
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final db = await DBService.instance.database;
+      final rows = await db.query('branches', orderBy: 'name COLLATE NOCASE');
+      if (mounted) setState(() => _branches = rows);
+    } catch (error) {
+      debugPrint('[POS] Branch list unavailable: $error');
+    }
+  }
 
   void _openAddItemSheet() {
     final inventory = context.read<InventoryProvider>();
@@ -46,6 +65,22 @@ class _PosScreenState extends State<PosScreen> {
       ),
       body: Column(
         children: [
+          if (_branches.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: DropdownButtonFormField<String>(
+                value: _selectedBranchId ?? '__main__',
+                decoration: const InputDecoration(labelText: 'Stock source / branch', isDense: true),
+                items: [
+                  const DropdownMenuItem(value: '__main__', child: Text('Main inventory')),
+                  ..._branches.map((branch) => DropdownMenuItem(
+                    value: branch['id']! as String,
+                    child: Text(branch['name']! as String),
+                  )),
+                ],
+                onChanged: (value) => setState(() => _selectedBranchId = value == '__main__' ? null : value),
+              ),
+            ),
           Expanded(
             child: pos.cart.isEmpty
                 ? const _EmptyCart()
@@ -74,7 +109,7 @@ class _PosScreenState extends State<PosScreen> {
                     },
                   ),
           ),
-          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet),
+          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet, branchId: _selectedBranchId),
         ],
       ),
     );
@@ -103,8 +138,9 @@ class _BillSummaryPanel extends StatelessWidget {
   final PosProvider pos;
   final NumberFormat currency;
   final VoidCallback onAddItem;
+  final String? branchId;
 
-  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem});
+  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem, required this.branchId});
 
   @override
   Widget build(BuildContext context) {
@@ -279,7 +315,7 @@ class _BillSummaryPanel extends StatelessWidget {
     try {
       final inventory = context.read<InventoryProvider>();
       final shop = context.read<ShopProvider>().shop;
-      final bill = await pos.checkout(inventory, payments: payments);
+      final bill = await pos.checkout(inventory, payments: payments, branchId: branchId);
       final file = await PdfService.generateInvoice(bill, shop);
       if (!context.mounted) return;
       await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
