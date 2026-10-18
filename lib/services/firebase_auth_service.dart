@@ -46,7 +46,7 @@ class FirebaseAuthService {
       final userCredential = await _firebaseAuth.signInWithCredential(credential);
       final phone = userCredential.user?.phoneNumber;
 
-      if (phone != null && (expectedPhone == null || phone == expectedPhone)) {
+      if (phone != null && (expectedPhone == null || _normalizePhone(phone) == _normalizePhone(expectedPhone))) {
         await _secureStorage.write(key: 'session_phone', value: phone);
         await _secureStorage.write(key: 'user_uid', value: userCredential.user!.uid);
         return true;
@@ -56,6 +56,8 @@ class FirebaseAuthService {
       throw Exception('OTP verification failed: $e');
     }
   }
+
+  String _normalizePhone(String value) => value.replaceAll(RegExp(r'[^0-9+]'), '');
 
   /// Get current user UID for Firestore sync
   Future<String?> getUserUid() async {
