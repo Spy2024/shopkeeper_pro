@@ -13,7 +13,6 @@ class FirebaseAuthService {
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   final _secureStorage = const FlutterSecureStorage();
   String? _verificationId;
-  int? _resendToken;
 
   Future<void> sendOtp(String phoneNumber) async {
     final completer = Completer<void>();
@@ -37,7 +36,6 @@ class FirebaseAuthService {
       },
       codeSent: (String verificationId, int? resendToken) {
         _verificationId = verificationId;
-        _resendToken = resendToken;
         if (!completer.isCompleted) completer.complete();
       },
       codeAutoRetrievalTimeout: (String verificationId) {
@@ -93,6 +91,5 @@ class FirebaseAuthService {
     await _secureStorage.delete(key: 'session_phone');
     await _secureStorage.delete(key: 'user_uid');
     _verificationId = null;
-    _resendToken = null;
   }
 }
