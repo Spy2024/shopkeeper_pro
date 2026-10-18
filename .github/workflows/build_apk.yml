@@ -48,6 +48,27 @@ jobs:
       - name: Run Tests
         run: flutter test
 
+      - name: Compile web dashboard
+        run: >-
+          flutter build web --release --target=lib/web_main.dart
+          --dart-define=FIREBASE_PROJECT_ID=ci-placeholder
+          --dart-define=FIREBASE_WEB_API_KEY=ci-placeholder
+          --dart-define=FIREBASE_WEB_APP_ID=ci-placeholder
+          --dart-define=FIREBASE_MESSAGING_SENDER_ID=ci-placeholder
+          --dart-define=FIREBASE_AUTH_DOMAIN=ci-placeholder
+          --dart-define=FIREBASE_STORAGE_BUCKET=ci-placeholder
+
+      - name: Check cargo tracking function syntax
+        run: node --check functions/index.js
+
+      - name: Install Firebase rules test dependencies
+        run: npm install --prefix tests/firestore-rules
+
+      - name: Test Firestore account-isolation rules in emulator
+        run: |
+          npm install --global firebase-tools
+          firebase emulators:exec --only firestore --project shopkeeper-2de9a "npm test --prefix tests/firestore-rules"
+
       - name: Build Release APK
         run: flutter build apk --release
 
