@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-
 import '../../services/business_operations_service.dart';
 import '../../services/db_service.dart';
 
@@ -18,6 +16,8 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   List<Map<String, Object?>> _branches = [];
   List<Map<String, Object?>> _products = [];
   List<Map<String, Object?>> _bills = [];
+  List<Map<String, Object?>> _routes = [];
+  List<Map<String, Object?>> _restaurantTables = [];
   bool _loading = true;
   String? _error;
 
@@ -42,12 +42,16 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       final branches = await db.query('branches', orderBy: 'name COLLATE NOCASE');
       final products = await db.query('products', orderBy: 'name COLLATE NOCASE');
       final bills = await db.query('bills', orderBy: 'date DESC', limit: 100);
+      final routes = await db.query('transport_routes', orderBy: 'name COLLATE NOCASE');
+      final restaurantTables = await db.query('restaurant_tables', orderBy: 'name COLLATE NOCASE');
       if (!mounted) return;
       setState(() {
         _customers = customers;
         _branches = branches;
         _products = products;
         _bills = bills;
+        _routes = routes;
+        _restaurantTables = restaurantTables;
         _loading = false;
       });
     } catch (error) {
@@ -180,6 +184,78 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
         ),
       );
+    } catch (e) { _showError(e); }
+  }
+
+  Future<void> _setBranchStock(Map<String, Object?> branch) async {
+    if (_products.isEmpty) { _showError('Pehle inventory mein product add karein.'); return; }
+    final product = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choose product'),
+        children: _products.map((p) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, p),
+          child: Text('${p['name']} (current stock: ${p['stockQuantity']})'),
+        )).toList(),
+      ),
+    );
+    if (product == null) return;
+    final v = await _form('Branch stock · ${branch['name']}', [('Quantity', 'required')]);
+    if (v == null) return;
+    final quantity = int.tryParse(v['Quantity'] ?? '');
+    if (quantity == null || quantity < 0) { _showError('Quantity zero ya positive number honi chahiye.'); return; }
+    try {
+      await _ops.setBranchStock(branchId: branch['id']! as String, productId: product['id']! as String, quantity: quantity);
+      await _reload();
+      _showMessage('Branch stock saved.');
+    } catch (e) { _showError(e); }
+  }
+
+  Future<void> _createRestaurantOrder() async {
+    final available = _restaurantTables.where((t) => t['status'] == 'available').toList();
+    if (available.isEmpty) { _showError('Pehle available restaurant table add karein.'); return; }
+    final table = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choose available table'),
+        children: available.map((t) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, t),
+          child: Text('${t['name']} · capacity ${t['capacity']}'),
+        )).toList(),
+      ),
+    );
+    if (table == null) return;
+    final v = await _form('Restaurant order', [('Total amount (Rs.)', 'required')]);
+    if (v == null) return;
+    final total = double.tryParse(v['Total amount (Rs.)'] ?? '');
+    if (total == null || total < 0) { _showError('Enter a valid total.'); return; }
+    try {
+      await _ops.createRestaurantOrder(tableId: table['id']! as String, total: total);
+      await _reload();
+      _showMessage('Restaurant order created and table marked occupied.');
+    } catch (e) { _showError(e); }
+  }
+
+  Future<void> _addTransportTicket() async {
+    if (_routes.isEmpty) { _showError('Pehle transport route banayein.'); return; }
+    final route = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choose route'),
+        children: _routes.map((r) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, r),
+          child: Text('${r['name']} · ${r['origin'] ?? ''} → ${r['destination'] ?? ''}'),
+        )).toList(),
+      ),
+    );
+    if (route == null) return;
+    final v = await _form('Passenger ticket', [('Passenger name', 'required'), ('Travel date (YYYY-MM-DD)', 'required'), ('Fare (Rs.)', 'required'), ('Seat number', 'text')]);
+    if (v == null) return;
+    final fare = double.tryParse(v['Fare (Rs.)'] ?? '');
+    if (fare == null || fare < 0) { _showError('Enter a valid fare.'); return; }
+    try {
+      await _ops.addTransportTicket(routeId: route['id']! as String, passengerName: v['Passenger name']!, travelDate: v['Travel date (YYYY-MM-DD)']!, fare: fare, seatNumber: v['Seat number']);
+      _showMessage('Passenger ticket saved.');
     } catch (e) { _showError(e); }
   }
 
@@ -316,8 +392,8 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           title: Text(branch['name']! as String),
           subtitle: Text('${branch['address'] ?? ''} · ${branch['phone'] ?? ''}'),
           trailing: PopupMenuButton<String>(
-            onSelected: (v) { if (v == 'cash') _branchCash(branch); if (v == 'report') _showBranchReport(branch); },
-            itemBuilder: (_) => const [PopupMenuItem(value: 'cash', child: Text('Record cash in/out')), PopupMenuItem(value: 'report', child: Text('View branch report'))],
+            onSelected: (v) { if (v == 'cash') _branchCash(branch); if (v == 'report') _showBranchReport(branch); if (v == 'stock') _setBranchStock(branch); },
+            itemBuilder: (_) => const [PopupMenuItem(value: 'cash', child: Text('Record cash in/out')), PopupMenuItem(value: 'stock', child: Text('Set branch stock')), PopupMenuItem(value: 'report', child: Text('View branch report'))],
           ),
         ));
       },
@@ -328,6 +404,8 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     padding: const EdgeInsets.all(12),
     children: [
       Card(child: ListTile(leading: const Icon(Icons.assignment_return), title: const Text('Returns & refunds'), subtitle: const Text('Record return, refund and restore stock'), trailing: const Icon(Icons.chevron_right), onTap: _processReturn)),
+      Card(child: ListTile(leading: const Icon(Icons.restaurant_menu), title: const Text('Restaurant order'), subtitle: const Text('Open order and reserve an available table'), trailing: const Icon(Icons.add_circle_outline), onTap: _createRestaurantOrder)),
+      Card(child: ListTile(leading: const Icon(Icons.confirmation_number_outlined), title: const Text('Passenger ticket'), subtitle: const Text('Book route, passenger, seat and fare'), trailing: const Icon(Icons.add_circle_outline), onTap: _addTransportTicket)),
       const Padding(padding: EdgeInsets.all(8), child: Text('Business-specific records', style: TextStyle(fontWeight: FontWeight.bold))),
       for (final item in const [
         ('IMEI mobile', Icons.phone_android, 'Register box-pack/used phone by unique IMEI'),
