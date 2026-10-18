@@ -64,15 +64,15 @@ class WebDashboardScreen extends StatelessWidget {
             children: [
               Text('Business overview', style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 6),
-              Text('Signed in as \${user.phoneNumber ?? user.email ?? uid}', maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text('Signed in as ${user.phoneNumber ?? user.email ?? uid}', maxLines: 1, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 20),
               Wrap(spacing: 12, runSpacing: 12, children: [
-                _MetricCard(title: 'Products', value: '\${products.length}', icon: Icons.inventory_2_outlined),
-                _MetricCard(title: 'Bills', value: '\${bills.length}', icon: Icons.receipt_long_outlined),
-                _MetricCard(title: 'Customers', value: '\${customers.length}', icon: Icons.people_outline),
-                _MetricCard(title: 'Low stock', value: '\$lowStock', icon: Icons.warning_amber_outlined),
-                _MetricCard(title: 'Recorded sales', value: 'Rs. \${sales.toStringAsFixed(2)}', icon: Icons.trending_up),
-                _MetricCard(title: 'Recorded expenses', value: 'Rs. \${expenseTotal.toStringAsFixed(2)}', icon: Icons.money_off),
+                _MetricCard(title: 'Products', value: '${products.length}', icon: Icons.inventory_2_outlined),
+                _MetricCard(title: 'Bills', value: '${bills.length}', icon: Icons.receipt_long_outlined),
+                _MetricCard(title: 'Customers', value: '${customers.length}', icon: Icons.people_outline),
+                _MetricCard(title: 'Low stock', value: '$lowStock', icon: Icons.warning_amber_outlined),
+                _MetricCard(title: 'Recorded sales', value: 'Rs. ${sales.toStringAsFixed(2)}', icon: Icons.trending_up),
+                _MetricCard(title: 'Recorded expenses', value: 'Rs. ${expenseTotal.toStringAsFixed(2)}', icon: Icons.money_off),
               ]),
               const SizedBox(height: 24),
               Text('Recent bills', style: Theme.of(context).textTheme.titleLarge),
@@ -86,8 +86,8 @@ class WebDashboardScreen extends StatelessWidget {
                   return Card(
                     child: ListTile(
                       leading: const Icon(Icons.receipt_long),
-                      title: Text('Bill \${bill.id}'),
-                      subtitle: Text('Date: \${data['date'] ?? data['createdAt'] ?? 'Unknown'}'),
+                      title: Text('Bill ${bill.id}'),
+                      subtitle: Text('Date: ${data['date'] ?? data['createdAt'] ?? 'Unknown'}'),
                       trailing: Text('$amount'),
                     ),
                   );
