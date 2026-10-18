@@ -31,7 +31,21 @@ Future<void> main() async {
     debugPrint('Firebase initialization skipped: $e');
   }
 
-  runApp(const ShopkeeperProApp());
+  runApp(kIsWeb ? const ShopkeeperProWebApp() : const ShopkeeperProApp());
+}
+
+class ShopkeeperProWebApp extends StatelessWidget {
+  const ShopkeeperProWebApp({super.key});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Shopkeeper Pro Web Dashboard',
+    debugShowCheckedModeBanner: false,
+    theme: AppTheme.light,
+    darkTheme: AppTheme.dark,
+    themeMode: ThemeMode.system,
+    home: const WebDashboardScreen(),
+  );
 }
 
 class ShopkeeperProApp extends StatelessWidget {
