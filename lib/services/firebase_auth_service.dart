@@ -71,10 +71,27 @@ class FirebaseAuthService {
     }
   }
 
+  Future<UserCredential> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    if (email.trim().isEmpty || password.isEmpty) {
+      throw ArgumentError('Email and password are required.');
+    }
+    final result = await _firebaseAuth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = result.user;
+    if (user == null) throw StateError('Firebase returned no signed-in user.');
+    await _persistUser(user);
+    return result;
+  }
+
   Future<void> _persistUser(User user) async {
-    final phone = user.phoneNumber;
-    if (phone != null) {
-      await _secureStorage.write(key: 'session_phone', value: phone);
+    final identity = user.phoneNumber ?? user.email;
+    if (identity != null) {
+      await _secureStorage.write(key: 'session_identity', value: identity);
     }
     await _secureStorage.write(key: 'user_uid', value: user.uid);
   }
@@ -84,11 +101,14 @@ class FirebaseAuthService {
   /// A cached UID alone is not proof of an active Firebase session.
   Future<String?> getUserUid() async => _firebaseAuth.currentUser?.uid;
 
-  Future<String?> getSession() async => _secureStorage.read(key: 'session_phone');
+  Future<String?> getSession() async =>
+      await _secureStorage.read(key: 'session_identity') ??
+      await _secureStorage.read(key: 'session_phone');
 
   Future<void> clearSession() async {
     await _firebaseAuth.signOut();
     await _secureStorage.delete(key: 'session_phone');
+    await _secureStorage.delete(key: 'session_identity');
     await _secureStorage.delete(key: 'user_uid');
     _verificationId = null;
   }

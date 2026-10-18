@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'screens/dashboard/web_dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -19,6 +20,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  var firebaseReady = false;
 
   // Firebase is optional until real project credentials are configured.
   // Keep the offline-first app usable instead of blocking startup.
@@ -26,11 +28,29 @@ Future<void> main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    firebaseReady = true;
   } catch (e) {
     debugPrint('Firebase initialization skipped: $e');
   }
 
-  runApp(const ShopkeeperProApp());
+  runApp(kIsWeb ? ShopkeeperProWebApp(firebaseReady: firebaseReady) : const ShopkeeperProApp());
+}
+
+class ShopkeeperProWebApp extends StatelessWidget {
+  const ShopkeeperProWebApp({super.key, required this.firebaseReady});
+  final bool firebaseReady;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Shopkeeper Pro Web Dashboard',
+    debugShowCheckedModeBanner: false,
+    theme: AppTheme.light,
+    darkTheme: AppTheme.dark,
+    themeMode: ThemeMode.system,
+    home: firebaseReady
+        ? const WebDashboardScreen()
+        : const Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text('Firebase web configuration is missing or invalid. Build with the FIREBASE_WEB_* and FIREBASE_PROJECT_ID dart-defines described in docs/firebase-web-dashboard-and-live-tests.md.')))),
+  );
 }
 
 class ShopkeeperProApp extends StatelessWidget {
@@ -82,7 +102,16 @@ class _StartupGateState extends State<_StartupGate> {
 
   Future<void> _bootstrap() async {
     final auth = context.read<AuthProvider>();
-    await auth.checkExistingSession();
+
+    // A release build may be missing Firebase dart-defines. Do not let a
+    // Firebase initialization/session exception keep the app on an endless
+    // startup spinner; show the sign-in/setup UI and log the real failure.
+    try {
+      await auth.checkExistingSession();
+    } catch (error, stackTrace) {
+      debugPrint('[StartupGate] Existing session check failed: $error\\n$stackTrace');
+    }
+
     if (!mounted) return;
     _authProvider = auth;
     auth.addListener(_onAuthChanged);
@@ -142,6 +171,8 @@ class _StartupGateState extends State<_StartupGate> {
 
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) return const PhoneEntryScreen();
+
+    if (kIsWeb) return const WebDashboardScreen();
 
     final shop = context.watch<ShopProvider>().shop;
     if (shop == null) {

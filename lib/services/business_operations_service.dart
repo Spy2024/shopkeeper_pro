@@ -503,10 +503,12 @@ class BusinessOperationsService {
       if (routes.isEmpty) throw StateError('Route not found.');
     }
     final id = _uuid.v4();
+    final trackingToken = '${_uuid.v4()}${_uuid.v4()}';
     await db.insert('cargo_jobs', {
       'id': id, 'routeId': routeId, 'customerName': customerName.trim(),
       'loadDescription': loadDescription, 'weight': weight,
       'freightAmount': freightAmount, 'status': 'created',
+      'trackingToken': trackingToken,
     });
     return id;
   }
@@ -582,26 +584,152 @@ class BusinessOperationsService {
     final changed = await (await DBService.instance.database).update('restaurant_order_items', {'kitchenStatus': status}, where: 'id = ?', whereArgs: [orderItemId]);
     if (changed != 1) throw StateError('Restaurant order item not found.');
   }
+  /// Records one or more restaurant tenders atomically. The total must match
+  /// the current saved order total, and a second payment attempt is rejected.
+  Future<void> recordRestaurantPayment({
+    required String orderId,
+    required List<PaymentLine> payments,
+  }) async {
+    if (payments.isEmpty ||
+        payments.any((p) => p.method.trim().isEmpty || p.amount <= 0)) {
+      throw ArgumentError('Each restaurant payment needs a method and positive amount.');
+    }
+    final paid = payments.fold<double>(0, (sum, payment) => sum + payment.amount);
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final orders = await txn.query('restaurant_orders',
+          where: 'id = ?', whereArgs: [orderId], limit: 1);
+      if (orders.isEmpty || orders.first['status'] != 'open') {
+        throw StateError('An open restaurant order is required for payment.');
+      }
+      final total = (orders.first['total'] as num).toDouble();
+      if ((paid - total).abs() > 0.01) {
+        throw StateError('Payment total ($paid) must equal order total ($total).');
+      }
+      final existing = await txn.query('restaurant_order_payments',
+          columns: ['id'], where: 'orderId = ?', whereArgs: [orderId], limit: 1);
+      if (existing.isNotEmpty) {
+        throw StateError('Restaurant order payment has already been recorded.');
+      }
+      for (final payment in payments) {
+        await txn.insert('restaurant_order_payments', {
+          'id': _uuid.v4(),
+          'orderId': orderId,
+          'method': payment.method.trim(),
+          'amount': payment.amount,
+          'reference': payment.reference,
+          'paidAt': DateTime.now().toIso8601String(),
+        });
+      }
+    });
+  }
+
   Future<void> completeRestaurantOrder(String orderId) async {
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
       final rows = await txn.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId], limit: 1);
       if (rows.isEmpty) throw StateError('Restaurant order not found.');
-      final pending = await txn.query('restaurant_order_items', where: 'orderId = ? AND kitchenStatus NOT IN (?, ?)', whereArgs: [orderId,'served','cancelled']);
-      if (pending.isNotEmpty) throw StateError('Kitchen items must be served or cancelled before closing.');
+      final pending = await txn.query('restaurant_order_items',
+          where: 'orderId = ? AND kitchenStatus NOT IN (?, ?)',
+          whereArgs: [orderId, 'served', 'cancelled']);
+      if (pending.isNotEmpty) {
+        throw StateError('Kitchen items must be served or cancelled before closing.');
+      }
+      final total = (rows.first['total'] as num).toDouble();
+      if (total > 0) {
+        final payments = await txn.query('restaurant_order_payments',
+            where: 'orderId = ?', whereArgs: [orderId]);
+        final paid = payments.fold<double>(0, (sum, payment) =>
+            sum + (payment['amount'] as num).toDouble());
+        if ((paid - total).abs() > 0.01) {
+          throw StateError('Restaurant order must be paid in full before closing.');
+        }
+      }
       await txn.update('restaurant_orders', {'status':'completed'}, where:'id = ?', whereArgs:[orderId]);
       final tableId = rows.first['tableId'] as String?; if (tableId != null) await txn.update('restaurant_tables', {'status':'available'}, where:'id = ?', whereArgs:[tableId]);
     });
   }
   Future<void> recordVehicleTransaction({required String vehicleId, required String type, required String partyName, required double amount, String? notes}) async {
-    if (!{'purchase','sale'}.contains(type) || amount < 0 || partyName.trim().isEmpty) throw ArgumentError('Valid purchase/sale, party and amount required.');
+    if (!{'purchase', 'sale', 'expense'}.contains(type) ||
+        amount <= 0 || partyName.trim().isEmpty) {
+      throw ArgumentError('Valid transaction type, party and positive amount required.');
+    }
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
-      final rows = await txn.query('vehicle_records', where:'id = ?', whereArgs:[vehicleId], limit:1);
-      if (rows.isEmpty || rows.first['status'] != 'in_stock') throw StateError('Vehicle not available for transaction.');
-      await txn.insert('vehicle_transactions', {'id':_uuid.v4(),'vehicleId':vehicleId,'type':type,'partyName':partyName.trim(),'transactionDate':DateTime.now().toIso8601String(),'amount':amount,'notes':notes});
-      await txn.update('vehicle_records', type == 'sale' ? {'status':'sold','salePrice':amount} : {'purchasePrice':amount}, where:'id = ?', whereArgs:[vehicleId]);
+      final rows = await txn.query('vehicle_records',
+          where: 'id = ?', whereArgs: [vehicleId], limit: 1);
+      if (rows.isEmpty) throw StateError('Vehicle not found.');
+      final vehicle = rows.first;
+      if (type == 'sale' && vehicle['status'] != 'in_stock') {
+        throw StateError('Only an in-stock vehicle can be sold.');
+      }
+      if (type == 'purchase' && vehicle['status'] != 'in_stock') {
+        throw StateError('A sold vehicle cannot be purchased again.');
+      }
+      await txn.insert('vehicle_transactions', {
+        'id': _uuid.v4(),
+        'vehicleId': vehicleId,
+        'type': type,
+        'partyName': partyName.trim(),
+        'transactionDate': DateTime.now().toIso8601String(),
+        'amount': amount,
+        'notes': notes,
+      });
+      if (type == 'sale') {
+        await txn.update('vehicle_records', {'status': 'sold', 'salePrice': amount},
+            where: 'id = ?', whereArgs: [vehicleId]);
+        final purchaseCost = (vehicle['purchasePrice'] as num?)?.toDouble() ?? 0;
+        final vehicleName = '${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''} ${vehicle['registrationNumber'] ?? vehicleId}'.trim();
+        await txn.insert('daily_sales', {
+          'id': _uuid.v4(),
+          'date': DateTime.now().toIso8601String(),
+          'productName': 'Vehicle sale: $vehicleName',
+          'costPrice': purchaseCost,
+          'salePrice': amount,
+        });
+      } else if (type == 'purchase') {
+        final previousPurchases = await txn.query('vehicle_transactions',
+            columns: ['id'], where: 'vehicleId = ? AND type = ?', whereArgs: [vehicleId, 'purchase'], limit: 1);
+        if (previousPurchases.length > 1) {
+          throw StateError('Vehicle purchase has already been recorded.');
+        }
+        await txn.update('vehicle_records', {'purchasePrice': amount},
+            where: 'id = ?', whereArgs: [vehicleId]);
+        await txn.insert('expenses', {
+          'id': _uuid.v4(),
+          'date': DateTime.now().toIso8601String(),
+          'label': 'Vehicle purchase: ${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''} · ${partyName.trim()}',
+          'amount': amount,
+        });
+      } else {
+        await txn.insert('expenses', {
+          'id': _uuid.v4(),
+          'date': DateTime.now().toIso8601String(),
+          'label': 'Vehicle expense: ${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''} · ${partyName.trim()}',
+          'amount': amount,
+        });
+      }
     });
+  }
+
+  /// Calculates realized gross profit per vehicle from the ledger transactions.
+  /// Net profit = sale proceeds - recorded purchases - recorded expenses.
+  Future<List<Map<String, Object?>>> vehicleProfitReport() async {
+    final db = await DBService.instance.database;
+    return db.rawQuery('''
+      SELECT v.id AS vehicleId, v.make, v.model, v.registrationNumber,
+        v.status,
+        COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0) AS saleProceeds,
+        COALESCE(NULLIF(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0), v.purchasePrice, 0) AS purchaseCost,
+        COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS expenses,
+        COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0)
+          - COALESCE(NULLIF(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0), v.purchasePrice, 0)
+          - COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS netProfit
+      FROM vehicle_records v
+      LEFT JOIN vehicle_transactions t ON t.vehicleId = v.id
+      GROUP BY v.id, v.make, v.model, v.registrationNumber, v.status
+      ORDER BY v.make, v.model
+    ''');
   }
   Future<void> updateCargoStatus({required String cargoId, required String status, String? location, String? note}) async {
     if (!{'created','picked_up','in_transit','at_hub','out_for_delivery','delivered','cancelled'}.contains(status)) throw ArgumentError('Invalid cargo status.');
@@ -621,6 +749,97 @@ class BusinessOperationsService {
     final db=await DBService.instance.database; if ((await db.query('school_students',where:'id = ?',whereArgs:[studentId],limit:1)).isEmpty) throw StateError('Student not found.');
     final id=_uuid.v4(); await db.insert('school_fees',{'id':id,'studentId':studentId,'dueDate':DateTime.now().toIso8601String(),'amount':amount,'paidAmount':paidAmount,'status':paidAmount>=amount?'paid':'due','note':note}); return id;
   }
+  Future<void> recordSchoolFeePayment({required String feeId, required double amount}) async {
+    if (amount <= 0) throw ArgumentError('Payment amount must be positive.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('school_fees', where: 'id = ?', whereArgs: [feeId], limit: 1);
+      if (rows.isEmpty) throw StateError('School fee not found.');
+      final row = rows.single;
+      final due = (row['amount'] as num).toDouble();
+      final paid = (row['paidAmount'] as num).toDouble();
+      if (paid + amount > due + 0.01) throw StateError('Payment exceeds outstanding fee.');
+      final next = paid + amount;
+      await txn.update('school_fees', {
+        'paidAmount': next,
+        'status': next >= due - 0.01 ? 'paid' : 'partial',
+      }, where: 'id = ?', whereArgs: [feeId]);
+    });
+  }
+
+  Future<void> updateClinicAppointmentStatus({required String appointmentId, required String status}) async {
+    const allowed = {'scheduled', 'checked_in', 'completed', 'cancelled', 'no_show'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid clinic appointment status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('clinic_appointments', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [appointmentId, 'cancelled', 'completed']);
+    if (count != 1) throw StateError('Appointment not found or already finalised.');
+  }
+
+  Future<void> recordClinicPayment({required String appointmentId, required double amount}) async {
+    if (amount <= 0) throw ArgumentError('Payment amount must be positive.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('clinic_appointments', where: 'id = ?', whereArgs: [appointmentId], limit: 1);
+      if (rows.isEmpty) throw StateError('Appointment not found.');
+      final row = rows.single;
+      final fee = (row['fee'] as num).toDouble();
+      final paid = (row['paidAmount'] as num).toDouble();
+      if (paid + amount > fee + 0.01) throw StateError('Payment exceeds appointment fee.');
+      await txn.update('clinic_appointments', {'paidAmount': paid + amount},
+          where: 'id = ?', whereArgs: [appointmentId]);
+    });
+  }
+
+  Future<void> updateSalonBookingStatus({required String bookingId, required String status}) async {
+    const allowed = {'booked', 'in_progress', 'completed', 'cancelled', 'no_show'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid salon booking status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('salon_bookings', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [bookingId, 'cancelled', 'completed']);
+    if (count != 1) throw StateError('Booking not found or already finalised.');
+  }
+
+  Future<void> updateConstructionTaskStatus({required String taskId, required String status}) async {
+    const allowed = {'todo', 'in_progress', 'completed', 'cancelled'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid construction task status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('construction_tasks', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [taskId, 'completed', 'cancelled']);
+    if (count != 1) throw StateError('Task not found or already finalised.');
+  }
+
+  Future<void> updatePublicServiceCaseStatus({required String caseId, required String status}) async {
+    const allowed = {'open', 'in_progress', 'resolved', 'rejected'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid public service case status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('public_service_cases', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [caseId, 'resolved', 'rejected']);
+    if (count != 1) throw StateError('Case not found or already finalised.');
+  }
+
+  Future<Map<String, Object?>> businessVerticalReport() async {
+    final db = await DBService.instance.database;
+    final students = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(amount - paidAmount), 0) AS outstanding FROM school_fees');
+    final clinic = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(fee - paidAmount), 0) AS outstanding FROM clinic_appointments');
+    final salon = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS bookedValue FROM salon_bookings WHERE status != ?', ['cancelled']);
+    final farm = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(cost), 0) AS cost FROM farm_activities');
+    final construction = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(budget), 0) AS budget, COALESCE(SUM(spent), 0) AS spent FROM construction_projects');
+    final publicCases = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(fee), 0) AS fees FROM public_service_cases');
+    return {
+      'school': students.single,
+      'clinic': clinic.single,
+      'salon': salon.single,
+      'agriculture': farm.single,
+      'construction': construction.single,
+      'publicServices': publicCases.single,
+    };
+  }
+
   Future<String> addClinicPatient({required String name, String? phone, String? dateOfBirth, String? notes}) async {
     if(name.trim().isEmpty) throw ArgumentError('Patient name required.'); final id=_uuid.v4();
     await (await DBService.instance.database).insert('clinic_patients',{'id':id,'name':name.trim(),'phone':phone,'dateOfBirth':dateOfBirth,'notes':notes}); return id;

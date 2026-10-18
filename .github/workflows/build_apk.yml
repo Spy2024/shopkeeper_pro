@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "main", "master", "feature/*" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "**" ]
   workflow_dispatch:
 
 jobs:
@@ -33,20 +33,44 @@ jobs:
         run: flutter pub get
 
       - name: Analyze Dart and Flutter code
-        shell: bash
-        run: |
-          set +e
-          flutter analyze --no-pub > /tmp/flutter-analyze.log 2>&1
-          analyze_status=$?
-          cat /tmp/flutter-analyze.log
-          if grep -E '(^|[[:space:]])error[[:space:]]+[•-]' /tmp/flutter-analyze.log; then
-            exit 1
-          fi
-          echo "No Dart/Flutter analyzer errors found (style infos are reported above)."
-          exit 0
+        run: flutter analyze --no-pub --no-fatal-infos
 
       - name: Run Tests
         run: flutter test
+
+      - name: Compile web dashboard
+        run: >-
+          flutter build web --release --target=lib/web_main.dart
+          --dart-define=FIREBASE_PROJECT_ID=ci-placeholder
+          --dart-define=FIREBASE_WEB_API_KEY=ci-placeholder
+          --dart-define=FIREBASE_WEB_APP_ID=ci-placeholder
+          --dart-define=FIREBASE_MESSAGING_SENDER_ID=ci-placeholder
+          --dart-define=FIREBASE_AUTH_DOMAIN=ci-placeholder
+          --dart-define=FIREBASE_STORAGE_BUCKET=ci-placeholder
+
+      - name: Check cargo tracking function syntax
+        run: node --check functions/index.js
+
+      - name: Install Firebase rules test dependencies
+        run: npm install --prefix tests/firestore-rules
+
+      - name: Set up Java JDK 21 for Firebase CLI
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Test Firestore account-isolation rules in emulator
+        run: |
+          npm install --global firebase-tools
+          firebase emulators:exec --only firestore --project shopkeeper-2de9a "npm test --prefix tests/firestore-rules"
+
+      - name: Restore Java JDK 17 for Android build
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
 
       - name: Build Release APK
         run: flutter build apk --release

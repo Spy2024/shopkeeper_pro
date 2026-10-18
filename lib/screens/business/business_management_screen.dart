@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/business_operations_service.dart';
 import '../../services/db_service.dart';
+import 'business_verticals_screen.dart';
 
 class BusinessManagementScreen extends StatefulWidget {
   const BusinessManagementScreen({super.key});
@@ -247,6 +249,72 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     await _reload(); _showMessage('Kitchen order item queued.');
   }
 
+  Future<void> _recordRestaurantPaymentFromList() async {
+    final db = await DBService.instance.database;
+    final orders = await db.query('restaurant_orders',
+        where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    if (orders.isEmpty) {
+      _showError('Koi open restaurant order nahi hai.');
+      return;
+    }
+    final order = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choose order for payment'),
+        children: orders.map((row) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, row),
+          child: Text('Order ${row['id']} · Rs. ${row['total']}'),
+        )).toList(),
+      ),
+    );
+    if (order == null || !mounted) return;
+    final v = await _form('Restaurant payment', [
+      ('Method (cash/card/bank)', 'required'),
+      ('Amount (Rs.)', 'required_number'),
+      ('Reference (optional)', 'text'),
+    ]);
+    if (v == null) return;
+    final amount = double.tryParse(v['Amount (Rs.)'] ?? '');
+    if (amount == null || amount <= 0) {
+      _showError('Payment amount positive hona chahiye.');
+      return;
+    }
+    await _ops.recordRestaurantPayment(
+      orderId: order['id']! as String,
+      payments: [PaymentLine(
+        method: v['Method (cash/card/bank)']!,
+        amount: amount,
+        reference: v['Reference (optional)'],
+      )],
+    );
+    await _reload();
+    _showMessage('Restaurant payment recorded. Kitchen items served/cancelled hon to order close karein.');
+  }
+
+  Future<void> _completeRestaurantOrderFromList() async {
+    final db = await DBService.instance.database;
+    final orders = await db.query('restaurant_orders',
+        where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    if (orders.isEmpty) {
+      _showError('Koi open restaurant order nahi hai.');
+      return;
+    }
+    final order = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Complete restaurant order'),
+        children: orders.map((row) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(context, row),
+          child: Text('Order ${row['id']} · Rs. ${row['total']}'),
+        )).toList(),
+      ),
+    );
+    if (order == null) return;
+    await _ops.completeRestaurantOrder(order['id']! as String);
+    await _reload();
+    _showMessage('Paid restaurant order completed and table released.');
+  }
+
   Future<void> _updateRestaurantKitchen() async {
     final db = await DBService.instance.database;
     final items = await db.query('restaurant_order_items', where: 'kitchenStatus NOT IN (?, ?)', whereArgs: ['served','cancelled']);
@@ -264,15 +332,44 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
 
   Future<void> _recordVehicleTransactionFromList() async {
     final db = await DBService.instance.database;
-    final vehicles = await db.query('vehicle_records', where: 'status = ?', whereArgs: ['in_stock']);
+    final vehicles = await db.query('vehicle_records', orderBy: 'make, model');
     if (vehicles.isEmpty) { _showError('Pehle vehicle record add karein.'); return; }
     final vehicle = await showDialog<Map<String, Object?>>(context: context, builder: (context) => SimpleDialog(title: const Text('Choose vehicle'),
       children: vehicles.map((v) => SimpleDialogOption(onPressed: () => Navigator.pop(context, v), child: Text('${v['make'] ?? ''} ${v['model'] ?? ''} · ${v['registrationNumber'] ?? v['id']}'))).toList()));
     if (vehicle == null || !mounted) return;
-    final v = await _form('Vehicle purchase/sale', [('Type: purchase/sale', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
+    final v = await _form('Vehicle purchase/sale', [('Type: purchase/sale/expense', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
     if (v == null) return;
     await _ops.recordVehicleTransaction(vehicleId: vehicle['id']! as String, type: v['Type: purchase/sale']!.toLowerCase(), partyName: v['Party name']!, amount: double.tryParse(v['Amount'] ?? '') ?? 0, notes: v['Notes']);
     await _reload(); _showMessage('Vehicle transaction saved.');
+  }
+
+  Future<void> _showVehicleProfitReport() async {
+    final rows = await _ops.vehicleProfitReport();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Vehicle profit report'),
+        content: SizedBox(
+          width: 560,
+          child: rows.isEmpty
+              ? const Text('No vehicle transactions found.')
+              : ListView(
+                  shrinkWrap: true,
+                  children: rows.map((row) {
+                    final name = '${row['make'] ?? ''} ${row['model'] ?? ''} ${row['registrationNumber'] ?? ''}'.trim();
+                    final profit = (row['netProfit'] as num?)?.toDouble() ?? 0;
+                    return ListTile(
+                      title: Text(name.isEmpty ? 'Vehicle ${row['vehicleId']}' : name),
+                      subtitle: Text('Sale: Rs. ${row['saleProceeds']} · Purchase: Rs. ${row['purchaseCost']} · Expenses: Rs. ${row['expenses']}'),
+                      trailing: Text('Rs. ${profit.toStringAsFixed(2)}'),
+                    );
+                  }).toList(),
+                ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
   }
 
   Future<void> _updateCargoTrackingFromList() async {
@@ -368,7 +465,21 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           break;
         case 'Cargo job':
           v = await _form('Create cargo/load job', [('Customer name', 'required'), ('Load description', 'text'), ('Weight', 'number'), ('Freight amount', 'number')]);
-          if (v != null) await _ops.createCargoJob(customerName: v['Customer name']!, loadDescription: v['Load description'], weight: double.tryParse(v['Weight'] ?? '') ?? 0, freightAmount: double.tryParse(v['Freight amount'] ?? '') ?? 0);
+          if (v != null) {
+            final cargoId = await _ops.createCargoJob(customerName: v['Customer name']!, loadDescription: v['Load description'], weight: double.tryParse(v['Weight'] ?? '') ?? 0, freightAmount: double.tryParse(v['Freight amount'] ?? '') ?? 0);
+            final db = await DBService.instance.database;
+            final cargo = (await db.query('cargo_jobs', where: 'id = ?', whereArgs: [cargoId])).single;
+            final token = cargo['trackingToken']! as String;
+            final trackingUrl = 'https://shopkeeper-2de9a.web.app/api/track?token=$token';
+            if (mounted) await showDialog<void>(context: context, builder: (context) => AlertDialog(
+              title: const Text('Customer cargo tracking link'),
+              content: SelectableText(trackingUrl),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                FilledButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: trackingUrl)); if (context.mounted) Navigator.pop(context); }, icon: const Icon(Icons.copy), label: const Text('Copy link')),
+              ],
+            ));
+          }
           break;
         case 'Spare part compatibility':
           if (_products.isEmpty) { _showError('Pehle spare-part product inventory mein add karein.'); return; }
@@ -434,12 +545,21 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         case 'Update restaurant kitchen':
           await _updateRestaurantKitchen();
           break;
+        case 'Restaurant payment':
+          await _recordRestaurantPaymentFromList();
+          break;
+        case 'Complete restaurant order':
+          await _completeRestaurantOrderFromList();
+          break;
         case 'Restaurant menu item':
           v = await _form('Add restaurant menu item', [('Item name', 'required'), ('Category', 'text'), ('Price', 'required_number')]);
           if (v != null) await _ops.addRestaurantMenuItem(name: v['Item name']!, category: v['Category'], price: double.tryParse(v['Price'] ?? '') ?? 0);
           break;
         case 'Vehicle purchase/sale':
           await _recordVehicleTransactionFromList();
+          break;
+        case 'Vehicle profit report':
+          await _showVehicleProfitReport();
           break;
         case 'Cargo status tracking':
           await _updateCargoTrackingFromList();
@@ -537,6 +657,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Widget _modulesTab() => ListView(
     padding: const EdgeInsets.all(12),
     children: [
+      Card(child: ListTile(leading: const Icon(Icons.analytics_outlined), title: const Text('Business workflows & reports'), subtitle: const Text('School fees, clinic payments, salon bookings, farm costs, construction tasks and public cases'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BusinessVerticalsScreen())))),
       Card(child: ListTile(leading: const Icon(Icons.assignment_return), title: const Text('Returns & refunds'), subtitle: const Text('Record return, refund and restore stock'), trailing: const Icon(Icons.chevron_right), onTap: _processReturn)),
       Card(child: ListTile(leading: const Icon(Icons.restaurant_menu), title: const Text('Restaurant order'), subtitle: const Text('Open order and reserve an available table'), trailing: const Icon(Icons.add_circle_outline), onTap: _createRestaurantOrder)),
       Card(child: ListTile(leading: const Icon(Icons.confirmation_number_outlined), title: const Text('Passenger ticket'), subtitle: const Text('Book route, passenger, seat and fare'), trailing: const Icon(Icons.add_circle_outline), onTap: _addTransportTicket)),
@@ -558,7 +679,10 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         ('Restaurant menu item', Icons.restaurant_menu, 'Menu price and kitchen order support'),
         ('Add item to restaurant order', Icons.add_shopping_cart, 'Send menu items into kitchen queue'),
         ('Update restaurant kitchen', Icons.soup_kitchen, 'Move queued items to preparing, ready or served'),
+        ('Restaurant payment', Icons.payments_outlined, 'Record full cash/card/bank payment for an open order'),
+        ('Complete restaurant order', Icons.task_alt, 'Close only fully paid orders with kitchen items served/cancelled'),
         ('Vehicle purchase/sale', Icons.directions_car, 'Record purchase/sale transaction'),
+        ('Vehicle profit report', Icons.account_balance_wallet_outlined, 'Sale proceeds minus purchase costs and recorded expenses'),
         ('Cargo status tracking', Icons.local_shipping, 'Record status, location and tracking history'),
         ('Spare part compatibility', Icons.settings_suggest_outlined, 'Map bike/car/mobile parts to make, model and year'),
       ])

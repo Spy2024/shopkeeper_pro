@@ -12,14 +12,29 @@ class AuthProvider extends ChangeNotifier {
   bool isLoading = false;
 
   Future<void> checkExistingSession() async {
-    final saved = await FirebaseAuthService.instance.getSession();
-    if (saved != null && saved.isNotEmpty) {
+    final uid = await FirebaseAuthService.instance.getUserUid();
+    if (uid == null || uid.isEmpty) return;
+    final identity = await FirebaseAuthService.instance.getSession();
+    await DBService.instance.configureForUser(uid);
+    phoneNumber = identity;
+    userUid = uid;
+    isLoggedIn = true;
+    notifyListeners();
+  }
+
+  Future<void> signInWithEmailPassword({required String email, required String password}) async {
+    isLoading = true;
+    notifyListeners();
+    try {
+      await FirebaseAuthService.instance.signInWithEmailPassword(email: email, password: password);
       final uid = await FirebaseAuthService.instance.getUserUid();
-      if (uid == null || uid.isEmpty) return;
+      if (uid == null || uid.isEmpty) throw StateError('Firebase sign-in did not return a UID.');
       await DBService.instance.configureForUser(uid);
-      phoneNumber = saved;
+      phoneNumber = email.trim();
       userUid = uid;
       isLoggedIn = true;
+    } finally {
+      isLoading = false;
       notifyListeners();
     }
   }

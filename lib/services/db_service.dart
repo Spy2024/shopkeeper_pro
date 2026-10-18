@@ -65,7 +65,7 @@ class DBService {
     final path = _userDatabasePath(root, userId);
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: (db, version) async => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -89,6 +89,10 @@ class DBService {
         }
         if (oldVersion < 8) {
           await _createBusinessTables(db);
+        }
+        if (oldVersion < 9) {
+          await _createBusinessTables(db);
+          await _ensureColumn(db, 'cargo_jobs', 'trackingToken', 'TEXT');
         }
       },
     );
@@ -129,10 +133,11 @@ class DBService {
     await db.execute('CREATE TABLE IF NOT EXISTS mobile_devices (id TEXT PRIMARY KEY, productId TEXT, imei TEXT UNIQUE NOT NULL, serialNumber TEXT, status TEXT NOT NULL DEFAULT "in_stock", purchasePrice REAL NOT NULL DEFAULT 0, salePrice REAL NOT NULL DEFAULT 0, billId TEXT, branchId TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS restaurant_tables (id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER NOT NULL DEFAULT 2, status TEXT NOT NULL DEFAULT "available")');
     await db.execute('CREATE TABLE IF NOT EXISTS restaurant_orders (id TEXT PRIMARY KEY, tableId TEXT, status TEXT NOT NULL DEFAULT "open", total REAL NOT NULL DEFAULT 0, createdAt TEXT NOT NULL)');
+    await db.execute('CREATE TABLE IF NOT EXISTS restaurant_order_payments (id TEXT PRIMARY KEY, orderId TEXT NOT NULL, method TEXT NOT NULL, amount REAL NOT NULL, reference TEXT, paidAt TEXT NOT NULL)');
     await db.execute('CREATE TABLE IF NOT EXISTS vehicle_records (id TEXT PRIMARY KEY, type TEXT NOT NULL, make TEXT, model TEXT, registrationNumber TEXT, vin TEXT, status TEXT NOT NULL DEFAULT "in_stock", purchasePrice REAL NOT NULL DEFAULT 0, salePrice REAL NOT NULL DEFAULT 0)');
     await db.execute('CREATE TABLE IF NOT EXISTS transport_routes (id TEXT PRIMARY KEY, name TEXT NOT NULL, origin TEXT, destination TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS transport_tickets (id TEXT PRIMARY KEY, routeId TEXT NOT NULL, passengerName TEXT NOT NULL, seatNumber TEXT, travelDate TEXT NOT NULL, fare REAL NOT NULL, status TEXT NOT NULL DEFAULT "booked")');
-    await db.execute('CREATE TABLE IF NOT EXISTS cargo_jobs (id TEXT PRIMARY KEY, routeId TEXT, customerName TEXT NOT NULL, loadDescription TEXT, weight REAL NOT NULL DEFAULT 0, freightAmount REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT "created")');
+    await db.execute('CREATE TABLE IF NOT EXISTS cargo_jobs (id TEXT PRIMARY KEY, routeId TEXT, customerName TEXT NOT NULL, loadDescription TEXT, weight REAL NOT NULL DEFAULT 0, freightAmount REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT "created", trackingToken TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS service_jobs (id TEXT PRIMARY KEY, customerName TEXT NOT NULL, deviceOrVehicle TEXT, issue TEXT NOT NULL, status TEXT NOT NULL DEFAULT "received", estimatedCost REAL NOT NULL DEFAULT 0, finalCost REAL NOT NULL DEFAULT 0, createdAt TEXT NOT NULL)');
     await db.execute('CREATE TABLE IF NOT EXISTS spare_part_compatibility (id TEXT PRIMARY KEY, productId TEXT NOT NULL, partType TEXT NOT NULL, make TEXT, model TEXT, yearFrom INTEGER, yearTo INTEGER, engineCode TEXT, notes TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS school_students (id TEXT PRIMARY KEY, name TEXT NOT NULL, guardianName TEXT, phone TEXT, className TEXT, admissionDate TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active")');

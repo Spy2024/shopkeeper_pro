@@ -177,7 +177,30 @@ void main() {
     await expectLater(operations.completeRestaurantOrder(orderId), throwsStateError);
     await operations.updateKitchenStatus(orderItemId: itemId, status: 'preparing');
     await operations.updateKitchenStatus(orderItemId: itemId, status: 'served');
+    await expectLater(operations.completeRestaurantOrder(orderId), throwsStateError);
+    await expectLater(
+      operations.recordRestaurantPayment(
+        orderId: orderId,
+        payments: const [PaymentLine(method: 'cash', amount: 800)],
+      ),
+      throwsStateError,
+    );
+    await operations.recordRestaurantPayment(
+      orderId: orderId,
+      payments: const [
+        PaymentLine(method: 'cash', amount: 500),
+        PaymentLine(method: 'card', amount: 400),
+      ],
+    );
+    await expectLater(
+      operations.recordRestaurantPayment(
+        orderId: orderId,
+        payments: const [PaymentLine(method: 'cash', amount: 900)],
+      ),
+      throwsStateError,
+    );
     await operations.completeRestaurantOrder(orderId);
+    expect((await db.query('restaurant_order_payments', where: 'orderId = ?', whereArgs: [orderId])), hasLength(2));
     expect((await db.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId])).single['status'], 'completed');
     expect((await db.query('restaurant_tables', where: 'id = ?', whereArgs: [tableId])).single['status'], 'available');
   });
@@ -195,13 +218,33 @@ void main() {
     expect(history.last['location'], 'Hyderabad');
   });
 
-  test('vehicle sale writes transaction and prevents a second sale', () async {
+  test('vehicle ledger calculates sale less purchase and expenses', () async {
     await dbService.configureForUser(userId());
-    final vehicleId = await operations.addVehicleRecord(type: 'car', make: 'Toyota', model: 'Corolla', purchasePrice: 1000000);
-    await operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Buyer', amount: 1200000);
+    final vehicleId = await operations.addVehicleRecord(
+      type: 'car', make: 'Toyota', model: 'Corolla', purchasePrice: 1000000,
+    );
+    await operations.recordVehicleTransaction(
+      vehicleId: vehicleId, type: 'purchase', partyName: 'Vendor', amount: 1000000,
+    );
+    await operations.recordVehicleTransaction(
+      vehicleId: vehicleId, type: 'expense', partyName: 'Workshop', amount: 25000,
+    );
+    await operations.recordVehicleTransaction(
+      vehicleId: vehicleId, type: 'sale', partyName: 'Buyer', amount: 1200000,
+    );
     final db = await dbService.database;
     expect((await db.query('vehicle_records', where: 'id = ?', whereArgs: [vehicleId])).single['status'], 'sold');
-    await expectLater(operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Second buyer', amount: 1250000), throwsStateError);
+    await expectLater(
+      operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Second buyer', amount: 1250000),
+      throwsStateError,
+    );
+    final report = (await operations.vehicleProfitReport()).single;
+    expect(report['saleProceeds'], 1200000);
+    expect(report['purchaseCost'], 1000000);
+    expect(report['expenses'], 25000);
+    expect(report['netProfit'], 175000);
+    expect(await db.query('expenses'), hasLength(2));
+    expect(await db.query('daily_sales'), hasLength(1));
   });
 
   test('school clinic salon farm construction and public service records persist', () async {
@@ -241,5 +284,41 @@ void main() {
     final report = await operations.branchReport(branchId);
     expect(report['stockUnits'], 24);
     expect(report['cashBalance'], 4250);
+  });
+
+  test('vertical payments, lifecycle transitions and reports validate balances', () async {
+    await dbService.configureForUser(userId());
+    final student = await operations.addSchoolStudent(name: 'Fee Student');
+    final feeId = await operations.addSchoolFee(studentId: student, amount: 2000, paidAmount: 500);
+    await operations.recordSchoolFeePayment(feeId: feeId, amount: 1500);
+    await expectLater(operations.recordSchoolFeePayment(feeId: feeId, amount: 1), throwsStateError);
+
+    final patient = await operations.addClinicPatient(name: 'Lifecycle Patient');
+    final appointmentId = await operations.bookClinicAppointment(
+      patientId: patient, appointmentAt: '2026-10-20T10:00:00', fee: 800,
+    );
+    await operations.recordClinicPayment(appointmentId: appointmentId, amount: 300);
+    await expectLater(operations.recordClinicPayment(appointmentId: appointmentId, amount: 600), throwsStateError);
+    await operations.updateClinicAppointmentStatus(appointmentId: appointmentId, status: 'checked_in');
+
+    final salonService = await operations.addSalonService(name: 'Wash', durationMinutes: 20, price: 200);
+    await operations.bookSalonAppointment(customerName: 'Salon customer', bookingAt: '2026-10-20T11:00:00', serviceId: salonService, amount: 200);
+    final db = await dbService.database;
+    final booking = (await db.query('salon_bookings')).single;
+    await operations.updateSalonBookingStatus(bookingId: booking['id']! as String, status: 'in_progress');
+
+    final project = await operations.addConstructionProject(name: 'Report project', budget: 10000);
+    await operations.addConstructionTask(projectId: project, title: 'Task A', cost: 2500);
+    final task = (await db.query('construction_tasks')).single;
+    await operations.updateConstructionTaskStatus(taskId: task['id']! as String, status: 'in_progress');
+
+    final caseId = await operations.addPublicServiceCase(caseNumber: 'CASE-TEST', applicantName: 'Applicant', serviceType: 'Permit', fee: 100);
+    await operations.updatePublicServiceCaseStatus(caseId: caseId, status: 'in_progress');
+
+    final report = await operations.businessVerticalReport();
+    expect((report['school'] as Map)['outstanding'], 0);
+    expect((report['clinic'] as Map)['outstanding'], 500);
+    expect((report['construction'] as Map)['spent'], 2500);
+    expect((report['publicServices'] as Map)['fees'], 100);
   });
 }

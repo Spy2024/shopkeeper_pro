@@ -25,7 +25,6 @@ void main() {
     });
 
     test('syncFromCloud should merge cloud data with local DB', () async {
-      const userId = 'test-user-123';
       final cloudProducts = [
         {'id': 'p1', 'name': 'Updated Product', 'stockQuantity': 15}
       ];
