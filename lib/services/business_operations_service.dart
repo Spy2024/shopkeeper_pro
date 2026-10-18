@@ -690,7 +690,7 @@ class BusinessOperationsService {
       } else if (type == 'purchase') {
         final previousPurchases = await txn.query('vehicle_transactions',
             columns: ['id'], where: 'vehicleId = ? AND type = ?', whereArgs: [vehicleId, 'purchase'], limit: 1);
-        if (previousPurchases.isNotEmpty) {
+        if (previousPurchases.length > 1) {
           throw StateError('Vehicle purchase has already been recorded.');
         }
         await txn.update('vehicle_records', {'purchasePrice': amount},
