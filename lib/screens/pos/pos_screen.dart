@@ -6,6 +6,7 @@ import '../../providers/pos_provider.dart';
 import '../../providers/inventory_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
+import '../../services/business_operations_service.dart';
 import 'bill_history_screen.dart';
 
 class PosScreen extends StatefulWidget {
@@ -214,13 +215,81 @@ class _BillSummaryPanel extends StatelessWidget {
     );
   }
 
+  Future<List<PaymentLine>?> _showPaymentDialog(BuildContext context, double total) async {
+    final cashCtrl = TextEditingController(text: total.toStringAsFixed(2));
+    final bankCtrl = TextEditingController(text: '0');
+    String? error;
+    final result = await showDialog<List<PaymentLine>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Payment split'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Bill total: ${currency.format(total)}'),
+              TextField(
+                controller: cashCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Cash amount (Rs.)'),
+              ),
+              TextField(
+                controller: bankCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Card / bank transfer (Rs.)'),
+              ),
+              if (error != null) Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(error!, style: const TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                final cash = double.tryParse(cashCtrl.text) ?? -1;
+                final bank = double.tryParse(bankCtrl.text) ?? -1;
+                if (cash < 0 || bank < 0 || (cash + bank - total).abs() > 0.01) {
+                  setDialogState(() => error = 'Cash + card/bank must equal the bill total.');
+                  return;
+                }
+                final lines = <PaymentLine>[];
+                if (cash > 0) lines.add(PaymentLine(method: 'cash', amount: cash));
+                if (bank > 0) lines.add(PaymentLine(method: 'card_or_bank', amount: bank));
+                if (lines.isEmpty) {
+                  setDialogState(() => error = 'Enter at least one payment amount.');
+                  return;
+                }
+                Navigator.pop(dialogContext, lines);
+              },
+              child: const Text('Confirm payment'),
+            ),
+          ],
+        ),
+      ),
+    );
+    cashCtrl.dispose();
+    bankCtrl.dispose();
+    return result;
+  }
+
   Future<void> _checkoutAndShare(BuildContext context, PosProvider pos) async {
-    final inventory = context.read<InventoryProvider>();
-    final shop = context.read<ShopProvider>().shop;
-    final bill = await pos.checkout(inventory);
-    final file = await PdfService.generateInvoice(bill, shop);
-    if (!context.mounted) return;
-    await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
+    final payments = await _showPaymentDialog(context, pos.grandTotal);
+    if (payments == null || !context.mounted) return;
+    try {
+      final inventory = context.read<InventoryProvider>();
+      final shop = context.read<ShopProvider>().shop;
+      final bill = await pos.checkout(inventory, payments: payments);
+      final file = await PdfService.generateInvoice(bill, shop);
+      if (!context.mounted) return;
+      await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Checkout failed: $error')),
+      );
+    }
   }
 }
 
