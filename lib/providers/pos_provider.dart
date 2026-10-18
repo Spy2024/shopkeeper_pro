@@ -100,6 +100,8 @@ class PosProvider extends ChangeNotifier {
   final _uuid = const Uuid();
   final List<Bill> savedBills = [];
   final Map<String, List<BillItem>> _billItemsCache = {};
+  bool isLoadingHistory = false;
+  String? historyLoadError;
 
   double get subtotal => cart.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get taxableSubtotal => (subtotal - discount).clamp(0.0, double.infinity).toDouble();
@@ -366,6 +368,18 @@ class PosProvider extends ChangeNotifier {
       }
     });
 
+    // Verify the committed bill and every line can be read back before the
+    // checkout is reported as successful or a PDF is generated.
+    final persistedBillRows = await db.query(
+      'bills', where: 'id = ?', whereArgs: [bill.id], limit: 1,
+    );
+    final persistedItemRows = await db.query(
+      'bill_items', where: 'billId = ?', whereArgs: [bill.id],
+    );
+    if (persistedBillRows.length != 1 || persistedItemRows.length != bill.items.length) {
+      throw StateError('Checkout could not verify the saved bill. Please do not retry blindly; check Bill History first.');
+    }
+
     // The SQLite transaction is the source of truth. A cloud-queue failure must
     // never report a committed checkout as failed; the next full sync can reconcile it.
     for (final entry in newQuantities.entries) {
@@ -608,16 +622,41 @@ class PosProvider extends ChangeNotifier {
   }
 
   Future<void> loadHistory() async {
-    final db = await DBService.instance.database;
-    final billRows = await db.query('bills', orderBy: 'date DESC');
-    savedBills.clear(); _billItemsCache.clear();
-    for (final row in billRows) {
-      final itemRows = await db.query('bill_items', where: 'billId = ?', whereArgs: [row['id']]);
-      final items = itemRows.map((r) => BillItem.fromMap(r)).toList();
-      final bill = billFromDatabaseRow(row, items);
-      savedBills.add(bill); _billItemsCache[bill.id] = items;
-    }
+    isLoadingHistory = true;
+    historyLoadError = null;
     notifyListeners();
+    try {
+      final db = await DBService.instance.database;
+      final billRows = await db.query('bills', orderBy: 'date DESC');
+      final loadedBills = <Bill>[];
+      final loadedItems = <String, List<BillItem>>{};
+      for (final row in billRows) {
+        final billId = row['id'] as String;
+        final itemRows = await db.query(
+          'bill_items',
+          where: 'billId = ?',
+          whereArgs: [billId],
+          orderBy: 'id ASC',
+        );
+        final items = itemRows.map((r) => BillItem.fromMap(r)).toList(growable: false);
+        loadedBills.add(billFromDatabaseRow(row, items));
+        loadedItems[billId] = items;
+      }
+      // Replace the visible history only after every row has been parsed.
+      // A read/parse failure must not silently turn the list into "no bills".
+      savedBills
+        ..clear()
+        ..addAll(loadedBills);
+      _billItemsCache
+        ..clear()
+        ..addAll(loadedItems);
+    } catch (error, stackTrace) {
+      historyLoadError = error.toString();
+      debugPrint('[PosProvider] Failed to load bill history: $error\\n$stackTrace');
+    } finally {
+      isLoadingHistory = false;
+      notifyListeners();
+    }
   }
 
   List<Bill> filterHistory({DateTime? date, String? customer, double? minAmount}) => savedBills.where((b) {
