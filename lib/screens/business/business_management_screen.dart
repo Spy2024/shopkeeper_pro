@@ -228,6 +228,66 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     await _ops.createRestaurantOrder(tableId: table['id']! as String);
   }
 
+  Future<void> _addRestaurantOrderItem() async {
+    final db = await DBService.instance.database;
+    final orders = await db.query('restaurant_orders', where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    final menu = await db.query('restaurant_menu_items', where: 'active = 1', orderBy: 'name');
+    if (orders.isEmpty || menu.isEmpty) { _showError('Open restaurant order aur active menu item pehle banayein.'); return; }
+    final order = await showDialog<Map<String, Object?>>(
+      context: context, builder: (context) => SimpleDialog(title: const Text('Choose open order'),
+        children: orders.map((row) => SimpleDialogOption(onPressed: () => Navigator.pop(context, row), child: Text('Order ${row['id']} · total Rs. ${row['total']}'))).toList()));
+    if (order == null || !mounted) return;
+    final item = await showDialog<Map<String, Object?>>(
+      context: context, builder: (context) => SimpleDialog(title: const Text('Choose menu item'),
+        children: menu.map((row) => SimpleDialogOption(onPressed: () => Navigator.pop(context, row), child: Text('${row['name']} · Rs. ${row['price']}'))).toList()));
+    if (item == null || !mounted) return;
+    final v = await _form('Add item to restaurant order', [('Quantity', 'required_number'), ('Kitchen note', 'text')]);
+    if (v == null) return;
+    await _ops.addRestaurantOrderItem(orderId: order['id']! as String, menuItemId: item['id']! as String, quantity: int.tryParse(v['Quantity'] ?? '') ?? 0, notes: v['Kitchen note']);
+    await _reload(); _showMessage('Kitchen order item queued.');
+  }
+
+  Future<void> _updateRestaurantKitchen() async {
+    final db = await DBService.instance.database;
+    final items = await db.query('restaurant_order_items', where: 'kitchenStatus NOT IN (?, ?)', whereArgs: ['served','cancelled']);
+    if (items.isEmpty) { _showError('No pending kitchen items.'); return; }
+    final item = await showDialog<Map<String, Object?>>(
+      context: context, builder: (context) => SimpleDialog(title: const Text('Choose kitchen item'),
+        children: items.map((row) => SimpleDialogOption(onPressed: () => Navigator.pop(context, row), child: Text('Order ${row['orderId']} · ${row['quantity']} pcs · ${row['kitchenStatus']}'))).toList()));
+    if (item == null || !mounted) return;
+    final status = await showDialog<String>(context: context, builder: (context) => SimpleDialog(title: const Text('Kitchen status'),
+      children: const ['queued','preparing','ready','served','cancelled'].map((s) => SimpleDialogOption(onPressed: null, child: Text(s))).toList()));
+    if (status == null) return;
+    await _ops.updateKitchenStatus(orderItemId: item['id']! as String, status: status);
+    await _reload(); _showMessage('Kitchen status updated.');
+  }
+
+  Future<void> _recordVehicleTransactionFromList() async {
+    final db = await DBService.instance.database;
+    final vehicles = await db.query('vehicle_records', where: 'status = ?', whereArgs: ['in_stock']);
+    if (vehicles.isEmpty) { _showError('Pehle vehicle record add karein.'); return; }
+    final vehicle = await showDialog<Map<String, Object?>>(context: context, builder: (context) => SimpleDialog(title: const Text('Choose vehicle'),
+      children: vehicles.map((v) => SimpleDialogOption(onPressed: () => Navigator.pop(context, v), child: Text('${v['make'] ?? ''} ${v['model'] ?? ''} · ${v['registrationNumber'] ?? v['id']}'))).toList()));
+    if (vehicle == null || !mounted) return;
+    final v = await _form('Vehicle purchase/sale', [('Type: purchase/sale', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
+    if (v == null) return;
+    await _ops.recordVehicleTransaction(vehicleId: vehicle['id']! as String, type: v['Type: purchase/sale']!.toLowerCase(), partyName: v['Party name']!, amount: double.tryParse(v['Amount'] ?? '') ?? 0, notes: v['Notes']);
+    await _reload(); _showMessage('Vehicle transaction saved.');
+  }
+
+  Future<void> _updateCargoTrackingFromList() async {
+    final db = await DBService.instance.database;
+    final jobs = await db.query('cargo_jobs', where: 'status != ?', whereArgs: ['delivered']);
+    if (jobs.isEmpty) { _showError('No active cargo jobs.'); return; }
+    final job = await showDialog<Map<String, Object?>>(context: context, builder: (context) => SimpleDialog(title: const Text('Choose cargo job'),
+      children: jobs.map((j) => SimpleDialogOption(onPressed: () => Navigator.pop(context, j), child: Text('${j['customerName']} · ${j['status']} · ${j['id']}'))).toList()));
+    if (job == null || !mounted) return;
+    final v = await _form('Update cargo tracking', [('Status: created/picked_up/in_transit/at_hub/out_for_delivery/delivered/cancelled', 'required'), ('Current location', 'text'), ('Note', 'text')]);
+    if (v == null) return;
+    await _ops.updateCargoStatus(cargoId: job['id']! as String, status: v['Status: created/picked_up/in_transit/at_hub/out_for_delivery/delivered/cancelled']!, location: v['Current location'], note: v['Note']);
+    await _reload(); _showMessage('Cargo tracking updated.');
+  }
+
   Future<void> _addTransportTicket() async {
     if (_routes.isEmpty) { _showError('Pehle transport route banayein.'); return; }
     final route = await showDialog<Map<String, Object?>>(
@@ -368,17 +428,25 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           v = await _form('Open public service case', [('Case number', 'required'), ('Applicant name', 'required'), ('Service type', 'required'), ('Fee', 'number'), ('Notes', 'text')]);
           if (v != null) await _ops.addPublicServiceCase(caseNumber: v['Case number']!, applicantName: v['Applicant name']!, serviceType: v['Service type']!, fee: double.tryParse(v['Fee'] ?? '') ?? 0, notes: v['Notes']);
           break;
+        case 'Add item to restaurant order':
+          await _addRestaurantOrderItem();
+          v = <String, String>{'saved': 'true'};
+          break;
+        case 'Update restaurant kitchen':
+          await _updateRestaurantKitchen();
+          v = <String, String>{'saved': 'true'};
+          break;
         case 'Restaurant menu item':
           v = await _form('Add restaurant menu item', [('Item name', 'required'), ('Category', 'text'), ('Price', 'required_number')]);
           if (v != null) await _ops.addRestaurantMenuItem(name: v['Item name']!, category: v['Category'], price: double.tryParse(v['Price'] ?? '') ?? 0);
           break;
         case 'Vehicle purchase/sale':
-          v = await _form('Record vehicle transaction', [('Vehicle record ID', 'required'), ('Type: purchase/sale', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
-          if (v != null) await _ops.recordVehicleTransaction(vehicleId: v['Vehicle record ID']!, type: v['Type: purchase/sale']!.toLowerCase(), partyName: v['Party name']!, amount: double.tryParse(v['Amount'] ?? '') ?? 0, notes: v['Notes']);
+          await _recordVehicleTransactionFromList();
+          v = <String, String>{'saved': 'true'};
           break;
         case 'Cargo status tracking':
-          v = await _form('Update cargo tracking', [('Cargo job ID', 'required'), ('Status: created/picked_up/in_transit/at_hub/out_for_delivery/delivered/cancelled', 'required'), ('Current location', 'text'), ('Note', 'text')]);
-          if (v != null) await _ops.updateCargoStatus(cargoId: v['Cargo job ID']!, status: v['Status: created/picked_up/in_transit/at_hub/out_for_delivery/delivered/cancelled']!, location: v['Current location'], note: v['Note']);
+          await _updateCargoTrackingFromList();
+          v = <String, String>{'saved': 'true'};
           break;
         case 'Clothing/product variant':
           final product = await showDialog<Map<String, String>>(
@@ -492,6 +560,8 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         ('Construction project', Icons.construction, 'Project budget and client'),
         ('Public service case', Icons.account_balance, 'Applicant and service case tracking'),
         ('Restaurant menu item', Icons.restaurant_menu, 'Menu price and kitchen order support'),
+        ('Add item to restaurant order', Icons.add_shopping_cart, 'Send menu items into kitchen queue'),
+        ('Update restaurant kitchen', Icons.soup_kitchen, 'Move queued items to preparing, ready or served'),
         ('Vehicle purchase/sale', Icons.directions_car, 'Record purchase/sale transaction'),
         ('Cargo status tracking', Icons.local_shipping, 'Record status, location and tracking history'),
         ('Spare part compatibility', Icons.settings_suggest_outlined, 'Map bike/car/mobile parts to make, model and year'),
