@@ -722,6 +722,97 @@ class BusinessOperationsService {
     final db=await DBService.instance.database; if ((await db.query('school_students',where:'id = ?',whereArgs:[studentId],limit:1)).isEmpty) throw StateError('Student not found.');
     final id=_uuid.v4(); await db.insert('school_fees',{'id':id,'studentId':studentId,'dueDate':DateTime.now().toIso8601String(),'amount':amount,'paidAmount':paidAmount,'status':paidAmount>=amount?'paid':'due','note':note}); return id;
   }
+  Future<void> recordSchoolFeePayment({required String feeId, required double amount}) async {
+    if (amount <= 0) throw ArgumentError('Payment amount must be positive.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('school_fees', where: 'id = ?', whereArgs: [feeId], limit: 1);
+      if (rows.isEmpty) throw StateError('School fee not found.');
+      final row = rows.single;
+      final due = (row['amount'] as num).toDouble();
+      final paid = (row['paidAmount'] as num).toDouble();
+      if (paid + amount > due + 0.01) throw StateError('Payment exceeds outstanding fee.');
+      final next = paid + amount;
+      await txn.update('school_fees', {
+        'paidAmount': next,
+        'status': next >= due - 0.01 ? 'paid' : 'partial',
+      }, where: 'id = ?', whereArgs: [feeId]);
+    });
+  }
+
+  Future<void> updateClinicAppointmentStatus({required String appointmentId, required String status}) async {
+    const allowed = {'scheduled', 'checked_in', 'completed', 'cancelled', 'no_show'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid clinic appointment status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('clinic_appointments', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [appointmentId, 'cancelled', 'completed']);
+    if (count != 1) throw StateError('Appointment not found or already finalised.');
+  }
+
+  Future<void> recordClinicPayment({required String appointmentId, required double amount}) async {
+    if (amount <= 0) throw ArgumentError('Payment amount must be positive.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('clinic_appointments', where: 'id = ?', whereArgs: [appointmentId], limit: 1);
+      if (rows.isEmpty) throw StateError('Appointment not found.');
+      final row = rows.single;
+      final fee = (row['fee'] as num).toDouble();
+      final paid = (row['paidAmount'] as num).toDouble();
+      if (paid + amount > fee + 0.01) throw StateError('Payment exceeds appointment fee.');
+      await txn.update('clinic_appointments', {'paidAmount': paid + amount},
+          where: 'id = ?', whereArgs: [appointmentId]);
+    });
+  }
+
+  Future<void> updateSalonBookingStatus({required String bookingId, required String status}) async {
+    const allowed = {'booked', 'in_progress', 'completed', 'cancelled', 'no_show'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid salon booking status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('salon_bookings', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [bookingId, 'cancelled', 'completed']);
+    if (count != 1) throw StateError('Booking not found or already finalised.');
+  }
+
+  Future<void> updateConstructionTaskStatus({required String taskId, required String status}) async {
+    const allowed = {'todo', 'in_progress', 'completed', 'cancelled'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid construction task status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('construction_tasks', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [taskId, 'completed', 'cancelled']);
+    if (count != 1) throw StateError('Task not found or already finalised.');
+  }
+
+  Future<void> updatePublicServiceCaseStatus({required String caseId, required String status}) async {
+    const allowed = {'open', 'in_progress', 'resolved', 'rejected'};
+    if (!allowed.contains(status)) throw ArgumentError('Invalid public service case status.');
+    final db = await DBService.instance.database;
+    final count = await db.update('public_service_cases', {'status': status},
+        where: 'id = ? AND status NOT IN (?, ?)',
+        whereArgs: [caseId, 'resolved', 'rejected']);
+    if (count != 1) throw StateError('Case not found or already finalised.');
+  }
+
+  Future<Map<String, Object?>> businessVerticalReport() async {
+    final db = await DBService.instance.database;
+    final students = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(amount - paidAmount), 0) AS outstanding FROM school_fees');
+    final clinic = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(fee - paidAmount), 0) AS outstanding FROM clinic_appointments');
+    final salon = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(amount), 0) AS bookedValue FROM salon_bookings WHERE status != ?', ['cancelled']);
+    final farm = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(cost), 0) AS cost FROM farm_activities');
+    final construction = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(budget), 0) AS budget, COALESCE(SUM(spent), 0) AS spent FROM construction_projects');
+    final publicCases = await db.rawQuery('SELECT COUNT(*) AS count, COALESCE(SUM(fee), 0) AS fees FROM public_service_cases');
+    return {
+      'school': students.single,
+      'clinic': clinic.single,
+      'salon': salon.single,
+      'agriculture': farm.single,
+      'construction': construction.single,
+      'publicServices': publicCases.single,
+    };
+  }
+
   Future<String> addClinicPatient({required String name, String? phone, String? dateOfBirth, String? notes}) async {
     if(name.trim().isEmpty) throw ArgumentError('Patient name required.'); final id=_uuid.v4();
     await (await DBService.instance.database).insert('clinic_patients',{'id':id,'name':name.trim(),'phone':phone,'dateOfBirth':dateOfBirth,'notes':notes}); return id;
