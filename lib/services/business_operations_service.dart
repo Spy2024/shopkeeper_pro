@@ -720,11 +720,11 @@ class BusinessOperationsService {
       SELECT v.id AS vehicleId, v.make, v.model, v.registrationNumber,
         v.status,
         COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0) AS saleProceeds,
-        COALESCE(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0) AS purchaseCost,
+        COALESCE(NULLIF(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0), v.purchasePrice, 0) AS purchaseCost,
         COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS expenses,
-        COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount
-                          WHEN t.type IN ('purchase', 'expense') THEN -t.amount
-                          ELSE 0 END), 0) AS netProfit
+        COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0)
+          - COALESCE(NULLIF(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0), v.purchasePrice, 0)
+          - COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS netProfit
       FROM vehicle_records v
       LEFT JOIN vehicle_transactions t ON t.vehicleId = v.id
       GROUP BY v.id, v.make, v.model, v.registrationNumber, v.status
