@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import '../services/firebase_auth_service.dart';
 import '../services/db_service.dart';
+import '../services/sync_service.dart';
+import '../services/sync_queue_service.dart';
+import '../services/connectivity_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool isLoggedIn = false;
@@ -48,6 +51,9 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> logout() async {
     await FirebaseAuthService.instance.clearSession();
+    await SyncService.instance.dispose();
+    await ConnectivityService.instance.dispose();
+    await SyncQueueService.instance.resetForLogout();
     await DBService.instance.clearActiveUser();
     isLoggedIn = false;
     phoneNumber = null;
