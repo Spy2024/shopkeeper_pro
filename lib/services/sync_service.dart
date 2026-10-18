@@ -51,6 +51,7 @@ class SyncService {
     'transport_tickets': 'transport_tickets',
     'cargo_jobs': 'cargo_jobs',
     'service_jobs': 'service_jobs',
+    'spare_part_compatibility': 'spare_part_compatibility',
   };
 
   Future<void> init(String userId) async {
