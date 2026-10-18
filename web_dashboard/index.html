@@ -16,7 +16,9 @@
   <section id="loginPanel" class="panel login">
     <h2>Sign in to your business</h2>
     <p class="muted">Use the Firebase account associated with this shop. Data is loaded only from that signed-in user's cloud path.</p>
-    <form id="loginForm"><label for="email">Email</label><input class="field" id="email" type="email" autocomplete="username" required><label for="password">Password</label><input class="field" id="password" type="password" autocomplete="current-password" required><button type="submit">Sign in</button></form>
+    <form id="loginForm"><h3>Email sign-in</h3><label for="email">Email</label><input class="field" id="email" type="email" autocomplete="username" required><label for="password">Password</label><input class="field" id="password" type="password" autocomplete="current-password" required><button type="submit">Sign in with email</button></form>
+    <hr>
+    <form id="phoneForm"><h3>Phone OTP sign-in</h3><label for="phone">Phone number (international format)</label><input class="field" id="phone" type="tel" placeholder="+923001234567" autocomplete="tel" required><div id="recaptcha-container"></div><button id="sendPhoneCode" type="button">Send SMS code</button><div id="phoneCodeArea" class="hidden"><label for="phoneCode">6-digit SMS code</label><input class="field" id="phoneCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"><button id="verifyPhoneCode" type="button">Verify phone</button></div></form>
     <p id="loginError" class="error" role="alert"></p>
   </section>
   <section id="dashboard" class="hidden">
@@ -41,7 +43,7 @@
 <script src="./firebase-config.js"></script>
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+  import { getAuth, signInWithEmailAndPassword, signInWithPhoneNumber, RecaptchaVerifier, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
   import { getFirestore, collection, getDocs, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 
   const $ = (id) => document.getElementById(id);
@@ -52,19 +54,48 @@
   if (!config || !config.apiKey || String(config.apiKey).includes('REPLACE_')) {
     $('loginError').textContent = 'Setup required: copy firebase-config.example.js to firebase-config.js and add your Firebase Web App configuration.';
     $('loginForm').querySelector('button').disabled = true;
+    $('sendPhoneCode').disabled = true;
+    $('verifyPhoneCode').disabled = true;
   } else {
     const app = initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
   }
 
+  let phoneConfirmation = null;
+  let recaptchaVerifier = null;
   $('loginForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     $('loginError').textContent = '';
+    if (!auth) return;
     try { await signInWithEmailAndPassword(auth, $('email').value.trim(), $('password').value); }
     catch (error) { $('loginError').textContent = error.message || 'Sign-in failed.'; }
   });
-  $('signOut').addEventListener('click', () => signOut(auth));
+  $('sendPhoneCode').addEventListener('click', async () => {
+    $('loginError').textContent = '';
+    if (!auth) return;
+    try {
+      if (recaptchaVerifier) await recaptchaVerifier.clear();
+      recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'normal' });
+      await recaptchaVerifier.render();
+      phoneConfirmation = await signInWithPhoneNumber(auth, $('phone').value.trim(), recaptchaVerifier);
+      $('phoneCodeArea').classList.remove('hidden');
+      $('loginError').textContent = 'SMS code sent. Enter the code to continue.';
+    } catch (error) {
+      $('loginError').textContent = error.message || 'Could not send SMS code.';
+      if (recaptchaVerifier) { await recaptchaVerifier.clear(); recaptchaVerifier = null; }
+    }
+  });
+  $('verifyPhoneCode').addEventListener('click', async () => {
+    $('loginError').textContent = '';
+    if (!phoneConfirmation) { $('loginError').textContent = 'First request an SMS code.'; return; }
+    try {
+      await phoneConfirmation.confirm($('phoneCode').value.trim());
+    } catch (error) {
+      $('loginError').textContent = error.message || 'Phone verification failed.';
+    }
+  });
+  $('signOut').addEventListener('click', () => { if (auth) signOut(auth); });
 
   async function getRows(uid, name, maxRows = 500) {
     const path = collection(db, 'users', uid, name);
