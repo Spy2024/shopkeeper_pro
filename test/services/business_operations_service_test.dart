@@ -218,13 +218,31 @@ void main() {
     expect(history.last['location'], 'Hyderabad');
   });
 
-  test('vehicle sale writes transaction and prevents a second sale', () async {
+  test('vehicle ledger calculates sale less purchase and expenses', () async {
     await dbService.configureForUser(userId());
-    final vehicleId = await operations.addVehicleRecord(type: 'car', make: 'Toyota', model: 'Corolla', purchasePrice: 1000000);
-    await operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Buyer', amount: 1200000);
+    final vehicleId = await operations.addVehicleRecord(
+      type: 'car', make: 'Toyota', model: 'Corolla', purchasePrice: 1000000,
+    );
+    await operations.recordVehicleTransaction(
+      vehicleId: vehicleId, type: 'purchase', partyName: 'Vendor', amount: 1000000,
+    );
+    await operations.recordVehicleTransaction(
+      vehicleId: vehicleId, type: 'expense', partyName: 'Workshop', amount: 25000,
+    );
+    await operations.recordVehicleTransaction(
+      vehicleId: vehicleId, type: 'sale', partyName: 'Buyer', amount: 1200000,
+    );
     final db = await dbService.database;
     expect((await db.query('vehicle_records', where: 'id = ?', whereArgs: [vehicleId])).single['status'], 'sold');
-    await expectLater(operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Second buyer', amount: 1250000), throwsStateError);
+    await expectLater(
+      operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Second buyer', amount: 1250000),
+      throwsStateError,
+    );
+    final report = (await operations.vehicleProfitReport()).single;
+    expect(report['saleProceeds'], 1200000);
+    expect(report['purchaseCost'], 1000000);
+    expect(report['expenses'], 25000);
+    expect(report['netProfit'], 175000);
   });
 
   test('school clinic salon farm construction and public service records persist', () async {
