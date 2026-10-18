@@ -77,7 +77,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
                 for (final field in fields)
                   TextField(
                     controller: controllers[field.$1],
-                    keyboardType: field.$2 == 'number' ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+                    keyboardType: field.$2.contains('number') ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
                     decoration: InputDecoration(labelText: field.$1),
                   ),
                 if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
@@ -89,7 +89,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
             FilledButton(
               onPressed: () {
                 final values = {for (final entry in controllers.entries) entry.key: entry.value.text.trim()};
-                final missing = fields.where((f) => f.$2 == 'required' && (values[f.$1] ?? '').isEmpty);
+                final missing = fields.where((f) => f.$2.startsWith('required') && (values[f.$1] ?? '').isEmpty);
                 if (missing.isNotEmpty) {
                   setDialogState(() => error = '${missing.first.$1} is required.');
                   return;
@@ -129,7 +129,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       ),
     );
     if (type == null) return;
-    final v = await _form(type == 'credit' ? 'Add udhaar' : 'Receive payment', [('Amount (Rs.)', 'required'), ('Note', 'text')]);
+    final v = await _form(type == 'credit' ? 'Add udhaar' : 'Receive payment', [('Amount (Rs.)', 'required_number'), ('Note', 'text')]);
     if (v == null) return;
     final amount = double.tryParse(v['Amount (Rs.)'] ?? '');
     if (amount == null || amount <= 0) { _showError('Enter a valid positive amount.'); return; }
@@ -200,7 +200,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       ),
     );
     if (product == null) return;
-    final v = await _form('Branch stock · ${branch['name']}', [('Quantity', 'required')]);
+    final v = await _form('Branch stock · ${branch['name']}', [('Quantity', 'required_number')]);
     if (v == null) return;
     final quantity = int.tryParse(v['Quantity'] ?? '');
     if (quantity == null || quantity < 0) { _showError('Quantity zero ya positive number honi chahiye.'); return; }
@@ -225,7 +225,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       ),
     );
     if (table == null) return;
-    final v = await _form('Restaurant order', [('Total amount (Rs.)', 'required')]);
+    final v = await _form('Restaurant order', [('Total amount (Rs.)', 'required_number')]);
     if (v == null) return;
     final total = double.tryParse(v['Total amount (Rs.)'] ?? '');
     if (total == null || total < 0) { _showError('Enter a valid total.'); return; }
@@ -249,7 +249,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       ),
     );
     if (route == null) return;
-    final v = await _form('Passenger ticket', [('Passenger name', 'required'), ('Travel date (YYYY-MM-DD)', 'required'), ('Fare (Rs.)', 'required'), ('Seat number', 'text')]);
+    final v = await _form('Passenger ticket', [('Passenger name', 'required'), ('Travel date (YYYY-MM-DD)', 'required'), ('Fare (Rs.)', 'required_number'), ('Seat number', 'text')]);
     if (v == null) return;
     final fare = double.tryParse(v['Fare (Rs.)'] ?? '');
     if (fare == null || fare < 0) { _showError('Enter a valid fare.'); return; }
@@ -262,8 +262,8 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Future<void> _processReturn() async {
     final v = await _form('Process return / refund', [
       ('Bill ID', 'required'), ('Product name', 'required'),
-      ('Quantity', 'required'), ('Unit price (Rs.)', 'required'),
-      ('Refund amount (Rs.)', 'required'), ('Customer name', 'text'), ('Reason', 'text'),
+      ('Quantity', 'required'), ('Unit price (Rs.)', 'required_number'),
+      ('Refund amount (Rs.)', 'required_number'), ('Customer name', 'text'), ('Reason', 'text'),
     ]);
     if (v == null) return;
     final quantity = int.tryParse(v['Quantity'] ?? '');
