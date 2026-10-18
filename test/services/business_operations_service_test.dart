@@ -166,6 +166,66 @@ void main() {
     );
   });
 
+  test('restaurant menu order totals and kitchen state gate order completion', () async {
+    await dbService.configureForUser(userId());
+    final tableId = await operations.createRestaurantTable(name: 'T-1', capacity: 4);
+    final orderId = await operations.createRestaurantOrder(tableId: tableId);
+    final menuId = await operations.addRestaurantMenuItem(name: 'Biryani', category: 'Main', price: 450);
+    final itemId = await operations.addRestaurantOrderItem(orderId: orderId, menuItemId: menuId, quantity: 2);
+    var db = await dbService.database;
+    expect((await db.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId])).single['total'], 900);
+    await expectLater(operations.completeRestaurantOrder(orderId), throwsStateError);
+    await operations.updateKitchenStatus(orderItemId: itemId, status: 'preparing');
+    await operations.updateKitchenStatus(orderItemId: itemId, status: 'served');
+    await operations.completeRestaurantOrder(orderId);
+    expect((await db.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId])).single['status'], 'completed');
+    expect((await db.query('restaurant_tables', where: 'id = ?', whereArgs: [tableId])).single['status'], 'available');
+  });
+
+  test('cargo status updates keep a traceable location history', () async {
+    await dbService.configureForUser(userId());
+    final cargoId = await operations.createCargoJob(customerName: 'Cargo Customer', weight: 10, freightAmount: 500);
+    await operations.updateCargoStatus(cargoId: cargoId, status: 'picked_up', location: 'Karachi warehouse');
+    await operations.updateCargoStatus(cargoId: cargoId, status: 'in_transit', location: 'Hyderabad');
+    final db = await dbService.database;
+    final cargo = (await db.query('cargo_jobs', where: 'id = ?', whereArgs: [cargoId])).single;
+    final history = await db.query('cargo_status_history', where: 'cargoId = ?', whereArgs: [cargoId], orderBy: 'recordedAt ASC');
+    expect(cargo['status'], 'in_transit');
+    expect(history, hasLength(2));
+    expect(history.last['location'], 'Hyderabad');
+  });
+
+  test('vehicle sale writes transaction and prevents a second sale', () async {
+    await dbService.configureForUser(userId());
+    final vehicleId = await operations.addVehicleRecord(type: 'car', make: 'Toyota', model: 'Corolla', purchasePrice: 1000000);
+    await operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Buyer', amount: 1200000);
+    final db = await dbService.database;
+    expect((await db.query('vehicle_records', where: 'id = ?', whereArgs: [vehicleId])).single['status'], 'sold');
+    await expectLater(operations.recordVehicleTransaction(vehicleId: vehicleId, type: 'sale', partyName: 'Second buyer', amount: 1250000), throwsStateError);
+  });
+
+  test('school clinic salon farm construction and public service records persist', () async {
+    await dbService.configureForUser(userId());
+    final student = await operations.addSchoolStudent(name: 'Student A', className: 'Grade 4');
+    await operations.addSchoolFee(studentId: student, amount: 2000, paidAmount: 500);
+    final patient = await operations.addClinicPatient(name: 'Patient A');
+    await operations.bookClinicAppointment(patientId: patient, appointmentAt: '2026-10-19T10:00:00', fee: 800);
+    await operations.addSalonService(name: 'Haircut', durationMinutes: 30, price: 300);
+    final plot = await operations.addFarmPlot(name: 'Plot A', area: 2, crop: 'Wheat');
+    await operations.recordFarmActivity(plotId: plot, activityType: 'fertilizer', quantity: 4, cost: 2500);
+    final project = await operations.addConstructionProject(name: 'House', budget: 1000000);
+    await operations.addConstructionTask(projectId: project, title: 'Foundation', cost: 50000);
+    await operations.addPublicServiceCase(caseNumber: 'PS-100', applicantName: 'Applicant', serviceType: 'Certificate', fee: 100);
+    final db = await dbService.database;
+    expect(await db.query('school_students'), hasLength(1));
+    expect(await db.query('school_fees'), hasLength(1));
+    expect(await db.query('clinic_appointments'), hasLength(1));
+    expect(await db.query('salon_services'), hasLength(1));
+    expect(await db.query('farm_activities'), hasLength(1));
+    expect((await db.query('construction_projects')).single['spent'], 50000);
+    expect(await db.query('public_service_cases'), hasLength(1));
+  });
+
   test('branch report combines stock units and cash in/out', () async {
     await dbService.configureForUser(userId());
     final db = await dbService.database;
