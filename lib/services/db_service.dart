@@ -65,7 +65,7 @@ class DBService {
     final path = _userDatabasePath(root, userId);
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: (db, version) async => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -89,6 +89,10 @@ class DBService {
         }
         if (oldVersion < 8) {
           await _createBusinessTables(db);
+        }
+        if (oldVersion < 9) {
+          await _createBusinessTables(db);
+          await _ensureColumn(db, 'cargo_jobs', 'trackingToken', 'TEXT');
         }
       },
     );
