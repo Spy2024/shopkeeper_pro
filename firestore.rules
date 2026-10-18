@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Every synchronized table is stored below users/{Firebase UID}/{table}/{id}.
+    // A client must be authenticated as the owner UID for every operation.
+    match /users/{userId}/{collectionName}/{documentId} {
+      allow read, create, update, delete: if request.auth != null
+        && request.auth.uid == userId
+        && collectionName in [
+          'shop', 'products', 'bills', 'bill_items', 'customers', 'suppliers',
+          'expenses', 'daily_sales', 'customer_ledger', 'sync_queue',
+          'returns', 'return_items', 'payments', 'branches', 'branch_stock',
+          'branch_cash_entries', 'product_variants', 'mobile_devices',
+          'restaurant_tables', 'restaurant_orders', 'restaurant_menu_items',
+          'restaurant_order_items', 'restaurant_order_payments',
+          'vehicle_records', 'vehicle_transactions', 'transport_routes',
+          'transport_tickets', 'cargo_jobs', 'cargo_status_history',
+          'service_jobs', 'spare_part_compatibility', 'school_students',
+          'school_fees', 'clinic_patients', 'clinic_appointments',
+          'salon_services', 'salon_bookings', 'farm_plots', 'farm_activities',
+          'construction_projects', 'construction_tasks', 'public_service_cases'
+        ];
+    }
+
+    // Do not allow arbitrary root-level or cross-user reads/writes.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
