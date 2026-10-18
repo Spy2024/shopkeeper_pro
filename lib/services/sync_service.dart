@@ -65,6 +65,7 @@ class SyncService {
     'public_service_cases': 'public_service_cases',
     'restaurant_menu_items': 'restaurant_menu_items',
     'restaurant_order_items': 'restaurant_order_items',
+    'restaurant_order_payments': 'restaurant_order_payments',
     'vehicle_transactions': 'vehicle_transactions',
     'cargo_status_history': 'cargo_status_history',
   };
