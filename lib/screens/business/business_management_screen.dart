@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/business_operations_service.dart';
 import '../../services/db_service.dart';
 
@@ -463,7 +464,21 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           break;
         case 'Cargo job':
           v = await _form('Create cargo/load job', [('Customer name', 'required'), ('Load description', 'text'), ('Weight', 'number'), ('Freight amount', 'number')]);
-          if (v != null) await _ops.createCargoJob(customerName: v['Customer name']!, loadDescription: v['Load description'], weight: double.tryParse(v['Weight'] ?? '') ?? 0, freightAmount: double.tryParse(v['Freight amount'] ?? '') ?? 0);
+          if (v != null) {
+            final cargoId = await _ops.createCargoJob(customerName: v['Customer name']!, loadDescription: v['Load description'], weight: double.tryParse(v['Weight'] ?? '') ?? 0, freightAmount: double.tryParse(v['Freight amount'] ?? '') ?? 0);
+            final db = await DBService.instance.database;
+            final cargo = (await db.query('cargo_jobs', where: 'id = ?', whereArgs: [cargoId])).single;
+            final token = cargo['trackingToken']! as String;
+            final trackingUrl = 'https://shopkeeper-2de9a.web.app/api/track?token=$token';
+            if (mounted) await showDialog<void>(context: context, builder: (context) => AlertDialog(
+              title: const Text('Customer cargo tracking link'),
+              content: SelectableText(trackingUrl),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                FilledButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: trackingUrl)); if (context.mounted) Navigator.pop(context); }, icon: const Icon(Icons.copy), label: const Text('Copy link')),
+              ],
+            ));
+          }
           break;
         case 'Spare part compatibility':
           if (_products.isEmpty) { _showError('Pehle spare-part product inventory mein add karein.'); return; }
