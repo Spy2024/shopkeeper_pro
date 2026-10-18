@@ -2,11 +2,9 @@
 // --dart-define; never commit service-account credentials to the app.
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart';
+import 'package:flutter/foundation.dart';
 
 class DefaultFirebaseOptions {
-  static String _required(String key) => const String.fromEnvironment(key);
-
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) return web;
     switch (defaultTargetPlatform) {
