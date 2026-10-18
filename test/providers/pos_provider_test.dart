@@ -4,6 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:shopkeeper_pro/providers/inventory_provider.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 import 'package:shopkeeper_pro/services/db_service.dart';
+import 'package:shopkeeper_pro/services/business_operations_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
