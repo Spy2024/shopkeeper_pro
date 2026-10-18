@@ -32,9 +32,8 @@ class AuthProvider extends ChangeNotifier {
     final ok = await FirebaseAuthService.instance.verifyOtp(otp, expectedPhone: phone);
     if (!ok) return false;
 
-    await AuthService.instance.persistSession(phone);
     phoneNumber = phone;
-    userUid = await AuthService.instance.getUserUid();
+    userUid = await FirebaseAuthService.instance.getUserUid();
     isLoggedIn = true;
     notifyListeners();
     return true;
