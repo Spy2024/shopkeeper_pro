@@ -65,7 +65,7 @@ class DBService {
     final path = _userDatabasePath(root, userId);
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -76,17 +76,31 @@ class DBService {
         }
         if (oldVersion < 5) {
           await _createBusinessTables(db);
-          await db.execute('ALTER TABLE bills ADD COLUMN branchId TEXT');
+          await _ensureColumn(db, 'bills', 'branchId', 'TEXT');
+        }
+        if (oldVersion < 6) {
+          await _ensureColumn(db, 'bill_items', 'productId', 'TEXT');
+          await _ensureColumn(db, 'bill_items', 'imei', 'TEXT');
+          await _ensureColumn(db, 'return_items', 'imei', 'TEXT');
+          await _ensureColumn(db, 'mobile_devices', 'branchId', 'TEXT');
         }
       },
     );
+  }
+
+
+  Future<void> _ensureColumn(Database db, String table, String column, String type) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    if (!columns.any((entry) => entry['name'] == column)) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
+    }
   }
 
   Future<void> _createSchema(Database db) async {
     await db.execute('CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL, phone TEXT NOT NULL, taxNumber TEXT, logoPath TEXT)');
     await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5)');
     await db.execute('CREATE TABLE bills (id TEXT PRIMARY KEY, date TEXT NOT NULL, customerName TEXT, discount REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0, branchId TEXT)');
-    await db.execute('CREATE TABLE bill_items (id INTEGER PRIMARY KEY AUTOINCREMENT, billId TEXT NOT NULL, productName TEXT NOT NULL, quantity INTEGER NOT NULL, unitPrice REAL NOT NULL, FOREIGN KEY (billId) REFERENCES bills(id) ON DELETE CASCADE)');
+    await db.execute('CREATE TABLE bill_items (id INTEGER PRIMARY KEY AUTOINCREMENT, billId TEXT NOT NULL, productId TEXT, productName TEXT NOT NULL, imei TEXT, quantity INTEGER NOT NULL, unitPrice REAL NOT NULL, FOREIGN KEY (billId) REFERENCES bills(id) ON DELETE CASCADE)');
     await db.execute('CREATE TABLE suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL, totalStockReceivedValue REAL NOT NULL DEFAULT 0, totalPaymentsMade REAL NOT NULL DEFAULT 0)');
     await db.execute('CREATE TABLE supplier_orders (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, supplierName TEXT NOT NULL, date TEXT NOT NULL, status TEXT NOT NULL DEFAULT "draft")');
     await db.execute('CREATE TABLE supplier_order_items (id INTEGER PRIMARY KEY AUTOINCREMENT, orderId TEXT NOT NULL, productName TEXT NOT NULL, requiredQuantity INTEGER NOT NULL, estimatedPrice REAL NOT NULL, FOREIGN KEY (orderId) REFERENCES supplier_orders(id) ON DELETE CASCADE)');
@@ -101,12 +115,12 @@ class DBService {
     await db.execute('CREATE TABLE IF NOT EXISTS customer_ledger (id TEXT PRIMARY KEY, customerId TEXT NOT NULL, date TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, referenceId TEXT, note TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, billId TEXT NOT NULL, method TEXT NOT NULL, amount REAL NOT NULL, reference TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS returns (id TEXT PRIMARY KEY, billId TEXT NOT NULL, date TEXT NOT NULL, customerName TEXT, refundAmount REAL NOT NULL, reason TEXT)');
-    await db.execute('CREATE TABLE IF NOT EXISTS return_items (id TEXT PRIMARY KEY, returnId TEXT NOT NULL, productId TEXT, productName TEXT NOT NULL, quantity INTEGER NOT NULL, unitPrice REAL NOT NULL)');
+    await db.execute('CREATE TABLE IF NOT EXISTS return_items (id TEXT PRIMARY KEY, returnId TEXT NOT NULL, productId TEXT, productName TEXT NOT NULL, imei TEXT, quantity INTEGER NOT NULL, unitPrice REAL NOT NULL)');
     await db.execute('CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS branch_stock (id TEXT PRIMARY KEY, branchId TEXT NOT NULL, productId TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0)');
     await db.execute('CREATE TABLE IF NOT EXISTS branch_cash_entries (id TEXT PRIMARY KEY, branchId TEXT NOT NULL, date TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, note TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS product_variants (id TEXT PRIMARY KEY, productId TEXT NOT NULL, size TEXT, color TEXT, sku TEXT, quantity INTEGER NOT NULL DEFAULT 0)');
-    await db.execute('CREATE TABLE IF NOT EXISTS mobile_devices (id TEXT PRIMARY KEY, productId TEXT, imei TEXT UNIQUE NOT NULL, serialNumber TEXT, status TEXT NOT NULL DEFAULT "in_stock", purchasePrice REAL NOT NULL DEFAULT 0, salePrice REAL NOT NULL DEFAULT 0, billId TEXT)');
+    await db.execute('CREATE TABLE IF NOT EXISTS mobile_devices (id TEXT PRIMARY KEY, productId TEXT, imei TEXT UNIQUE NOT NULL, serialNumber TEXT, status TEXT NOT NULL DEFAULT "in_stock", purchasePrice REAL NOT NULL DEFAULT 0, salePrice REAL NOT NULL DEFAULT 0, billId TEXT, branchId TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS restaurant_tables (id TEXT PRIMARY KEY, name TEXT NOT NULL, capacity INTEGER NOT NULL DEFAULT 2, status TEXT NOT NULL DEFAULT "available")');
     await db.execute('CREATE TABLE IF NOT EXISTS restaurant_orders (id TEXT PRIMARY KEY, tableId TEXT, status TEXT NOT NULL DEFAULT "open", total REAL NOT NULL DEFAULT 0, createdAt TEXT NOT NULL)');
     await db.execute('CREATE TABLE IF NOT EXISTS vehicle_records (id TEXT PRIMARY KEY, type TEXT NOT NULL, make TEXT, model TEXT, registrationNumber TEXT, vin TEXT, status TEXT NOT NULL DEFAULT "in_stock", purchasePrice REAL NOT NULL DEFAULT 0, salePrice REAL NOT NULL DEFAULT 0)');
