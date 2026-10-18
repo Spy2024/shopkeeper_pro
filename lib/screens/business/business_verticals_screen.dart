@@ -1,0 +1,224 @@
+import 'package:flutter/material.dart';
+import '../services/business_operations_service.dart';
+import '../services/db_service.dart';
+
+class BusinessVerticalsScreen extends StatefulWidget {
+  const BusinessVerticalsScreen({super.key});
+
+  @override
+  State<BusinessVerticalsScreen> createState() => _BusinessVerticalsScreenState();
+}
+
+class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with SingleTickerProviderStateMixin {
+  final _ops = BusinessOperationsService.instance;
+  late final TabController _tabs;
+  bool _loading = true;
+  String? _error;
+  Map<String, List<Map<String, Object?>>> _rows = {};
+  Map<String, Object?> _report = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 6, vsync: this);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final db = await DBService.instance.database;
+      final results = await Future.wait([
+        db.query('school_students', orderBy: 'admissionDate DESC'),
+        db.query('school_fees', orderBy: 'dueDate DESC'),
+        db.query('clinic_patients', orderBy: 'name COLLATE NOCASE'),
+        db.query('clinic_appointments', orderBy: 'appointmentAt DESC'),
+        db.query('salon_services', orderBy: 'name COLLATE NOCASE'),
+        db.query('salon_bookings', orderBy: 'bookingAt DESC'),
+        db.query('farm_plots', orderBy: 'name COLLATE NOCASE'),
+        db.query('farm_activities', orderBy: 'activityDate DESC'),
+        db.query('construction_projects', orderBy: 'name COLLATE NOCASE'),
+        db.query('construction_tasks', orderBy: 'dueDate ASC'),
+        db.query('public_service_cases', orderBy: 'openedAt DESC'),
+      ]);
+      final report = await _ops.businessVerticalReport();
+      if (!mounted) return;
+      setState(() {
+        _rows = {
+          'students': results[0], 'schoolFees': results[1],
+          'patients': results[2], 'clinicAppointments': results[3],
+          'salonServices': results[4], 'salonBookings': results[5],
+          'farmPlots': results[6], 'farmActivities': results[7],
+          'projects': results[8], 'tasks': results[9], 'cases': results[10],
+        };
+        _report = report;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  double _number(Object? value) => value is num ? value.toDouble() : 0;
+  String _money(Object? value) => 'Rs. ${_number(value).toStringAsFixed(2)}';
+
+  Future<void> _recordSchoolPayment(Map<String, Object?> fee) async {
+    final controller = TextEditingController();
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Record school fee payment'),
+        content: TextField(controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Payment amount (Rs.)')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () { final v = double.tryParse(controller.text); if (v != null) Navigator.pop(context, v); }, child: const Text('Record')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (amount == null) return;
+    await _ops.recordSchoolFeePayment(feeId: fee['id']! as String, amount: amount);
+    await _load();
+  }
+
+  Future<void> _chooseStatus(String title, String id, List<String> statuses, Future<void> Function(String) save) async {
+    final status = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(title),
+        children: statuses.map((s) => SimpleDialogOption(onPressed: () => Navigator.pop(context, s), child: Text(s.replaceAll('_', ' ')))).toList(),
+      ),
+    );
+    if (status == null) return;
+    try {
+      await save(status);
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update: $e')));
+    }
+  }
+
+  Widget _recordList(List<Map<String, Object?>> rows, {required String empty, required Widget Function(Map<String, Object?>) tile}) {
+    if (rows.isEmpty) return Center(child: Text(empty));
+    return ListView.builder(
+      itemCount: rows.length,
+      itemBuilder: (context, index) => tile(rows[index]),
+    );
+  }
+
+  Widget _summaryCards() {
+    final school = _report['school'] as Map<String, Object?>? ?? {};
+    final clinic = _report['clinic'] as Map<String, Object?>? ?? {};
+    final salon = _report['salon'] as Map<String, Object?>? ?? {};
+    final farm = _report['agriculture'] as Map<String, Object?>? ?? {};
+    final construction = _report['construction'] as Map<String, Object?>? ?? {};
+    final cases = _report['publicServices'] as Map<String, Object?>? ?? {};
+    return Wrap(spacing: 8, runSpacing: 8, children: [
+      _metric('School fees outstanding', _money(school['outstanding'])),
+      _metric('Clinic outstanding', _money(clinic['outstanding'])),
+      _metric('Salon booked value', _money(salon['bookedValue'])),
+      _metric('Farm activity cost', _money(farm['cost'])),
+      _metric('Construction spent / budget', '${_money(construction['spent'])} / ${_money(construction['budget'])}'),
+      _metric('Public-service fees', _money(cases['fees'])),
+    ]);
+  }
+
+  Widget _metric(String title, String value) => SizedBox(
+    width: 230,
+    child: Card(child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 6),
+        Text(value, style: Theme.of(context).textTheme.titleMedium),
+      ]),
+    )),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Business Modules & Reports'),
+      actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh), tooltip: 'Refresh')],
+      bottom: TabBar(controller: _tabs, isScrollable: true, tabs: const [
+        Tab(text: 'School'), Tab(text: 'Clinic'), Tab(text: 'Salon'),
+        Tab(text: 'Agriculture'), Tab(text: 'Construction'), Tab(text: 'Public services'),
+      ]),
+    ),
+    body: _loading ? const Center(child: CircularProgressIndicator())
+      : _error != null ? Center(child: Text(_error!))
+      : Column(children: [
+          Padding(padding: const EdgeInsets.all(12), child: _summaryCards()),
+          Expanded(child: TabBarView(controller: _tabs, children: [
+            _schoolTab(), _clinicTab(), _salonTab(), _farmTab(), _constructionTab(), _publicTab(),
+          ])),
+        ]),
+  );
+
+  Widget _schoolTab() => Column(children: [
+    ListTile(title: const Text('Students'), subtitle: Text('${(_rows['students'] ?? []).length} enrolled')),
+    Expanded(child: _recordList(_rows['students'] ?? [], empty: 'No students yet', tile: (r) => ListTile(
+      leading: const Icon(Icons.school), title: Text('${r['name']}'),
+      subtitle: Text('${r['className'] ?? 'No class'} · Guardian: ${r['guardianName'] ?? '—'}'),
+    ))),
+    const Divider(),
+    ListTile(title: const Text('Fee ledger'), subtitle: Text('${(_rows['schoolFees'] ?? []).length} fee records')),
+    Expanded(child: _recordList(_rows['schoolFees'] ?? [], empty: 'No fee records yet', tile: (r) => ListTile(
+      title: Text('Student ${r['studentId']}'),
+      subtitle: Text('Paid ${_money(r['paidAmount'])} / ${_money(r['amount'])} · ${r['status']}'),
+      trailing: PopupMenuButton<String>(onSelected: (v) { if (v == 'pay') _recordSchoolPayment(r); }, itemBuilder: (_) => const [PopupMenuItem(value: 'pay', child: Text('Record payment'))]),
+    ))),
+  ]);
+
+  Widget _clinicTab() => _recordList(_rows['clinicAppointments'] ?? [], empty: 'No clinic appointments yet', tile: (r) => ListTile(
+    leading: const Icon(Icons.medical_services), title: Text('${r['appointmentAt']}'),
+    subtitle: Text('Patient ${r['patientId']} · ${r['status']} · Paid ${_money(r['paidAmount'])}/${_money(r['fee'])}'),
+    trailing: PopupMenuButton<String>(onSelected: (v) {
+      if (v == 'payment') _recordClinicPayment(r);
+      else _chooseStatus('Appointment status', r['id']! as String, ['scheduled','checked_in','completed','cancelled','no_show'], (s) => _ops.updateClinicAppointmentStatus(appointmentId: r['id']! as String, status: s));
+    }, itemBuilder: (_) => const [PopupMenuItem(value: 'payment', child: Text('Record payment')), PopupMenuItem(value: 'status', child: Text('Change status'))]),
+  ));
+
+  Future<void> _recordClinicPayment(Map<String, Object?> appointment) async {
+    final controller = TextEditingController();
+    final amount = await showDialog<double>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Record clinic payment'),
+      content: TextField(controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Amount (Rs.)')),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: () { final v = double.tryParse(controller.text); if (v != null) Navigator.pop(context, v); }, child: const Text('Record')],
+    ));
+    controller.dispose();
+    if (amount == null) return;
+    try { await _ops.recordClinicPayment(appointmentId: appointment['id']! as String, amount: amount); await _load(); }
+    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not record payment: $e'))); }
+  }
+
+  Widget _salonTab() => _recordList(_rows['salonBookings'] ?? [], empty: 'No salon bookings yet', tile: (r) => ListTile(
+    leading: const Icon(Icons.content_cut), title: Text('${r['customerName']} · ${r['bookingAt']}'),
+    subtitle: Text('Service ${r['serviceId'] ?? '—'} · ${r['status']} · ${_money(r['amount'])}'),
+    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Salon booking status', r['id']! as String, ['booked','in_progress','completed','cancelled','no_show'], (status) => _ops.updateSalonBookingStatus(bookingId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
+  ));
+
+  Widget _farmTab() => _recordList(_rows['farmActivities'] ?? [], empty: 'No farm activities yet', tile: (r) => ListTile(
+    leading: const Icon(Icons.agriculture), title: Text('${r['activityType']} · Plot ${r['plotId']}'),
+    subtitle: Text('${r['activityDate']} · ${r['inputName'] ?? ''} · Qty ${r['quantity']}'),
+    trailing: Text(_money(r['cost'])),
+  ));
+
+  Widget _constructionTab() => _recordList(_rows['tasks'] ?? [], empty: 'No construction tasks yet', tile: (r) => ListTile(
+    leading: const Icon(Icons.construction), title: Text('${r['title']}'),
+    subtitle: Text('Project ${r['projectId']} · ${r['status']} · ${_money(r['cost'])}'),
+    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Task status', r['id']! as String, ['todo','in_progress','completed','cancelled'], (status) => _ops.updateConstructionTaskStatus(taskId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
+  ));
+
+  Widget _publicTab() => _recordList(_rows['cases'] ?? [], empty: 'No public-service cases yet', tile: (r) => ListTile(
+    leading: const Icon(Icons.account_balance), title: Text('${r['caseNumber']} · ${r['serviceType']}'),
+    subtitle: Text('${r['applicantName']} · ${r['status']} · Fee ${_money(r['fee'])}'),
+    trailing: PopupMenuButton<String>(onSelected: (s) => _chooseStatus('Case status', r['id']! as String, ['open','in_progress','resolved','rejected'], (status) => _ops.updatePublicServiceCaseStatus(caseId: r['id']! as String, status: status)), itemBuilder: (_) => const [PopupMenuItem(value: 'status', child: Text('Change status'))]),
+  ));
+}
