@@ -648,14 +648,59 @@ class BusinessOperationsService {
     });
   }
   Future<void> recordVehicleTransaction({required String vehicleId, required String type, required String partyName, required double amount, String? notes}) async {
-    if (!{'purchase','sale'}.contains(type) || amount < 0 || partyName.trim().isEmpty) throw ArgumentError('Valid purchase/sale, party and amount required.');
+    if (!{'purchase', 'sale', 'expense'}.contains(type) ||
+        amount <= 0 || partyName.trim().isEmpty) {
+      throw ArgumentError('Valid transaction type, party and positive amount required.');
+    }
     final db = await DBService.instance.database;
     await db.transaction((txn) async {
-      final rows = await txn.query('vehicle_records', where:'id = ?', whereArgs:[vehicleId], limit:1);
-      if (rows.isEmpty || rows.first['status'] != 'in_stock') throw StateError('Vehicle not available for transaction.');
-      await txn.insert('vehicle_transactions', {'id':_uuid.v4(),'vehicleId':vehicleId,'type':type,'partyName':partyName.trim(),'transactionDate':DateTime.now().toIso8601String(),'amount':amount,'notes':notes});
-      await txn.update('vehicle_records', type == 'sale' ? {'status':'sold','salePrice':amount} : {'purchasePrice':amount}, where:'id = ?', whereArgs:[vehicleId]);
+      final rows = await txn.query('vehicle_records',
+          where: 'id = ?', whereArgs: [vehicleId], limit: 1);
+      if (rows.isEmpty) throw StateError('Vehicle not found.');
+      final vehicle = rows.first;
+      if (type == 'sale' && vehicle['status'] != 'in_stock') {
+        throw StateError('Only an in-stock vehicle can be sold.');
+      }
+      if (type == 'purchase' && vehicle['status'] != 'in_stock') {
+        throw StateError('A sold vehicle cannot be purchased again.');
+      }
+      await txn.insert('vehicle_transactions', {
+        'id': _uuid.v4(),
+        'vehicleId': vehicleId,
+        'type': type,
+        'partyName': partyName.trim(),
+        'transactionDate': DateTime.now().toIso8601String(),
+        'amount': amount,
+        'notes': notes,
+      });
+      if (type == 'sale') {
+        await txn.update('vehicle_records', {'status': 'sold', 'salePrice': amount},
+            where: 'id = ?', whereArgs: [vehicleId]);
+      } else if (type == 'purchase') {
+        await txn.update('vehicle_records', {'purchasePrice': amount},
+            where: 'id = ?', whereArgs: [vehicleId]);
+      }
     });
+  }
+
+  /// Calculates realized gross profit per vehicle from the ledger transactions.
+  /// Net profit = sale proceeds - recorded purchases - recorded expenses.
+  Future<List<Map<String, Object?>>> vehicleProfitReport() async {
+    final db = await DBService.instance.database;
+    return db.rawQuery('''
+      SELECT v.id AS vehicleId, v.make, v.model, v.registrationNumber,
+        v.status,
+        COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount ELSE 0 END), 0) AS saleProceeds,
+        COALESCE(SUM(CASE WHEN t.type = 'purchase' THEN t.amount ELSE 0 END), 0) AS purchaseCost,
+        COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS expenses,
+        COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.amount
+                          WHEN t.type IN ('purchase', 'expense') THEN -t.amount
+                          ELSE 0 END), 0) AS netProfit
+      FROM vehicle_records v
+      LEFT JOIN vehicle_transactions t ON t.vehicleId = v.id
+      GROUP BY v.id, v.make, v.model, v.registrationNumber, v.status
+      ORDER BY v.make, v.model
+    ''');
   }
   Future<void> updateCargoStatus({required String cargoId, required String status, String? location, String? note}) async {
     if (!{'created','picked_up','in_transit','at_hub','out_for_delivery','delivered','cancelled'}.contains(status)) throw ArgumentError('Invalid cargo status.');
