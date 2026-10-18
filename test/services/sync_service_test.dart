@@ -3,12 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('SyncService Tests', () {
     test('init should monitor connectivity', () async {
-      const userId = 'test-user-123';
       expect(userId, isNotEmpty);
     });
 
     test('syncAll should batch write products to Firestore', () async {
-      const userId = 'test-user-123';
       final mockProducts = [
         {'id': 'p1', 'name': 'Product 1', 'stockQuantity': 10},
         {'id': 'p2', 'name': 'Product 2', 'stockQuantity': 5},
