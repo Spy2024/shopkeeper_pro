@@ -125,7 +125,7 @@
     if (!user) return;
     $('loadStatus').textContent = 'Loading cloud data for this account…';
     const [products,bills,sales,expenses,branches,returns] = await Promise.all([
-      getRows(user.uid,'products'), getRows(user.uid,'bills'), getRows(user.uid,'daily_sales'),
+      getRows(user.uid,'products'), getRows(user.uid,'bills'), getRows(user.uid,'sales'),
       getRows(user.uid,'expenses'), getRows(user.uid,'branches'), getRows(user.uid,'returns')
     ]);
     $('productsCount').textContent = products === null ? '—' : products.length;
