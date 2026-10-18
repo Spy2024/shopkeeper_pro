@@ -560,4 +560,106 @@ class BusinessOperationsService {
     return id;
   }
 
+  Future<String> addRestaurantMenuItem({required String name, String? category, required double price}) async {
+    if (name.trim().isEmpty || price < 0) throw ArgumentError('Menu item name and non-negative price are required.');
+    final id = _uuid.v4(); await (await DBService.instance.database).insert('restaurant_menu_items', {'id': id, 'name': name.trim(), 'category': category, 'price': price, 'active': 1}); return id;
+  }
+  Future<String> addRestaurantOrderItem({required String orderId, required String menuItemId, required int quantity, String? notes}) async {
+    if (quantity < 1) throw ArgumentError('Quantity must be at least one.');
+    final db = await DBService.instance.database; final id = _uuid.v4();
+    await db.transaction((txn) async {
+      final orders = await txn.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId], limit: 1);
+      final menu = await txn.query('restaurant_menu_items', where: 'id = ? AND active = 1', whereArgs: [menuItemId], limit: 1);
+      if (orders.isEmpty || menu.isEmpty || orders.first['status'] != 'open') throw StateError('Open order and active menu item required.');
+      await txn.insert('restaurant_order_items', {'id': id, 'orderId': orderId, 'menuItemId': menuItemId, 'quantity': quantity, 'unitPrice': menu.first['price'], 'notes': notes, 'kitchenStatus': 'queued'});
+      final items = await txn.query('restaurant_order_items', where: 'orderId = ?', whereArgs: [orderId]);
+      final total = items.fold<double>(0, (sum, row) => sum + (row['quantity'] as num).toDouble() * (row['unitPrice'] as num).toDouble());
+      await txn.update('restaurant_orders', {'total': total}, where: 'id = ?', whereArgs: [orderId]);
+    }); return id;
+  }
+  Future<void> updateKitchenStatus({required String orderItemId, required String status}) async {
+    if (!{'queued','preparing','ready','served','cancelled'}.contains(status)) throw ArgumentError('Invalid kitchen status.');
+    final changed = await (await DBService.instance.database).update('restaurant_order_items', {'kitchenStatus': status}, where: 'id = ?', whereArgs: [orderItemId]);
+    if (changed != 1) throw StateError('Restaurant order item not found.');
+  }
+  Future<void> completeRestaurantOrder(String orderId) async {
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId], limit: 1);
+      if (rows.isEmpty) throw StateError('Restaurant order not found.');
+      final pending = await txn.query('restaurant_order_items', where: 'orderId = ? AND kitchenStatus NOT IN (?, ?)', whereArgs: [orderId,'served','cancelled']);
+      if (pending.isNotEmpty) throw StateError('Kitchen items must be served or cancelled before closing.');
+      await txn.update('restaurant_orders', {'status':'completed'}, where:'id = ?', whereArgs:[orderId]);
+      final tableId = rows.first['tableId'] as String?; if (tableId != null) await txn.update('restaurant_tables', {'status':'available'}, where:'id = ?', whereArgs:[tableId]);
+    });
+  }
+  Future<void> recordVehicleTransaction({required String vehicleId, required String type, required String partyName, required double amount, String? notes}) async {
+    if (!{'purchase','sale'}.contains(type) || amount < 0 || partyName.trim().isEmpty) throw ArgumentError('Valid purchase/sale, party and amount required.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('vehicle_records', where:'id = ?', whereArgs:[vehicleId], limit:1);
+      if (rows.isEmpty || rows.first['status'] != 'in_stock') throw StateError('Vehicle not available for transaction.');
+      await txn.insert('vehicle_transactions', {'id':_uuid.v4(),'vehicleId':vehicleId,'type':type,'partyName':partyName.trim(),'transactionDate':DateTime.now().toIso8601String(),'amount':amount,'notes':notes});
+      await txn.update('vehicle_records', type == 'sale' ? {'status':'sold','salePrice':amount} : {'purchasePrice':amount}, where:'id = ?', whereArgs:[vehicleId]);
+    });
+  }
+  Future<void> updateCargoStatus({required String cargoId, required String status, String? location, String? note}) async {
+    if (!{'created','picked_up','in_transit','at_hub','out_for_delivery','delivered','cancelled'}.contains(status)) throw ArgumentError('Invalid cargo status.');
+    final db = await DBService.instance.database;
+    await db.transaction((txn) async {
+      if ((await txn.query('cargo_jobs', where:'id = ?', whereArgs:[cargoId], limit:1)).isEmpty) throw StateError('Cargo job not found.');
+      await txn.update('cargo_jobs', {'status':status}, where:'id = ?', whereArgs:[cargoId]);
+      await txn.insert('cargo_status_history', {'id':_uuid.v4(),'cargoId':cargoId,'status':status,'location':location,'note':note,'recordedAt':DateTime.now().toIso8601String()});
+    });
+  }
+  Future<String> addSchoolStudent({required String name, String? guardianName, String? phone, String? className}) async {
+    if (name.trim().isEmpty) throw ArgumentError('Student name required.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('school_students', {'id':id,'name':name.trim(),'guardianName':guardianName,'phone':phone,'className':className,'admissionDate':DateTime.now().toIso8601String(),'status':'active'}); return id;
+  }
+  Future<String> addSchoolFee({required String studentId, required double amount, double paidAmount=0, String? note}) async {
+    if (amount<0 || paidAmount<0 || paidAmount>amount) throw ArgumentError('Invalid fee amount/payment.');
+    final db=await DBService.instance.database; if ((await db.query('school_students',where:'id = ?',whereArgs:[studentId],limit:1)).isEmpty) throw StateError('Student not found.');
+    final id=_uuid.v4(); await db.insert('school_fees',{'id':id,'studentId':studentId,'dueDate':DateTime.now().toIso8601String(),'amount':amount,'paidAmount':paidAmount,'status':paidAmount>=amount?'paid':'due','note':note}); return id;
+  }
+  Future<String> addClinicPatient({required String name, String? phone, String? dateOfBirth, String? notes}) async {
+    if(name.trim().isEmpty) throw ArgumentError('Patient name required.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('clinic_patients',{'id':id,'name':name.trim(),'phone':phone,'dateOfBirth':dateOfBirth,'notes':notes}); return id;
+  }
+  Future<String> bookClinicAppointment({required String patientId, required String appointmentAt, String? clinician, String? reason, required double fee}) async {
+    if(fee<0) throw ArgumentError('Fee cannot be negative.'); final db=await DBService.instance.database;
+    if((await db.query('clinic_patients',where:'id = ?',whereArgs:[patientId],limit:1)).isEmpty) throw StateError('Patient not found.');
+    final id=_uuid.v4(); await db.insert('clinic_appointments',{'id':id,'patientId':patientId,'appointmentAt':appointmentAt,'clinician':clinician,'reason':reason,'status':'scheduled','fee':fee,'paidAmount':0}); return id;
+  }
+  Future<String> addSalonService({required String name, required int durationMinutes, required double price}) async {
+    if(name.trim().isEmpty || durationMinutes<1 || price<0) throw ArgumentError('Invalid salon service.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('salon_services',{'id':id,'name':name.trim(),'durationMinutes':durationMinutes,'price':price,'active':1}); return id;
+  }
+  Future<String> bookSalonAppointment({required String customerName, String? phone, required String bookingAt, String? serviceId, String? staffName, required double amount}) async {
+    if(customerName.trim().isEmpty || amount<0) throw ArgumentError('Invalid salon booking.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('salon_bookings',{'id':id,'customerName':customerName.trim(),'phone':phone,'serviceId':serviceId,'staffName':staffName,'bookingAt':bookingAt,'status':'booked','amount':amount}); return id;
+  }
+  Future<String> addFarmPlot({required String name, required double area, required String crop, String? season}) async {
+    if(name.trim().isEmpty || area<=0 || crop.trim().isEmpty) throw ArgumentError('Plot, positive area and crop required.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('farm_plots',{'id':id,'name':name.trim(),'area':area,'areaUnit':'acre','crop':crop.trim(),'season':season,'status':'active'}); return id;
+  }
+  Future<String> recordFarmActivity({required String plotId, required String activityType, String? inputName, required double quantity, required double cost, String? notes}) async {
+    if(activityType.trim().isEmpty || quantity<0 || cost<0) throw ArgumentError('Invalid farm activity.'); final db=await DBService.instance.database;
+    if((await db.query('farm_plots',where:'id = ?',whereArgs:[plotId],limit:1)).isEmpty) throw StateError('Farm plot not found.');
+    final id=_uuid.v4(); await db.insert('farm_activities',{'id':id,'plotId':plotId,'activityType':activityType.trim(),'activityDate':DateTime.now().toIso8601String(),'inputName':inputName,'quantity':quantity,'cost':cost,'notes':notes}); return id;
+  }
+  Future<String> addConstructionProject({required String name, String? clientName, String? location, required double budget, String? dueDate}) async {
+    if(name.trim().isEmpty || budget<0) throw ArgumentError('Invalid project.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('construction_projects',{'id':id,'name':name.trim(),'clientName':clientName,'location':location,'budget':budget,'spent':0,'status':'planned','startDate':DateTime.now().toIso8601String(),'dueDate':dueDate}); return id;
+  }
+  Future<String> addConstructionTask({required String projectId, required String title, String? assignedTo, String? dueDate, required double cost}) async {
+    if(title.trim().isEmpty || cost<0) throw ArgumentError('Invalid task.'); final db=await DBService.instance.database; final id=_uuid.v4();
+    await db.transaction((txn) async { if((await txn.query('construction_projects',where:'id = ?',whereArgs:[projectId],limit:1)).isEmpty) throw StateError('Project not found.');
+      await txn.insert('construction_tasks',{'id':id,'projectId':projectId,'title':title.trim(),'assignedTo':assignedTo,'status':'todo','cost':cost,'dueDate':dueDate});
+      await txn.rawUpdate('UPDATE construction_projects SET spent = spent + ? WHERE id = ?',[cost,projectId]); }); return id;
+  }
+  Future<String> addPublicServiceCase({required String caseNumber, required String applicantName, required String serviceType, required double fee, String? notes}) async {
+    if(caseNumber.trim().isEmpty || applicantName.trim().isEmpty || serviceType.trim().isEmpty || fee<0) throw ArgumentError('Invalid public service case.'); final id=_uuid.v4();
+    await (await DBService.instance.database).insert('public_service_cases',{'id':id,'caseNumber':caseNumber.trim(),'applicantName':applicantName.trim(),'serviceType':serviceType.trim(),'openedAt':DateTime.now().toIso8601String(),'status':'open','fee':fee,'notes':notes}); return id;
+  }
+
 }
