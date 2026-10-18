@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0B3D91">
+  <title>Shopkeeper Pro — Web Dashboard</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#10233f;background:#f4f7fb;--navy:#0B3D91;--teal:#14B8A6;--gold:#FFBF24}
+    *{box-sizing:border-box}body{margin:0}header{background:var(--navy);color:#fff;padding:20px clamp(16px,4vw,48px);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}h1{font-size:1.25rem;margin:0}header p{margin:4px 0 0;color:#dbeafe;font-size:.9rem}.wrap{max-width:1200px;margin:auto;padding:24px 16px}.panel,.metric{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;box-shadow:0 4px 18px #0b3d910b}.login{max-width:420px;margin:7vh auto}.field{display:block;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;margin:8px 0 14px;font:inherit}button{border:0;border-radius:9px;padding:11px 16px;font:inherit;font-weight:650;cursor:pointer;background:var(--teal);color:#062c36}button.secondary{background:#e2e8f0;color:#10233f}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:16px 0}.metric span{color:#64748b;font-size:.9rem}.metric strong{display:block;font-size:1.7rem;margin-top:10px;overflow-wrap:anywhere}.layout{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}.panel h2{font-size:1.05rem;margin:0 0 14px}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{text-align:left;padding:10px;border-bottom:1px solid #edf2f7;white-space:nowrap}th{color:#64748b;font-weight:600}.muted{color:#64748b}.error{color:#b91c1c;white-space:pre-wrap}.status{font-size:.9rem;color:#dbeafe}.hidden{display:none!important}footer{padding:24px;text-align:center;color:#64748b;font-size:.85rem}
+  </style>
+</head>
+<body>
+<header><div><h1>🛒 Shopkeeper Pro</h1><p>Business overview · Offline-first POS cloud dashboard</p></div><div><span id="userLabel" class="status"></span> <button id="signOut" class="secondary hidden">Sign out</button></div></header>
+<main class="wrap">
+  <section id="loginPanel" class="panel login">
+    <h2>Sign in to your business</h2>
+    <p class="muted">Use the Firebase account associated with this shop. Data is loaded only from that signed-in user's cloud path.</p>
+    <form id="loginForm"><label for="email">Email</label><input class="field" id="email" type="email" autocomplete="username" required><label for="password">Password</label><input class="field" id="password" type="password" autocomplete="current-password" required><button type="submit">Sign in</button></form>
+    <p id="loginError" class="error" role="alert"></p>
+  </section>
+  <section id="dashboard" class="hidden">
+    <p id="loadStatus" class="muted">Loading account data…</p>
+    <div class="grid">
+      <article class="metric"><span>Products in cloud</span><strong id="productsCount">—</strong></article>
+      <article class="metric"><span>Saved bills</span><strong id="billsCount">—</strong></article>
+      <article class="metric"><span>Recorded sales</span><strong id="salesTotal">—</strong></article>
+      <article class="metric"><span>Expenses recorded</span><strong id="expensesTotal">—</strong></article>
+      <article class="metric"><span>Branches</span><strong id="branchesCount">—</strong></article>
+      <article class="metric"><span>Returns recorded</span><strong id="returnsCount">—</strong></article>
+    </div>
+    <div class="layout">
+      <section class="panel"><h2>Recent bills</h2><div class="scroll"><table><thead><tr><th>Date</th><th>Customer</th><th>Bill ID</th></tr></thead><tbody id="billsRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
+      <section class="panel"><h2>Low stock</h2><div class="scroll"><table><thead><tr><th>Product</th><th>Available</th><th>Alert at</th></tr></thead><tbody id="stockRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
+      <section class="panel"><h2>Branches</h2><div class="scroll"><table><thead><tr><th>Branch</th><th>Phone</th><th>Address</th></tr></thead><tbody id="branchRows"><tr><td colspan="3">No data loaded</td></tr></tbody></table></div></section>
+      <section class="panel"><h2>Data / access status</h2><p id="dataStatus" class="muted">Waiting for sign-in.</p><p class="muted">This initial dashboard is read-only. It does not replace the Android app, and it does not claim local/offline phone data has synced unless it exists in Firestore.</p></section>
+    </div>
+  </section>
+</main>
+<footer>Shopkeeper Pro · Navy #0B3D91 · Teal #14B8A6 · Gold #FFBF24</footer>
+<script src="./firebase-config.js"></script>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+  import { getFirestore, collection, getDocs, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+
+  const $ = (id) => document.getElementById(id);
+  const money = (n) => new Intl.NumberFormat('en-PK',{style:'currency',currency:'PKR',maximumFractionDigits:0}).format(Number(n)||0);
+  const dateText = (v) => { const d = new Date(v || 0); return Number.isNaN(d.valueOf()) ? '—' : d.toLocaleString(); };
+  let auth, db;
+  const config = window.SHOPKEEPER_FIREBASE_CONFIG;
+  if (!config || !config.apiKey || String(config.apiKey).includes('REPLACE_')) {
+    $('loginError').textContent = 'Setup required: copy firebase-config.example.js to firebase-config.js and add your Firebase Web App configuration.';
+    $('loginForm').querySelector('button').disabled = true;
+  } else {
+    const app = initializeApp(config);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+
+  $('loginForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('loginError').textContent = '';
+    try { await signInWithEmailAndPassword(auth, $('email').value.trim(), $('password').value); }
+    catch (error) { $('loginError').textContent = error.message || 'Sign-in failed.'; }
+  });
+  $('signOut').addEventListener('click', () => signOut(auth));
+
+  async function getRows(uid, name, maxRows = 500) {
+    const path = collection(db, 'users', uid, name);
+    try {
+      const snap = await getDocs(query(path, limit(maxRows)));
+      return snap.docs.map(d => ({id:d.id,...d.data()}));
+    } catch (error) {
+      console.warn('Unable to read collection', name, error);
+      return null;
+    }
+  }
+  function fillRows(id, rows, cols, empty) {
+    const body = $(id); body.replaceChildren();
+    if (rows === null) { const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=cols; td.textContent='Not available (check Firestore rules/config)'; tr.append(td); body.append(tr); return; }
+    if (!rows.length) { const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=cols; td.textContent=empty; tr.append(td); body.append(tr); return; }
+    for (const row of rows) {
+      const tr=document.createElement('tr');
+      for (const value of row) { const td=document.createElement('td'); td.textContent=String(value ?? '—'); tr.append(td); }
+      body.append(tr);
+    }
+  }
+  onAuthStateChanged(auth, async (user) => {
+    $('loginPanel').classList.toggle('hidden', !!user);
+    $('dashboard').classList.toggle('hidden', !user);
+    $('signOut').classList.toggle('hidden', !user);
+    $('userLabel').textContent = user ? user.email || user.uid : '';
+    if (!user) return;
+    $('loadStatus').textContent = 'Loading cloud data for this account…';
+    const [products,bills,sales,expenses,branches,returns] = await Promise.all([
+      getRows(user.uid,'products'), getRows(user.uid,'bills'), getRows(user.uid,'daily_sales'),
+      getRows(user.uid,'expenses'), getRows(user.uid,'branches'), getRows(user.uid,'returns')
+    ]);
+    $('productsCount').textContent = products === null ? '—' : products.length;
+    $('billsCount').textContent = bills === null ? '—' : bills.length;
+    $('salesTotal').textContent = sales === null ? '—' : money(sales.reduce((sum,s)=>sum+(Number(s.salePrice)||0),0));
+    $('expensesTotal').textContent = expenses === null ? '—' : money(expenses.reduce((sum,e)=>sum+(Number(e.amount)||0),0));
+    $('branchesCount').textContent = branches === null ? '—' : branches.length;
+    $('returnsCount').textContent = returns === null ? '—' : returns.length;
+    fillRows('billsRows', bills === null ? null : [...bills].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,12).map(b=>[dateText(b.date),b.customerName||'Walk-in',b.id]),3,'No saved bills in cloud yet.');
+    fillRows('stockRows', products === null ? null : products.filter(p=>Number(p.stockQuantity||0)<=Number(p.lowStockThreshold??5)).slice(0,20).map(p=>[p.name, p.stockQuantity, p.lowStockThreshold??5]),3,'No low-stock products.');
+    fillRows('branchRows', branches === null ? null : branches.map(b=>[b.name,b.phone,b.address]),3,'No branches in cloud yet.');
+    const failed = [products,bills,sales,expenses,branches,returns].filter(v=>v===null).length;
+    $('loadStatus').textContent = failed ? 'Dashboard loaded with limited permissions. Review Firestore rules and cloud sync.' : 'Cloud data loaded for the signed-in account.';
+    $('dataStatus').textContent = failed ? failed + ' collection(s) could not be read. No other account is queried by this dashboard.' : 'Signed in; reads are scoped to users/' + user.uid + '/…';
+  });
+</script>
+</body>
+</html>
