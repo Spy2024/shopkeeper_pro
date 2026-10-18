@@ -96,7 +96,7 @@ class PosProvider extends ChangeNotifier {
       branchId: branchId,
       items: cart.map((item) => BillItem(
         productName: item.productName,
-        productId: item.productId ?? productByName[item.productName]!.id,
+        productId: productByName[item.productName]!.id,
         imei: item.imei,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
