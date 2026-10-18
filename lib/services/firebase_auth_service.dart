@@ -35,7 +35,7 @@ class FirebaseAuthService {
   }
 
   /// Verify OTP code
-  Future<bool> verifyOtp(String otp) async {
+  Future<bool> verifyOtp(String otp, {String? expectedPhone}) async {
     try {
       if (_verificationId == null) return false;
 
@@ -46,7 +46,7 @@ class FirebaseAuthService {
       final userCredential = await _firebaseAuth.signInWithCredential(credential);
       final phone = userCredential.user?.phoneNumber;
 
-      if (phone != null) {
+      if (phone != null && (expectedPhone == null || phone == expectedPhone)) {
         await _secureStorage.write(key: 'session_phone', value: phone);
         await _secureStorage.write(key: 'user_uid', value: userCredential.user!.uid);
         return true;
