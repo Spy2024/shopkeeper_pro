@@ -263,7 +263,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     final v = await _form('Process return / refund', [
       ('Bill ID', 'required'), ('Product name', 'required'),
       ('Quantity', 'required'), ('Unit price (Rs.)', 'required_number'),
-      ('Refund amount (Rs.)', 'required_number'), ('Customer name', 'text'), ('Reason', 'text'),
+      ('Refund amount (Rs.)', 'required_number'), ('IMEI (if phone return)', 'text'), ('Customer name', 'text'), ('Reason', 'text'),
     ]);
     if (v == null) return;
     final quantity = int.tryParse(v['Quantity'] ?? '');
@@ -274,7 +274,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     }
     try {
       await _ops.processReturn(
-        billId: v['Bill ID']!, items: [ReturnLine(productName: v['Product name']!, quantity: quantity, unitPrice: price)],
+        billId: v['Bill ID']!, items: [ReturnLine(productName: v['Product name']!, imei: (v['IMEI (if phone return'] ?? '').trim().isEmpty ? null : v['IMEI (if phone return)']!.trim(), quantity: quantity, unitPrice: price)],
         refundAmount: refund, customerName: v['Customer name'], reason: v['Reason'],
       );
       await _reload();
@@ -287,8 +287,20 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
       Map<String, String>? v;
       switch (type) {
         case 'IMEI mobile':
+          if (_products.isEmpty) { _showError('Pehle inventory mein phone model add karein.'); return; }
+          final phoneProduct = await showDialog<Map<String, Object?>>(
+            context: context,
+            builder: (context) => SimpleDialog(
+              title: const Text('Choose phone model'),
+              children: _products.map((p) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, p),
+                child: Text(p['name']! as String),
+              )).toList(),
+            ),
+          );
+          if (phoneProduct == null) return;
           v = await _form('Register phone by IMEI', [('IMEI (15 digits)', 'required'), ('Purchase price', 'number'), ('Sale price', 'number')]);
-          if (v != null) await _ops.addMobileDevice(imei: v['IMEI (15 digits)']!, purchasePrice: double.tryParse(v['Purchase price'] ?? '') ?? 0, salePrice: double.tryParse(v['Sale price'] ?? '') ?? 0);
+          if (v != null) await _ops.addMobileDevice(productId: phoneProduct['id']! as String, imei: v['IMEI (15 digits)']!, purchasePrice: double.tryParse(v['Purchase price'] ?? '') ?? 0, salePrice: double.tryParse(v['Sale price'] ?? '') ?? 0);
           break;
         case 'Restaurant table':
           v = await _form('Add restaurant table', [('Table name/number', 'required'), ('Capacity', 'number')]);
