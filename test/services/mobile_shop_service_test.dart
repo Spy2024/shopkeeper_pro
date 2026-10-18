@@ -88,6 +88,7 @@ void main() {
         deviceType: 'used',
         brand: 'Apple',
         model: 'iPhone',
+        imei1: '351234567890128',
         imei2: '351234567890123',
       ),
       throwsA(isA<StateError>()),
