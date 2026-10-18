@@ -61,7 +61,8 @@ class FirebaseAuthService {
 
   /// Get current user UID for Firestore sync
   Future<String?> getUserUid() async {
-    return _firebaseAuth.currentUser?.uid ?? await _secureStorage.read(key: 'user_uid');
+    // A cached UID alone is not proof of an active Firebase session.
+    return _firebaseAuth.currentUser?.uid;
   }
 
   /// Check if user is already logged in
