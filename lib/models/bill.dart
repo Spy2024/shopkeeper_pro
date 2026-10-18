@@ -24,6 +24,7 @@ class Bill {
   final String id;
   final DateTime date;
   final String? customerName;
+  final String? branchId;
   final List<BillItem> items;
   final double discount;
   final double taxPercent;
@@ -32,6 +33,7 @@ class Bill {
     required this.id,
     required this.date,
     this.customerName,
+    this.branchId,
     required this.items,
     this.discount = 0,
     this.taxPercent = 0,
@@ -46,6 +48,7 @@ class Bill {
         'date': date.toIso8601String(),
         'customerName': customerName,
         'discount': discount,
+        'branchId': branchId,
         'taxPercent': taxPercent,
       };
 }
