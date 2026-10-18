@@ -678,9 +678,36 @@ class BusinessOperationsService {
       if (type == 'sale') {
         await txn.update('vehicle_records', {'status': 'sold', 'salePrice': amount},
             where: 'id = ?', whereArgs: [vehicleId]);
+        final purchaseCost = (vehicle['purchasePrice'] as num?)?.toDouble() ?? 0;
+        final vehicleName = '${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''} ${vehicle['registrationNumber'] ?? vehicleId}'.trim();
+        await txn.insert('daily_sales', {
+          'id': _uuid.v4(),
+          'date': DateTime.now().toIso8601String(),
+          'productName': 'Vehicle sale: $vehicleName',
+          'costPrice': purchaseCost,
+          'salePrice': amount,
+        });
       } else if (type == 'purchase') {
+        final previousPurchases = await txn.query('vehicle_transactions',
+            columns: ['id'], where: 'vehicleId = ? AND type = ?', whereArgs: [vehicleId, 'purchase'], limit: 1);
+        if (previousPurchases.isNotEmpty) {
+          throw StateError('Vehicle purchase has already been recorded.');
+        }
         await txn.update('vehicle_records', {'purchasePrice': amount},
             where: 'id = ?', whereArgs: [vehicleId]);
+        await txn.insert('expenses', {
+          'id': _uuid.v4(),
+          'date': DateTime.now().toIso8601String(),
+          'label': 'Vehicle purchase: ${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''} · ${partyName.trim()}',
+          'amount': amount,
+        });
+      } else {
+        await txn.insert('expenses', {
+          'id': _uuid.v4(),
+          'date': DateTime.now().toIso8601String(),
+          'label': 'Vehicle expense: ${vehicle['make'] ?? ''} ${vehicle['model'] ?? ''} · ${partyName.trim()}',
+          'amount': amount,
+        });
       }
     });
   }
