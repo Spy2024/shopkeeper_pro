@@ -58,8 +58,8 @@ void main() {
       'customerName': null, 'discount': 0, 'taxPercent': 0,
     });
 
-    expect(
-      () => operations.recordSplitPayment(
+    await expectLater(
+      operations.recordSplitPayment(
         billId: 'bill-split',
         billTotal: 1000,
         payments: const [PaymentLine(method: 'cash', amount: 500)],
