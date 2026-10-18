@@ -256,7 +256,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         children: items.map((row) => SimpleDialogOption(onPressed: () => Navigator.pop(context, row), child: Text('Order ${row['orderId']} · ${row['quantity']} pcs · ${row['kitchenStatus']}'))).toList()));
     if (item == null || !mounted) return;
     final status = await showDialog<String>(context: context, builder: (context) => SimpleDialog(title: const Text('Kitchen status'),
-      children: const ['queued','preparing','ready','served','cancelled'].map((s) => SimpleDialogOption(onPressed: null, child: Text(s))).toList()));
+      children: ['queued','preparing','ready','served','cancelled'].map((s) => SimpleDialogOption(onPressed: () => Navigator.pop(context, s), child: Text(s))).toList()));
     if (status == null) return;
     await _ops.updateKitchenStatus(orderItemId: item['id']! as String, status: status);
     await _reload(); _showMessage('Kitchen status updated.');
@@ -430,11 +430,9 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           break;
         case 'Add item to restaurant order':
           await _addRestaurantOrderItem();
-          v = <String, String>{'saved': 'true'};
           break;
         case 'Update restaurant kitchen':
           await _updateRestaurantKitchen();
-          v = <String, String>{'saved': 'true'};
           break;
         case 'Restaurant menu item':
           v = await _form('Add restaurant menu item', [('Item name', 'required'), ('Category', 'text'), ('Price', 'required_number')]);
@@ -442,11 +440,9 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           break;
         case 'Vehicle purchase/sale':
           await _recordVehicleTransactionFromList();
-          v = <String, String>{'saved': 'true'};
           break;
         case 'Cargo status tracking':
           await _updateCargoTrackingFromList();
-          v = <String, String>{'saved': 'true'};
           break;
         case 'Clothing/product variant':
           final product = await showDialog<Map<String, String>>(
