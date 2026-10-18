@@ -117,6 +117,36 @@ void main() {
     expect(returns, hasLength(1));
   });
 
+  test('return restores stock to the branch that made the sale', () async {
+    await dbService.configureForUser(userId());
+    final db = await dbService.database;
+    await db.insert('products', {
+      'id': 'branch-return-product', 'name': 'Branch Water', 'category': 'grocery',
+      'stockQuantity': 100, 'costPrice': 10, 'sellingPrice': 15, 'lowStockThreshold': 5,
+    });
+    final branchId = await operations.createBranch(name: 'Return Branch');
+    await operations.setBranchStock(branchId: branchId, productId: 'branch-return-product', quantity: 5);
+    await db.insert('bills', {
+      'id': 'branch-return-bill', 'date': DateTime.now().toIso8601String(),
+      'customerName': 'Customer', 'discount': 0, 'taxPercent': 0, 'branchId': branchId,
+    });
+    await db.insert('bill_items', {
+      'billId': 'branch-return-bill', 'productName': 'Branch Water', 'quantity': 2, 'unitPrice': 15,
+    });
+
+    await operations.processReturn(
+      billId: 'branch-return-bill',
+      items: const [ReturnLine(productId: 'branch-return-product', productName: 'Branch Water', quantity: 1, unitPrice: 15)],
+      refundAmount: 15,
+    );
+
+    final branchRows = await db.query('branch_stock',
+        where: 'branchId = ? AND productId = ?', whereArgs: [branchId, 'branch-return-product']);
+    final productRows = await db.query('products', where: 'id = ?', whereArgs: ['branch-return-product']);
+    expect(branchRows.single['quantity'], 6);
+    expect(productRows.single['stockQuantity'], 100);
+  });
+
   test('branch report combines stock units and cash in/out', () async {
     await dbService.configureForUser(userId());
     final db = await dbService.database;
