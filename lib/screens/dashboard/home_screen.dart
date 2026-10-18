@@ -48,14 +48,19 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (selected) {
       case 0:
         _openModule(0);
+        break;
       case 1:
         _openModule(1);
+        break;
       case 2:
         _openModule(3);
+        break;
       case 3:
         _openModule(4);
+        break;
       case 4:
         _showMoreModules();
+        break;
     }
   }
 
