@@ -22,6 +22,12 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   }
 
   @override
+  void dispose() {
+    _customerCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pos = context.watch<PosProvider>();
     final results = pos.filterHistory(date: _dateFilter, customer: _customerCtrl.text);
@@ -66,9 +72,29 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             ),
           ),
           Expanded(
-            child: results.isEmpty
-                ? const Center(child: Text('No matching bills'))
-                : ListView.builder(
+            child: pos.isLoadingHistory
+                ? const Center(child: CircularProgressIndicator())
+                : pos.historyLoadError != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(pos.historyLoadError!, textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              FilledButton.icon(
+                                onPressed: pos.loadHistory,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : results.isEmpty
+                        ? const Center(child: Text('No saved bills found'))
+                        : ListView.builder(
                     itemCount: results.length,
                     itemBuilder: (context, i) {
                       final bill = results[i];
