@@ -73,6 +73,40 @@ void main() {
     expect((await db.query('products')).single['stockQuantity'], 3);
   });
 
+  test('exact IMEI phone sale and return update the same device atomically', () async {
+    await inventory.addProduct(
+      name: 'Phone Model X', category: 'mobile', stockQuantity: 10,
+      costPrice: 500, sellingPrice: 700,
+    );
+    final product = inventory.products.single;
+    final operations = BusinessOperationsService.instance;
+    await operations.addMobileDevice(
+      productId: product.id, imei: '123456789012345',
+      purchasePrice: 500, salePrice: 700,
+    );
+    pos.addItem('Phone Model X', 1, 700, productId: product.id, imei: '123456789012345');
+    final bill = await pos.checkout(inventory);
+
+    var db = await dbService.database;
+    var device = (await db.query('mobile_devices', where: 'imei = ?', whereArgs: ['123456789012345'])).single;
+    expect(device['status'], 'sold');
+    expect(device['billId'], bill.id);
+    final billItem = (await db.query('bill_items', where: 'billId = ?', whereArgs: [bill.id])).single;
+    expect(billItem['imei'], '123456789012345');
+    expect(billItem['productId'], product.id);
+
+    await operations.processReturn(
+      billId: bill.id,
+      items: const [ReturnLine(productId: null, productName: 'Phone Model X', imei: '123456789012345', quantity: 1, unitPrice: 700)],
+      refundAmount: 700,
+      customerName: 'Phone Customer',
+    );
+    device = (await db.query('mobile_devices', where: 'imei = ?', whereArgs: ['123456789012345'])).single;
+    expect(device['status'], 'in_stock');
+    expect(device['billId'], isNull);
+    expect((await db.query('products', where: 'id = ?', whereArgs: [product.id])).single['stockQuantity'], 10);
+  });
+
   test('branch checkout deducts branch stock and records branch on bill', () async {
     await inventory.addProduct(
       name: 'Flour', category: 'grocery', stockQuantity: 100,
