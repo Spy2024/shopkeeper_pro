@@ -22,9 +22,9 @@ class PosProvider extends ChangeNotifier {
   double get taxAmount => (subtotal - discount) * (taxPercent / 100);
   double get grandTotal => (subtotal - discount) + taxAmount;
 
-  void addItem(String productName, int quantity, double unitPrice) {
+  void addItem(String productName, int quantity, double unitPrice, {String? productId, String? imei}) {
     if (quantity <= 0 || unitPrice < 0) return;
-    cart.add(BillItem(productName: productName, quantity: quantity, unitPrice: unitPrice));
+    cart.add(BillItem(productName: productName, productId: productId, imei: imei?.trim().isEmpty == true ? null : imei?.trim(), quantity: quantity, unitPrice: unitPrice));
     notifyListeners();
   }
 
@@ -94,14 +94,39 @@ class PosProvider extends ChangeNotifier {
       date: DateTime.now(),
       customerName: customerName,
       branchId: branchId,
-      items: List.of(cart),
+      items: cart.map((item) => BillItem(
+        productName: item.productName,
+        productId: item.productId ?? productByName[item.productName]!.id,
+        imei: item.imei,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      )).toList(),
       discount: discount,
       taxPercent: taxPercent,
     );
 
     await db.transaction((txn) async {
+      // Validate each serialised phone inside the same transaction as checkout.
+      for (final item in bill.items.where((item) => item.imei != null)) {
+        if (item.quantity != 1) {
+          throw StateError('An IMEI-specific phone sale must have quantity 1.');
+        }
+        final devices = await txn.query('mobile_devices',
+            where: 'imei = ?', whereArgs: [item.imei], limit: 1);
+        if (devices.isEmpty || devices.first['status'] != 'in_stock') {
+          throw StateError('IMEI ${item.imei} is not available for sale.');
+        }
+        final device = devices.first;
+        if (device['productId'] != null && device['productId'] != item.productId) {
+          throw StateError('IMEI ${item.imei} does not belong to product ${item.productName}.');
+        }
+        if (device['branchId'] != null && device['branchId'] != branchId) {
+          throw StateError('IMEI ${item.imei} is assigned to another stock location.');
+        }
+      }
+
       // Re-check persisted stock and deduct it in the same transaction as
-      // bill, bill items, and daily sales to avoid partial checkouts.
+      // bill, bill items, serialised-device status, and daily sales.
       for (final entry in quantities.entries) {
         final product = productByName[entry.key]!;
         if (branchId != null) {
@@ -149,6 +174,17 @@ class PosProvider extends ChangeNotifier {
       }
       for (final item in bill.items) {
         await txn.insert('bill_items', {...item.toMap(), 'billId': bill.id});
+        if (item.imei != null) {
+          final updatedDevices = await txn.update('mobile_devices', {
+            'status': 'sold',
+            'billId': bill.id,
+            'salePrice': item.unitPrice,
+            'branchId': branchId,
+          }, where: 'imei = ? AND status = ?', whereArgs: [item.imei, 'in_stock']);
+          if (updatedDevices != 1) {
+            throw StateError('IMEI ${item.imei} was sold by another checkout.');
+          }
+        }
         final product = productByName[item.productName]!;
         await txn.insert('daily_sales', DailySale(
           id: _uuid.v4(),
