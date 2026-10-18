@@ -57,6 +57,10 @@ void main() {
       'id': 'bill-split', 'date': DateTime.now().toIso8601String(),
       'customerName': null, 'discount': 0, 'taxPercent': 0,
     });
+    await db.insert('bill_items', {
+      'billId': 'bill-split', 'productName': 'Test item',
+      'quantity': 1, 'unitPrice': 1000,
+    });
 
     await expectLater(
       operations.recordSplitPayment(
