@@ -352,6 +352,42 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
           v = await _form('Create repair/service job', [('Customer name', 'required'), ('Device/vehicle', 'text'), ('Issue / complaint', 'required'), ('Estimated cost', 'number')]);
           if (v != null) await _ops.createServiceJob(customerName: v['Customer name']!, deviceOrVehicle: v['Device/vehicle'], issue: v['Issue / complaint']!, estimatedCost: double.tryParse(v['Estimated cost'] ?? '') ?? 0);
           break;
+        case 'School student':
+          v = await _form('Add school student', [('Student name', 'required'), ('Guardian name', 'text'), ('Phone', 'text'), ('Class/grade', 'text')]);
+          if (v != null) await _ops.addSchoolStudent(name: v['Student name']!, guardianName: v['Guardian name'], phone: v['Phone'], className: v['Class/grade']);
+          break;
+        case 'Clinic patient':
+          v = await _form('Register clinic patient', [('Patient name', 'required'), ('Phone', 'text'), ('Date of birth', 'text'), ('Notes', 'text')]);
+          if (v != null) await _ops.addClinicPatient(name: v['Patient name']!, phone: v['Phone'], dateOfBirth: v['Date of birth'], notes: v['Notes']);
+          break;
+        case 'Salon service':
+          v = await _form('Add salon service', [('Service name', 'required'), ('Duration minutes', 'number'), ('Price', 'number')]);
+          if (v != null) await _ops.addSalonService(name: v['Service name']!, durationMinutes: int.tryParse(v['Duration minutes'] ?? '') ?? 30, price: double.tryParse(v['Price'] ?? '') ?? 0);
+          break;
+        case 'Agriculture plot':
+          v = await _form('Add farm plot', [('Plot name', 'required'), ('Area (acres)', 'required_number'), ('Crop', 'required'), ('Season', 'text')]);
+          if (v != null) await _ops.addFarmPlot(name: v['Plot name']!, area: double.tryParse(v['Area (acres)'] ?? '') ?? 0, crop: v['Crop']!, season: v['Season']);
+          break;
+        case 'Construction project':
+          v = await _form('Add construction project', [('Project name', 'required'), ('Client', 'text'), ('Location', 'text'), ('Budget', 'number'), ('Due date', 'text')]);
+          if (v != null) await _ops.addConstructionProject(name: v['Project name']!, clientName: v['Client'], location: v['Location'], budget: double.tryParse(v['Budget'] ?? '') ?? 0, dueDate: v['Due date']);
+          break;
+        case 'Public service case':
+          v = await _form('Open public service case', [('Case number', 'required'), ('Applicant name', 'required'), ('Service type', 'required'), ('Fee', 'number'), ('Notes', 'text')]);
+          if (v != null) await _ops.addPublicServiceCase(caseNumber: v['Case number']!, applicantName: v['Applicant name']!, serviceType: v['Service type']!, fee: double.tryParse(v['Fee'] ?? '') ?? 0, notes: v['Notes']);
+          break;
+        case 'Restaurant menu item':
+          v = await _form('Add restaurant menu item', [('Item name', 'required'), ('Category', 'text'), ('Price', 'required_number')]);
+          if (v != null) await _ops.addRestaurantMenuItem(name: v['Item name']!, category: v['Category'], price: double.tryParse(v['Price'] ?? '') ?? 0);
+          break;
+        case 'Vehicle purchase/sale':
+          v = await _form('Record vehicle transaction', [('Vehicle record ID', 'required'), ('Type: purchase/sale', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
+          if (v != null) await _ops.recordVehicleTransaction(vehicleId: v['Vehicle record ID']!, type: v['Type: purchase/sale']!.toLowerCase(), partyName: v['Party name']!, amount: double.tryParse(v['Amount'] ?? '') ?? 0, notes: v['Notes']);
+          break;
+        case 'Cargo status tracking':
+          v = await _form('Update cargo tracking', [('Cargo job ID', 'required'), ('Status: created/picked_up/in_transit/at_hub/out_for_delivery/delivered/cancelled', 'required'), ('Current location', 'text'), ('Note', 'text')]);
+          if (v != null) await _ops.updateCargoStatus(cargoId: v['Cargo job ID']!, status: v['Status: created/picked_up/in_transit/at_hub/out_for_delivery/delivered/cancelled']!, location: v['Current location'], note: v['Note']);
+          break;
         case 'Clothing/product variant':
           final product = await showDialog<Map<String, String>>(
             context: context,
@@ -457,6 +493,15 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         ('Transport route', Icons.route, 'Create passenger/cargo route'),
         ('Cargo job', Icons.local_shipping, 'Record load, weight and freight'),
         ('Repair/service job', Icons.build, 'Track repair issue and estimate'),
+        ('School student', Icons.school, 'Student admission and guardian records'),
+        ('Clinic patient', Icons.medical_services, 'Patient records for appointments'),
+        ('Salon service', Icons.content_cut, 'Service price and duration'),
+        ('Agriculture plot', Icons.agriculture, 'Farm plots, crop and season'),
+        ('Construction project', Icons.construction, 'Project budget and client'),
+        ('Public service case', Icons.account_balance, 'Applicant and service case tracking'),
+        ('Restaurant menu item', Icons.restaurant_menu, 'Menu price and kitchen order support'),
+        ('Vehicle purchase/sale', Icons.directions_car, 'Record purchase/sale transaction'),
+        ('Cargo status tracking', Icons.local_shipping, 'Record status, location and tracking history'),
         ('Spare part compatibility', Icons.settings_suggest_outlined, 'Map bike/car/mobile parts to make, model and year'),
       ])
         Card(child: ListTile(
