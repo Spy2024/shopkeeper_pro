@@ -575,8 +575,8 @@ class _MobileShopScreenState extends State<MobileShopScreen> {
                   Navigator.pop(dialogContext);
                   await _reload();
                 } catch (error) {
-                  if (!mounted || !context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('StateError: ', ''))));
                 }
               },
               child: const Text('Consume part'),
