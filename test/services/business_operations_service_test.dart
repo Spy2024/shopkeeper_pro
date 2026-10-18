@@ -177,7 +177,30 @@ void main() {
     await expectLater(operations.completeRestaurantOrder(orderId), throwsStateError);
     await operations.updateKitchenStatus(orderItemId: itemId, status: 'preparing');
     await operations.updateKitchenStatus(orderItemId: itemId, status: 'served');
+    await expectLater(operations.completeRestaurantOrder(orderId), throwsStateError);
+    await expectLater(
+      operations.recordRestaurantPayment(
+        orderId: orderId,
+        payments: const [PaymentLine(method: 'cash', amount: 800)],
+      ),
+      throwsStateError,
+    );
+    await operations.recordRestaurantPayment(
+      orderId: orderId,
+      payments: const [
+        PaymentLine(method: 'cash', amount: 500),
+        PaymentLine(method: 'card', amount: 400),
+      ],
+    );
+    await expectLater(
+      operations.recordRestaurantPayment(
+        orderId: orderId,
+        payments: const [PaymentLine(method: 'cash', amount: 900)],
+      ),
+      throwsStateError,
+    );
     await operations.completeRestaurantOrder(orderId);
+    expect((await db.query('restaurant_order_payments', where: 'orderId = ?', whereArgs: [orderId])), hasLength(2));
     expect((await db.query('restaurant_orders', where: 'id = ?', whereArgs: [orderId])).single['status'], 'completed');
     expect((await db.query('restaurant_tables', where: 'id = ?', whereArgs: [tableId])).single['status'], 'available');
   });
