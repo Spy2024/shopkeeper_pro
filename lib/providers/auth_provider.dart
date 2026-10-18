@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../services/auth_service.dart';
+import '../services/firebase_auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool isLoggedIn = false;
@@ -8,20 +8,20 @@ class AuthProvider extends ChangeNotifier {
   bool isLoading = false;
 
   Future<void> checkExistingSession() async {
-    final saved = await AuthService.instance.getSession();
+    final saved = await FirebaseAuthService.instance.getSession();
     if (saved != null && saved.isNotEmpty) {
       phoneNumber = saved;
-      userUid = await AuthService.instance.getUserUid();
+      userUid = await FirebaseAuthService.instance.getUserUid();
       isLoggedIn = true;
       notifyListeners();
     }
   }
 
-  Future<String> requestOtp(String phone) async {
+  Future<void> requestOtp(String phone) async {
     isLoading = true;
     notifyListeners();
     try {
-      return await AuthService.instance.sendOtp(phone);
+      await FirebaseAuthService.instance.sendOtp(phone);
     } finally {
       isLoading = false;
       notifyListeners();
@@ -29,7 +29,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> confirmOtp(String phone, String otp) async {
-    final ok = AuthService.instance.verifyOtp(phone, otp);
+    final ok = await FirebaseAuthService.instance.verifyOtp(otp);
     if (!ok) return false;
 
     await AuthService.instance.persistSession(phone);
@@ -41,7 +41,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await AuthService.instance.clearSession();
+    await FirebaseAuthService.instance.clearSession();
     isLoggedIn = false;
     phoneNumber = null;
     userUid = null;
