@@ -55,6 +55,7 @@ class _PosScreenState extends State<PosScreen> {
       appBar: AppBar(
         title: const Text('New Bill'),
         actions: [
+          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh branch list', onPressed: _loadBranches),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: 'Bill History',
