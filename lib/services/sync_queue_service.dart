@@ -174,6 +174,12 @@ class SyncQueueService {
     }
   }
 
+  Future<void> resetForLogout() async {
+    _isSyncing = false;
+    _pendingQueue.clear();
+    _activeUserId = null;
+  }
+
   /// Get pending operation count
   int get pendingCount => _pendingQueue.length;
   bool get hasPending => _pendingQueue.isNotEmpty;
