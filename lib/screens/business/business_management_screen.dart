@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/business_operations_service.dart';
 import '../../services/db_service.dart';
+import 'business_verticals_screen.dart';
 
 class BusinessManagementScreen extends StatefulWidget {
   const BusinessManagementScreen({super.key});
@@ -656,6 +657,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Widget _modulesTab() => ListView(
     padding: const EdgeInsets.all(12),
     children: [
+      Card(child: ListTile(leading: const Icon(Icons.analytics_outlined), title: const Text('Business workflows & reports'), subtitle: const Text('School fees, clinic payments, salon bookings, farm costs, construction tasks and public cases'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BusinessVerticalsScreen())))),
       Card(child: ListTile(leading: const Icon(Icons.assignment_return), title: const Text('Returns & refunds'), subtitle: const Text('Record return, refund and restore stock'), trailing: const Icon(Icons.chevron_right), onTap: _processReturn)),
       Card(child: ListTile(leading: const Icon(Icons.restaurant_menu), title: const Text('Restaurant order'), subtitle: const Text('Open order and reserve an available table'), trailing: const Icon(Icons.add_circle_outline), onTap: _createRestaurantOrder)),
       Card(child: ListTile(leading: const Icon(Icons.confirmation_number_outlined), title: const Text('Passenger ticket'), subtitle: const Text('Book route, passenger, seat and fare'), trailing: const Icon(Icons.add_circle_outline), onTap: _addTransportTicket)),
