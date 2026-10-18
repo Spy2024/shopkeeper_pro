@@ -330,15 +330,44 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
 
   Future<void> _recordVehicleTransactionFromList() async {
     final db = await DBService.instance.database;
-    final vehicles = await db.query('vehicle_records', where: 'status = ?', whereArgs: ['in_stock']);
+    final vehicles = await db.query('vehicle_records', orderBy: 'make, model');
     if (vehicles.isEmpty) { _showError('Pehle vehicle record add karein.'); return; }
     final vehicle = await showDialog<Map<String, Object?>>(context: context, builder: (context) => SimpleDialog(title: const Text('Choose vehicle'),
       children: vehicles.map((v) => SimpleDialogOption(onPressed: () => Navigator.pop(context, v), child: Text('${v['make'] ?? ''} ${v['model'] ?? ''} · ${v['registrationNumber'] ?? v['id']}'))).toList()));
     if (vehicle == null || !mounted) return;
-    final v = await _form('Vehicle purchase/sale', [('Type: purchase/sale', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
+    final v = await _form('Vehicle purchase/sale', [('Type: purchase/sale/expense', 'required'), ('Party name', 'required'), ('Amount', 'required_number'), ('Notes', 'text')]);
     if (v == null) return;
     await _ops.recordVehicleTransaction(vehicleId: vehicle['id']! as String, type: v['Type: purchase/sale']!.toLowerCase(), partyName: v['Party name']!, amount: double.tryParse(v['Amount'] ?? '') ?? 0, notes: v['Notes']);
     await _reload(); _showMessage('Vehicle transaction saved.');
+  }
+
+  Future<void> _showVehicleProfitReport() async {
+    final rows = await _ops.vehicleProfitReport();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Vehicle profit report'),
+        content: SizedBox(
+          width: 560,
+          child: rows.isEmpty
+              ? const Text('No vehicle transactions found.')
+              : ListView(
+                  shrinkWrap: true,
+                  children: rows.map((row) {
+                    final name = '${row['make'] ?? ''} ${row['model'] ?? ''} ${row['registrationNumber'] ?? ''}'.trim();
+                    final profit = (row['netProfit'] as num?)?.toDouble() ?? 0;
+                    return ListTile(
+                      title: Text(name.isEmpty ? 'Vehicle ${row['vehicleId']}' : name),
+                      subtitle: Text('Sale: Rs. ${row['saleProceeds']} · Purchase: Rs. ${row['purchaseCost']} · Expenses: Rs. ${row['expenses']}'),
+                      trailing: Text('Rs. ${profit.toStringAsFixed(2)}'),
+                    );
+                  }).toList(),
+                ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+      ),
+    );
   }
 
   Future<void> _updateCargoTrackingFromList() async {
@@ -513,6 +542,9 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         case 'Vehicle purchase/sale':
           await _recordVehicleTransactionFromList();
           break;
+        case 'Vehicle profit report':
+          await _showVehicleProfitReport();
+          break;
         case 'Cargo status tracking':
           await _updateCargoTrackingFromList();
           break;
@@ -633,6 +665,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
         ('Restaurant payment', Icons.payments_outlined, 'Record full cash/card/bank payment for an open order'),
         ('Complete restaurant order', Icons.task_alt, 'Close only fully paid orders with kitchen items served/cancelled'),
         ('Vehicle purchase/sale', Icons.directions_car, 'Record purchase/sale transaction'),
+        ('Vehicle profit report', Icons.account_balance_wallet_outlined, 'Sale proceeds minus purchase costs and recorded expenses'),
         ('Cargo status tracking', Icons.local_shipping, 'Record status, location and tracking history'),
         ('Spare part compatibility', Icons.settings_suggest_outlined, 'Map bike/car/mobile parts to make, model and year'),
       ])
