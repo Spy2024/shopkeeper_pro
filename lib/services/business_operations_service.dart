@@ -531,4 +531,33 @@ class BusinessOperationsService {
     return id;
   }
 
+  Future<String> addSparePartCompatibility({
+    required String productId,
+    required String partType,
+    String? make,
+    String? model,
+    int? yearFrom,
+    int? yearTo,
+    String? engineCode,
+    String? notes,
+  }) async {
+    const supportedTypes = {'bike', 'car', 'mobile', 'other'};
+    if (!supportedTypes.contains(partType.toLowerCase())) {
+      throw ArgumentError('Part type must be bike, car, mobile, or other.');
+    }
+    if (yearFrom != null && yearTo != null && yearFrom > yearTo) {
+      throw ArgumentError('Year-from cannot be after year-to.');
+    }
+    final db = await DBService.instance.database;
+    final products = await db.query('products', where: 'id = ?', whereArgs: [productId], limit: 1);
+    if (products.isEmpty) throw StateError('Spare-part product not found.');
+    final id = _uuid.v4();
+    await db.insert('spare_part_compatibility', {
+      'id': id, 'productId': productId, 'partType': partType.toLowerCase(),
+      'make': make, 'model': model, 'yearFrom': yearFrom, 'yearTo': yearTo,
+      'engineCode': engineCode, 'notes': notes,
+    });
+    return id;
+  }
+
 }
