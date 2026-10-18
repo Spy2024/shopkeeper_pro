@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/business_operations_service.dart';
-import '../services/db_service.dart';
+import '../../services/business_operations_service.dart';
+import '../../services/db_service.dart';
 
 class BusinessVerticalsScreen extends StatefulWidget {
   const BusinessVerticalsScreen({super.key});
