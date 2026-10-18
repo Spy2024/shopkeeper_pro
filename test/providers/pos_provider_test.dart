@@ -73,6 +73,29 @@ void main() {
     expect((await db.query('products')).single['stockQuantity'], 3);
   });
 
+  test('branch checkout deducts branch stock and records branch on bill', () async {
+    await inventory.addProduct(
+      name: 'Flour', category: 'grocery', stockQuantity: 100,
+      costPrice: 40, sellingPrice: 60,
+    );
+    final operations = BusinessOperationsService.instance;
+    final branchId = await operations.createBranch(name: 'North Branch');
+    final product = inventory.products.single;
+    await operations.setBranchStock(branchId: branchId, productId: product.id, quantity: 5);
+    pos.addItem('Flour', 2, 60);
+
+    final bill = await pos.checkout(inventory, branchId: branchId);
+    final db = await dbService.database;
+    final branchStock = await db.query('branch_stock',
+        where: 'branchId = ? AND productId = ?', whereArgs: [branchId, product.id]);
+    final productRows = await db.query('products', where: 'id = ?', whereArgs: [product.id]);
+
+    expect(bill.branchId, branchId);
+    expect(branchStock.single['quantity'], 3);
+    expect(productRows.single['stockQuantity'], 100);
+    expect((await db.query('bills', where: 'id = ?', whereArgs: [bill.id])).single['branchId'], branchId);
+  });
+
   test('split tender rows are committed with the bill', () async {
     await inventory.addProduct(
       name: 'Milk', category: 'grocery', stockQuantity: 5,
