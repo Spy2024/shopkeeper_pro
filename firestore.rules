@@ -7,8 +7,8 @@ service cloud.firestore {
       allow read, create, update, delete: if request.auth != null
         && request.auth.uid == userId
         && collectionName in [
-          'shop', 'products', 'bills', 'bill_items', 'customers', 'suppliers',
-          'expenses', 'daily_sales', 'customer_ledger', 'sync_queue',
+          'shop', 'products', 'bills', 'bill_items', 'customers', 'suppliers', 'supplier_orders', 'supplier_order_items',
+          'expenses', 'daily_sales', 'sales', 'customer_ledger', 'sync_queue',
           'returns', 'return_items', 'payments', 'branches', 'branch_stock',
           'branch_cash_entries', 'product_variants', 'mobile_devices',
           'restaurant_tables', 'restaurant_orders', 'restaurant_menu_items',
