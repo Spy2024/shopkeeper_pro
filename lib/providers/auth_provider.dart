@@ -29,7 +29,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> confirmOtp(String phone, String otp) async {
-    final ok = await FirebaseAuthService.instance.verifyOtp(otp);
+    final ok = await FirebaseAuthService.instance.verifyOtp(otp, expectedPhone: phone);
     if (!ok) return false;
 
     await AuthService.instance.persistSession(phone);
