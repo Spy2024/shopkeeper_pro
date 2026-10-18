@@ -13,12 +13,14 @@ class PaymentLine {
 class ReturnLine {
   final String? productId;
   final String productName;
+  final String? imei;
   final int quantity;
   final double unitPrice;
 
   const ReturnLine({
     this.productId,
     required this.productName,
+    this.imei,
     required this.quantity,
     required this.unitPrice,
   });
@@ -172,6 +174,17 @@ class BusinessOperationsService {
           where: 'id = ?', whereArgs: [billId], limit: 1);
       if (billRows.isEmpty) throw StateError('Original bill not found.');
       final branchId = billRows.first['branchId'] as String?;
+      for (final item in items.where((item) => item.imei != null)) {
+        final soldDevice = await txn.query('mobile_devices',
+            where: 'imei = ? AND billId = ? AND status = ?',
+            whereArgs: [item.imei, billId, 'sold'], limit: 1);
+        if (soldDevice.isEmpty) {
+          throw StateError('IMEI ${item.imei} was not sold on this bill or has already been returned.');
+        }
+        final soldItem = await txn.query('bill_items',
+            where: 'billId = ? AND imei = ?', whereArgs: [billId, item.imei], limit: 1);
+        if (soldItem.isEmpty) throw StateError('IMEI ${item.imei} is not part of this bill.');
+      }
       final requestedReturns = <String, int>{};
       for (final item in items) {
         requestedReturns.update(item.productName, (quantity) => quantity + item.quantity,
@@ -208,16 +221,29 @@ class BusinessOperationsService {
           'returnId': returnId,
           'productId': item.productId,
           'productName': item.productName,
+          'imei': item.imei,
           'quantity': item.quantity,
           'unitPrice': item.unitPrice,
         });
-        final products = item.productId != null
-            ? await txn.query('products', where: 'id = ?', whereArgs: [item.productId], limit: 1)
+        String? resolvedProductId = item.productId;
+        if (item.imei != null && resolvedProductId == null) {
+          final devices = await txn.query('mobile_devices',
+              columns: ['productId'], where: 'imei = ?', whereArgs: [item.imei], limit: 1);
+          if (devices.isNotEmpty) resolvedProductId = devices.first['productId'] as String?;
+        }
+        final products = resolvedProductId != null
+            ? await txn.query('products', where: 'id = ?', whereArgs: [resolvedProductId], limit: 1)
             : await txn.query('products', where: 'name = ?', whereArgs: [item.productName], limit: 1);
         if (products.isEmpty || products.first['name'] != item.productName) {
           throw StateError('Product not found or does not match returned item: ${item.productName}.');
         }
         final product = products.first;
+        if (item.imei != null) {
+          await txn.update('mobile_devices', {
+            'status': 'in_stock', 'billId': null, 'branchId': branchId,
+          }, where: 'imei = ? AND billId = ? AND status = ?',
+              whereArgs: [item.imei, billId, 'sold']);
+        }
         if (branchId != null) {
           final branchRows = await txn.query('branch_stock',
               where: 'branchId = ? AND productId = ?',
@@ -324,6 +350,7 @@ class BusinessOperationsService {
     String? serialNumber,
     double purchasePrice = 0,
     double salePrice = 0,
+    String? branchId,
   }) async {
     final normalizedImei = imei.replaceAll(RegExp(r'\s+'), '');
     if (!RegExp(r'^\d{15}$').hasMatch(normalizedImei)) {
@@ -334,7 +361,7 @@ class BusinessOperationsService {
     await db.insert('mobile_devices', {
       'id': id, 'productId': productId, 'imei': normalizedImei,
       'serialNumber': serialNumber, 'status': 'in_stock',
-      'purchasePrice': purchasePrice, 'salePrice': salePrice, 'billId': null,
+      'purchasePrice': purchasePrice, 'salePrice': salePrice, 'billId': null, 'branchId': branchId,
     });
     return id;
   }
