@@ -65,7 +65,7 @@ class DBService {
     final path = _userDatabasePath(root, userId);
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -74,7 +74,7 @@ class DBService {
             documentId TEXT NOT NULL, data TEXT NOT NULL, timestamp INTEGER NOT NULL,
             synced INTEGER NOT NULL DEFAULT 0)''');
         }
-        if (oldVersion < 3) {
+        if (oldVersion < 4) {
           await _createBusinessTables(db);
         }
       },
