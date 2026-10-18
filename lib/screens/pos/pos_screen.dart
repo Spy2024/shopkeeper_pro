@@ -342,10 +342,22 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   final _nameCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
   final _priceCtrl = TextEditingController();
+  final _imeiCtrl = TextEditingController();
+  String? _selectedProductId;
 
-  void _selectProduct(String name, double price) {
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    _imeiCtrl.dispose();
+    super.dispose();
+  }
+
+  void _selectProduct(String name, double price, String productId) {
     _nameCtrl.text = name;
     _priceCtrl.text = price.toString();
+    _selectedProductId = productId;
     setState(() {});
   }
 
@@ -377,12 +389,18 @@ class _AddItemSheetState extends State<_AddItemSheet> {
                           dense: true,
                           title: Text(p.name),
                           subtitle: Text('Stock: ${p.stockQuantity} • ${widget.currency.format(p.sellingPrice)}'),
-                          onTap: () => _selectProduct(p.name, p.sellingPrice),
+                          onTap: () => _selectProduct(p.name, p.sellingPrice, p.id),
                         ))
                     .toList(),
               ),
             ),
           const SizedBox(height: 8),
+          TextField(
+            controller: _imeiCtrl,
+            keyboardType: TextInputType.number,
+            maxLength: 15,
+            decoration: const InputDecoration(labelText: 'IMEI (optional for serialized mobile phones)', counterText: ''),
+          ),
           Row(
             children: [
               Expanded(
@@ -409,7 +427,12 @@ class _AddItemSheetState extends State<_AddItemSheet> {
               final qty = int.tryParse(_qtyCtrl.text) ?? 0;
               final price = double.tryParse(_priceCtrl.text) ?? 0;
               if (name.isEmpty || qty <= 0 || price <= 0) return;
-              context.read<PosProvider>().addItem(name, qty, price);
+              final imei = _imeiCtrl.text.trim();
+              if (imei.isNotEmpty && qty != 1) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('IMEI sale quantity must be 1.')));
+                return;
+              }
+              context.read<PosProvider>().addItem(name, qty, price, productId: _selectedProductId, imei: imei.isEmpty ? null : imei);
               Navigator.pop(context);
             },
             child: const Text('Add to Bill'),
