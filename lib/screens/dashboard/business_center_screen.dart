@@ -19,23 +19,23 @@ class _BusinessCenterScreenState extends State<BusinessCenterScreen> {
     _BusinessCategory('General Store', 'Retail, karyana, supermarket', Icons.shopping_basket_outlined, ['POS Billing', 'Inventory', 'Purchases', 'Customers', 'Suppliers', 'Finance', 'Reports']),
     _BusinessCategory('Wholesale', 'Distribution and bulk sales', Icons.warehouse_outlined, ['Bulk Pricing', 'Inventory', 'Purchase Receiving', 'Customer Ledger', 'Supplier Ledger', 'Reports']),
     _BusinessCategory('Mobile Shop', 'New, used phones and repair', Icons.smartphone_outlined, ['IMEI Device Stock', 'Mobile POS', 'Device Intake', 'Repair Jobs', 'Spare Parts', 'Warranty Claims', 'Returns & Refunds']),
-    _BusinessCategory('Electronics', 'Electronics and appliances', Icons.devices_other_outlined, ['Serial Numbers', 'Inventory', 'Warranty', 'Purchases', 'POS Billing', 'Reports']),
-    _BusinessCategory('Spare Parts', 'Bike, car, mobile and other parts', Icons.build_outlined, ['Part Catalog', 'Compatible Models', 'Inventory', 'Workshop Jobs', 'Purchases', 'Warranty']),
+    _BusinessCategory('Electronics', 'Electronics and appliances', Icons.devices_other, ['Serial Numbers', 'Inventory', 'Warranty', 'Purchases', 'POS Billing', 'Reports']),
+    _BusinessCategory('Spare Parts', 'Bike, car, mobile and other parts', Icons.build, ['Part Catalog', 'Compatible Models', 'Inventory', 'Workshop Jobs', 'Purchases', 'Warranty']),
     _BusinessCategory('Clothing', 'Garments, shoes and fashion', Icons.checkroom_outlined, ['Size & Color Variants', 'Inventory', 'POS Billing', 'Purchases', 'Returns', 'Reports']),
     _BusinessCategory('Carpet & Furniture', 'Carpet, furniture and crockery', Icons.chair_outlined, ['Catalog', 'Measurements', 'Orders', 'Inventory', 'Delivery', 'Finance']),
     _BusinessCategory('Restaurant', 'Hotel, cafe, bakery and food', Icons.restaurant_outlined, ['Menu & Recipes', 'Table Orders', 'Kitchen Tickets', 'Ingredient Stock', 'Purchases', 'Daily Closing']),
     _BusinessCategory('Pharmacy', 'Medical store and healthcare stock', Icons.medical_services_outlined, ['Batch & Expiry', 'Inventory', 'Purchases', 'POS Billing', 'Expiry Alerts', 'Reports']),
     _BusinessCategory('Vehicle Showroom', 'Car and motorcycle sales', Icons.directions_car_outlined, ['Vehicle Stock', 'Buy & Sell', 'Customer Ledger', 'Payments', 'Documents', 'Reports']),
-    _BusinessCategory('Workshop', 'Vehicle and equipment repair', Icons.car_repair_outlined, ['Job Cards', 'Parts Usage', 'Labour Charges', 'Customer Approval', 'Payments', 'Warranty']),
+    _BusinessCategory('Workshop', 'Vehicle and equipment repair', Icons.car_repair, ['Job Cards', 'Parts Usage', 'Labour Charges', 'Customer Approval', 'Payments', 'Warranty']),
     _BusinessCategory('Transport & Fleet', 'Passenger, cargo and delivery', Icons.local_shipping_outlined, ['Vehicles', 'Routes & Trips', 'Tickets', 'Passengers', 'Cargo / Loads', 'Fuel & Expenses']),
     _BusinessCategory('Rent-a-Car', 'Vehicle rental management', Icons.key_outlined, ['Fleet', 'Bookings', 'Rental Contracts', 'Deposits', 'Returns', 'Maintenance']),
     _BusinessCategory('School & Academy', 'Student records and fees', Icons.school_outlined, ['Students', 'Admissions', 'Fee Collection', 'Staff', 'Expenses', 'Reports']),
     _BusinessCategory('Clinic', 'Appointments and fee records', Icons.local_hospital_outlined, ['Appointments', 'Service Records', 'Fee Collection', 'Supplies', 'Staff Access', 'Reports']),
     _BusinessCategory('Salon & Spa', 'Appointments and services', Icons.spa_outlined, ['Appointments', 'Services', 'Staff', 'Products', 'Payments', 'Reports']),
     _BusinessCategory('Construction', 'Projects and contractors', Icons.construction_outlined, ['Projects', 'Materials', 'Purchase Orders', 'Labour', 'Project Expenses', 'Reports']),
-    _BusinessCategory('Agriculture', 'Farm supplies and equipment', Icons.agriculture_outlined, ['Product Stock', 'Seasonal Purchases', 'Suppliers', 'Orders', 'Expenses', 'Reports']),
+    _BusinessCategory('Agriculture', 'Farm supplies and equipment', Icons.agriculture, ['Product Stock', 'Seasonal Purchases', 'Suppliers', 'Orders', 'Expenses', 'Reports']),
     _BusinessCategory('Public / Private Services', 'Office, agency and service work', Icons.business_center_outlined, ['Service Requests', 'Cases / Jobs', 'Customer Records', 'Payments', 'Expenses', 'Reports']),
-    _BusinessCategory('Custom Business', 'Configure your own business type', Icons.tune_outlined, ['Custom Categories', 'Products / Services', 'Orders', 'Customers', 'Finance', 'Reports']),
+    _BusinessCategory('Custom Business', 'Configure your own business type', Icons.tune, ['Custom Categories', 'Products / Services', 'Orders', 'Customers', 'Finance', 'Reports']),
   ];
 
   @override
@@ -254,7 +254,7 @@ class _BusinessCenterScreenState extends State<BusinessCenterScreen> {
     if (value.contains('stock') || value.contains('inventory') || value.contains('part')) return Icons.inventory_2_outlined;
     if (value.contains('sale') || value.contains('billing') || value.contains('payment') || value.contains('fee')) return Icons.receipt_long_outlined;
     if (value.contains('customer') || value.contains('passenger') || value.contains('student')) return Icons.people_outline;
-    if (value.contains('repair') || value.contains('job') || value.contains('workshop')) return Icons.build_outlined;
+    if (value.contains('repair') || value.contains('job') || value.contains('workshop')) return Icons.build;
     if (value.contains('purchase') || value.contains('supplier')) return Icons.local_shipping_outlined;
     if (value.contains('report') || value.contains('finance') || value.contains('expense')) return Icons.bar_chart_outlined;
     return Icons.apps_rounded;
