@@ -142,7 +142,7 @@ class SyncQueueService {
     if (_activeUserId != null && _activeUserId != userId) {
       throw StateError('Sync queue user does not match the active account.');
     }
-    const allowedTables = <String>{'shop', 'products', 'bills', 'bill_items', 'suppliers', 'supplier_orders', 'supplier_order_items', 'daily_sales', 'expenses', 'customers', 'customer_ledger', 'returns', 'branches'};
+    const allowedTables = <String>{'shop', 'products', 'bills', 'bill_items', 'suppliers', 'supplier_orders', 'supplier_order_items', 'daily_sales', 'expenses', 'customers', 'customer_ledger', 'returns', 'branches', 'spare_part_compatibility'};
     if (!allowedTables.contains(op.tableName)) throw StateError('Unsupported sync table: ${op.tableName}');
     final ref = _firestore.collection('users').doc(userId).collection(op.tableName).doc(op.documentId);
     switch (op.operation) {
