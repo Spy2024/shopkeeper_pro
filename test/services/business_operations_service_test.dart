@@ -243,6 +243,8 @@ void main() {
     expect(report['purchaseCost'], 1000000);
     expect(report['expenses'], 25000);
     expect(report['netProfit'], 175000);
+    expect(await db.query('expenses'), hasLength(2));
+    expect(await db.query('daily_sales'), hasLength(1));
   });
 
   test('school clinic salon farm construction and public service records persist', () async {
