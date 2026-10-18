@@ -54,10 +54,23 @@ jobs:
       - name: Install Firebase rules test dependencies
         run: npm install --prefix tests/firestore-rules
 
+      - name: Set up Java JDK 21 for Firebase CLI
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Test Firestore account-isolation rules in emulator
         run: |
           npm install --global firebase-tools
           firebase emulators:exec --only firestore --project shopkeeper-2de9a "npm test --prefix tests/firestore-rules"
+
+      - name: Restore Java JDK 17 for Android build
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
 
       - name: Build Release APK
         run: flutter build apk --release
