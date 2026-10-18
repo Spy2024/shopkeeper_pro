@@ -213,6 +213,7 @@ class MobileShopService {
     double labourCharge = 0,
     double partsCost = 0,
     double advancePaid = 0,
+    String initialPaymentMethod = 'cash',
     String? technicianName,
     DateTime? promisedAt,
     bool customerConsent = false,
@@ -232,6 +233,10 @@ class MobileShopService {
       'Advance paid': advancePaid,
     });
     if (warrantyDays < 0) throw ArgumentError('Warranty days cannot be negative.');
+    const acceptedInitialMethods = {'cash', 'card', 'bank', 'wallet', 'other'};
+    if (advancePaid > 0 && !acceptedInitialMethods.contains(initialPaymentMethod)) {
+      throw ArgumentError.value(initialPaymentMethod, 'initialPaymentMethod', 'Initial advance must use a real payment method.');
+    }
     final cleanImei = normalizeImei(imei);
     if (cleanImei.isNotEmpty && (cleanImei.length < 14 || cleanImei.length > 16)) {
       throw ArgumentError('IMEI must contain 14 to 16 digits.');
@@ -277,8 +282,23 @@ class MobileShopService {
         if (device.isEmpty) throw StateError('Selected mobile device does not exist.');
       }
       await txn.insert('mobile_repair_jobs', row, conflictAlgorithm: ConflictAlgorithm.abort);
+      if (advancePaid > 0) {
+        await txn.insert('mobile_repair_payments', {
+          'id': _uuid.v4(),
+          'jobId': job.id,
+          'amount': advancePaid,
+          'method': initialPaymentMethod,
+          'reference': 'Initial advance',
+          'paidAt': now.toIso8601String(),
+          'createdAt': now.toIso8601String(),
+        });
+      }
     });
     await _queue(operation: 'create', table: 'mobile_repair_jobs', id: job.id, data: row);
+    if (advancePaid > 0) {
+      final initialPayment = (await db.query('mobile_repair_payments', where: 'jobId = ?', whereArgs: [job.id], limit: 1)).single;
+      await _queue(operation: 'create', table: 'mobile_repair_payments', id: initialPayment['id']! as String, data: initialPayment);
+    }
     return job;
   }
 
