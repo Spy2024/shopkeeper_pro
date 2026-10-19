@@ -249,6 +249,31 @@ void main() {
     );
   });
 
+  test('repair warranty cannot be issued before the job is delivered', () async {
+    final db = await DBService.instance.database;
+    final job = await MobileShopService.instance.createRepairJob(
+      jobNumber: 'JOB-WARRANTY-EARLY',
+      customerName: 'Test Customer',
+      reportedIssue: 'Speaker replacement',
+      customerConsent: true,
+    );
+
+    await expectLater(
+      MobileShopService.instance.issueRepairWarranty(
+        jobId: job.id,
+        warrantyDays: 30,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final warranties = await db.query(
+      'mobile_repair_warranties',
+      where: 'jobId = ?',
+      whereArgs: [job.id],
+    );
+    expect(warranties, isEmpty);
+  });
+
   test('repair warranty can be issued after delivery and claim is recorded', () async {
     final job = await MobileShopService.instance.createRepairJob(
       jobNumber: 'JOB-WARRANTY',
