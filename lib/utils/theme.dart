@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 /// Premium Shopkeeper Pro brand system: deep navy, teal and warm gold accents.
 class AppTheme {
-  static const Color ink = Color(0xFF142B4A);
+  static const Color ink = Color(0xFF0B3D91);
   static const Color paper = Color(0xFFFFFFFF);
   static const Color muted = Color(0xFF64748B);
   static const Color line = Color(0xFFE2E8F0);
-  static const Color teal = Color(0xFF0F9D91);
-  static const Color gold = Color(0xFFF2B84B);
-  static const Color canvas = Color(0xFFF4F7FB);
+  static const Color teal = Color(0xFF14B8A6);
+  static const Color gold = Color(0xFFFFBF24);
+  static const Color canvas = Color(0xFFF3F4F6);
 
   static ThemeData light = ThemeData(
     useMaterial3: true,
@@ -108,30 +108,30 @@ class AppTheme {
     brightness: Brightness.dark,
     colorScheme: const ColorScheme(
       brightness: Brightness.dark,
-      primary: Color(0xFF9BBDEB),
+      primary: teal,
       onPrimary: ink,
-      secondary: Color(0xFF56D6C6),
-      onSecondary: Color(0xFF073D39),
+      secondary: gold,
+      onSecondary: ink,
       tertiary: gold,
       onTertiary: ink,
       error: Color(0xFFCF6679),
       onError: ink,
-      surface: Color(0xFF142033),
+      surface: Color(0xFF082B4C),
       onSurface: paper,
       surfaceContainerHighest: Color(0xFF24354C),
     ),
-    scaffoldBackgroundColor: const Color(0xFF0C1728),
+    scaffoldBackgroundColor: const Color(0xFF082B4C),
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       elevation: 0,
-      backgroundColor: Color(0xFF142033),
+      backgroundColor: Color(0xFF082B4C),
       foregroundColor: paper,
       surfaceTintColor: Colors.transparent,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         foregroundColor: ink,
-        backgroundColor: const Color(0xFF56D6C6),
+        backgroundColor: teal,
         minimumSize: const Size.fromHeight(52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -139,7 +139,7 @@ class AppTheme {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFF18283D),
+      fillColor: const Color(0xFF142B4A),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -148,7 +148,7 @@ class AppTheme {
     ),
     cardTheme: CardThemeData(
       elevation: 0,
-      color: const Color(0xFF142033),
+      color: const Color(0xFF082B4C),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: const BorderSide(color: Color(0xFF2C3E55)),
