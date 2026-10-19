@@ -8,6 +8,8 @@ import 'financial_dashboard_screen.dart';
 import 'branch_reports_screen.dart';
 import 'business_center_screen.dart';
 import '../settings/settings_screen.dart';
+import '../business/business_management_screen.dart';
+import '../business/business_verticals_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +31,8 @@ class _HomeScreenState extends State<HomeScreen> {
     const FinancialDashboardScreen(),
     const BranchReportsScreen(),
     const SettingsScreen(),
+    const BusinessManagementScreen(),
+    const BusinessVerticalsScreen(),
   ];
 
   void _openModule(int index) {
@@ -85,6 +89,8 @@ class _HomeScreenState extends State<HomeScreen> {
               _MoreModuleTile(icon: Icons.account_balance_wallet_outlined, title: 'Finance', index: 6),
               _MoreModuleTile(icon: Icons.assessment_outlined, title: 'Branch reports', index: 7),
               _MoreModuleTile(icon: Icons.settings_outlined, title: 'Settings', index: 8),
+              _MoreModuleTile(icon: Icons.business_center_outlined, title: 'Business operations', index: 9),
+              _MoreModuleTile(icon: Icons.category_outlined, title: 'Business verticals & reports', index: 10),
             ],
           ),
         ),
