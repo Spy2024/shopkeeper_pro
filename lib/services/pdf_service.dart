@@ -17,9 +17,9 @@ class PdfService {
   /// branded A4 document does not reduce printer compatibility.
   static Future<File> generateInvoice(Bill bill, Shop? shop) async {
     final doc = pw.Document();
-    const navy = PdfColor.fromInt(0xFF142B4A);
-    const teal = PdfColor.fromInt(0xFF0F9D91);
-    const gold = PdfColor.fromInt(0xFFF2B84B);
+    const navy = PdfColor.fromInt(0xFF0B3D91);
+    const teal = PdfColor.fromInt(0xFF14B8A6);
+    const gold = PdfColor.fromInt(0xFFFFBF24);
     const pale = PdfColor.fromInt(0xFFF2F6FA);
     const border = PdfColor.fromInt(0xFFE2E8F0);
 
