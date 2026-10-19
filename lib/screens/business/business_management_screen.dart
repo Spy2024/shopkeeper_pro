@@ -234,6 +234,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     final db = await DBService.instance.database;
     final orders = await db.query('restaurant_orders', where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
     final menu = await db.query('restaurant_menu_items', where: 'active = 1', orderBy: 'name');
+    if (!mounted) return;
     if (orders.isEmpty || menu.isEmpty) { _showError('Open restaurant order aur active menu item pehle banayein.'); return; }
     final order = await showDialog<Map<String, Object?>>(
       context: context, builder: (context) => SimpleDialog(title: const Text('Choose open order'),
@@ -253,6 +254,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     final db = await DBService.instance.database;
     final orders = await db.query('restaurant_orders',
         where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    if (!mounted) return;
     if (orders.isEmpty) {
       _showError('Koi open restaurant order nahi hai.');
       return;
@@ -318,6 +320,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Future<void> _updateRestaurantKitchen() async {
     final db = await DBService.instance.database;
     final items = await db.query('restaurant_order_items', where: 'kitchenStatus NOT IN (?, ?)', whereArgs: ['served','cancelled']);
+    if (!mounted) return;
     if (items.isEmpty) { _showError('No pending kitchen items.'); return; }
     final item = await showDialog<Map<String, Object?>>(
       context: context, builder: (context) => SimpleDialog(title: const Text('Choose kitchen item'),
@@ -333,6 +336,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Future<void> _recordVehicleTransactionFromList() async {
     final db = await DBService.instance.database;
     final vehicles = await db.query('vehicle_records', orderBy: 'make, model');
+    if (!mounted) return;
     if (vehicles.isEmpty) { _showError('Pehle vehicle record add karein.'); return; }
     final vehicle = await showDialog<Map<String, Object?>>(context: context, builder: (context) => SimpleDialog(title: const Text('Choose vehicle'),
       children: vehicles.map((v) => SimpleDialogOption(onPressed: () => Navigator.pop(context, v), child: Text('${v['make'] ?? ''} ${v['model'] ?? ''} · ${v['registrationNumber'] ?? v['id']}'))).toList()));
@@ -375,6 +379,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
   Future<void> _updateCargoTrackingFromList() async {
     final db = await DBService.instance.database;
     final jobs = await db.query('cargo_jobs', where: 'status != ?', whereArgs: ['delivered']);
+    if (!mounted) return;
     if (jobs.isEmpty) { _showError('No active cargo jobs.'); return; }
     final job = await showDialog<Map<String, Object?>>(context: context, builder: (context) => SimpleDialog(title: const Text('Choose cargo job'),
       children: jobs.map((j) => SimpleDialogOption(onPressed: () => Navigator.pop(context, j), child: Text('${j['customerName']} · ${j['status']} · ${j['id']}'))).toList()));
@@ -471,14 +476,16 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
             final cargo = (await db.query('cargo_jobs', where: 'id = ?', whereArgs: [cargoId])).single;
             final token = cargo['trackingToken']! as String;
             final trackingUrl = 'https://shopkeeper-2de9a.web.app/api/track?token=$token';
-            if (mounted) await showDialog<void>(context: context, builder: (context) => AlertDialog(
+            if (mounted) {
+              await showDialog<void>(context: context, builder: (context) => AlertDialog(
               title: const Text('Customer cargo tracking link'),
               content: SelectableText(trackingUrl),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
                 FilledButton.icon(onPressed: () async { await Clipboard.setData(ClipboardData(text: trackingUrl)); if (context.mounted) Navigator.pop(context); }, icon: const Icon(Icons.copy), label: const Text('Copy link')),
               ],
-            ));
+              ));
+            }
           }
           break;
         case 'Spare part compatibility':
