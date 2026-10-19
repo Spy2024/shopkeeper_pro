@@ -81,6 +81,7 @@ class _StartupGate extends StatefulWidget {
 
 class _StartupGateState extends State<_StartupGate> {
   bool _ready = false;
+  String? _startupError;
 
   @override
   void initState() {
@@ -89,26 +90,101 @@ class _StartupGateState extends State<_StartupGate> {
   }
 
   Future<void> _bootstrap() async {
-    final auth = context.read<AuthProvider>();
-    final shopProvider = context.read<ShopProvider>();
-    final syncProvider = context.read<SyncProvider>();
-    await auth.checkExistingSession();
-    if (auth.isLoggedIn) {
-      await shopProvider.load();
-      final userId = auth.userUid;
-      if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
-        await syncProvider.init(userId);
-      }
+    if (mounted) {
+      setState(() {
+        _ready = false;
+        _startupError = null;
+      });
     }
-    if (!mounted) return;
-    setState(() => _ready = true);
+
+    try {
+      final auth = context.read<AuthProvider>();
+      final shopProvider = context.read<ShopProvider>();
+      final syncProvider = context.read<SyncProvider>();
+
+      await auth.checkExistingSession();
+      if (auth.isLoggedIn) {
+        await shopProvider.load();
+
+        final userId = auth.userUid;
+        if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
+          // Cloud sync is best-effort during startup. A network/rules error
+          // must not prevent an otherwise usable offline POS from opening.
+          try {
+            await syncProvider.init(userId);
+          } catch (error, stackTrace) {
+            debugPrint('[Startup] Cloud sync initialization failed: $error');
+            debugPrintStack(stackTrace: stackTrace);
+          }
+        }
+      }
+    } catch (error, stackTrace) {
+      // Never leave the launch screen spinning forever when local database
+      // migration/opening or session restoration fails.
+      debugPrint('[Startup] App initialization failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          _startupError =
+              'Shopkeeper Pro could not finish starting. Please retry. If this keeps happening, share the error details with support.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _ready = true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
+
+    final startupError = _startupError;
+    if (startupError != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.storefront_rounded,
+                      size: 64,
+                      color: AppTheme.ink,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Shopkeeper Pro could not start',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(startupError, textAlign: TextAlign.center),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _bootstrap,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final auth = context.watch<AuthProvider>();
     if (!auth.isLoggedIn) return const PhoneEntryScreen();
 
