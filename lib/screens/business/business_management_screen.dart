@@ -313,7 +313,9 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     );
     if (order == null) return;
     await _ops.completeRestaurantOrder(order['id']! as String);
+    if (!mounted) return;
     await _reload();
+    if (!mounted) return;
     _showMessage('Paid restaurant order completed and table released.');
   }
 
