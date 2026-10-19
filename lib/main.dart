@@ -124,11 +124,15 @@ class _StartupGateState extends State<_StartupGate> {
       // Legacy data import must be an explicit ownership decision. Handle the
       // known migration state here rather than trapping the user on a retry
       // screen with no way to confirm the import.
+      if (!mounted) return;
       try {
         final imported = await confirmLegacyDatabaseImport(context);
+        if (!mounted) return;
         if (imported) {
           final auth = context.read<AuthProvider>();
-          await context.read<ShopProvider>().load();
+          final shopProvider = context.read<ShopProvider>();
+          await shopProvider.load();
+          if (!mounted) return;
           final userId = auth.userUid;
           if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
             try {
