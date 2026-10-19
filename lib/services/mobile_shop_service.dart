@@ -232,6 +232,9 @@ class MobileShopService {
       'Parts cost': partsCost,
       'Advance paid': advancePaid,
     });
+    if (advancePaid > approvedAmount) {
+      throw ArgumentError('Advance paid cannot exceed the approved repair amount.');
+    }
     if (warrantyDays < 0) throw ArgumentError('Warranty days cannot be negative.');
     const acceptedInitialMethods = {'cash', 'card', 'bank', 'wallet', 'other'};
     if (advancePaid > 0 && !acceptedInitialMethods.contains(initialPaymentMethod)) {
