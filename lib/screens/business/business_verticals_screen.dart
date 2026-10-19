@@ -280,11 +280,6 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     appBar: AppBar(
       title: const Text('Business Modules & Reports'),
       actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh), tooltip: 'Refresh')],
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _loading ? null : _addCurrentRecord,
-        icon: const Icon(Icons.add),
-        label: const Text('Add record'),
-      ),
       bottom: TabBar(controller: _tabs, isScrollable: true, tabs: const [
         Tab(text: 'School'), Tab(text: 'Clinic'), Tab(text: 'Salon'),
         Tab(text: 'Agriculture'), Tab(text: 'Construction'), Tab(text: 'Public services'),
@@ -298,6 +293,11 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
             _schoolTab(), _clinicTab(), _salonTab(), _farmTab(), _constructionTab(), _publicTab(),
           ])),
         ]),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: _loading ? null : _addCurrentRecord,
+      icon: const Icon(Icons.add),
+      label: const Text('Add record'),
+    ),
   );
 
   Widget _schoolTab() => Column(children: [
