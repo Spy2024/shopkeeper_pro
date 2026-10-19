@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
 import '../../providers/finance_provider.dart';
+import '../../utils/theme.dart';
 import '../../providers/sales_provider.dart';
 
 class FinancialDashboardScreen extends StatefulWidget {
@@ -153,11 +154,11 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _statCard('Revenue', _currency.format(revenue), Colors.blue)),
+              Expanded(child: _statCard('Revenue', _currency.format(revenue), AppTheme.ink)),
               const SizedBox(width: 10),
-              Expanded(child: _statCard('COGS', _currency.format(cogs), Colors.orange)),
+              Expanded(child: _statCard('COGS', _currency.format(cogs), AppTheme.gold)),
               const SizedBox(width: 10),
-              Expanded(child: _statCard('Expenses', _currency.format(expensesTotal), Colors.purple)),
+              Expanded(child: _statCard('Expenses', _currency.format(expensesTotal), AppTheme.teal)),
             ],
           ),
           const SizedBox(height: 20),
@@ -167,8 +168,8 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
               child: PieChart(
                 PieChartData(
                   sections: [
-                    PieChartSectionData(value: cogs, color: Colors.orange, title: 'COGS'),
-                    PieChartSectionData(value: expensesTotal, color: Colors.purple, title: 'Expenses'),
+                    PieChartSectionData(value: cogs, color: AppTheme.gold, title: 'COGS'),
+                    PieChartSectionData(value: expensesTotal, color: AppTheme.teal, title: 'Expenses'),
                     PieChartSectionData(
                         value: netProfit > 0 ? netProfit : 0, color: Colors.green, title: 'Profit'),
                   ],
