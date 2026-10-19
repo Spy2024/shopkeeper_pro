@@ -60,7 +60,30 @@ service cloud.firestore {
           'construction_tasks',
           'public_service_cases',
           'spare_part_compatibility',
-          'service_jobs'
+          'service_jobs',
+          'payments',
+          'business_returns',
+          'business_return_items',
+          'branch_cash_entries',
+          'product_variants',
+          'restaurant_order_items',
+          'vehicle_records',
+          'vehicle_transactions',
+          'transport_routes',
+          'transport_tickets',
+          'cargo_jobs',
+          'cargo_status_history',
+          'school_students',
+          'school_fees',
+          'clinic_patients',
+          'clinic_appointments',
+          'salon_services',
+          'salon_bookings',
+          'farm_plots',
+          'farm_activities',
+          'construction_projects',
+          'construction_tasks',
+          'public_service_cases'
         ];
     }
 
