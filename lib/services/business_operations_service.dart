@@ -92,6 +92,7 @@ class BusinessOperationsService {
       final amount = (row['amount'] as num).toDouble();
       switch (row['type']) {
         case 'credit':
+        case 'sale_due':
           balance += amount;
           break;
         case 'payment':
