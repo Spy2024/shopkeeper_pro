@@ -7,6 +7,7 @@ import '../../providers/branch_provider.dart';
 import '../../providers/inventory_provider.dart';
 import '../../services/branch_accounting_service.dart';
 import '../barcode_scanner_screen.dart';
+import '../../utils/theme.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -149,7 +150,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: 'Products',
                     value: inventory.products.length.toString(),
                     icon: Icons.inventory_2_outlined,
-                    color: const Color(0xFF0F9D91),
+                    color: AppTheme.teal,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -158,7 +159,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: 'Low stock',
                     value: inventory.lowOrOutOfStock.length.toString(),
                     icon: Icons.warning_amber_rounded,
-                    color: const Color(0xFFD97706),
+                    color: AppTheme.gold,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -167,7 +168,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     label: 'Units',
                     value: inventory.products.fold<int>(0, (sum, product) => sum + product.stockQuantity).toString(),
                     icon: Icons.stacked_bar_chart,
-                    color: const Color(0xFF315A9B),
+                    color: AppTheme.ink,
                   ),
                 ),
               ],
@@ -339,7 +340,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                       child: _ProductValue(
                                         label: 'MARGIN / UNIT',
                                         value: _currency.format(p.margin),
-                                        color: const Color(0xFF0F9D91),
+                                        color: AppTheme.teal,
                                       ),
                                     ),
                                   ],
