@@ -2,11 +2,77 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null
-        && request.auth.uid == userId;
+    function signedInAs(userId) {
+      return request.auth != null && request.auth.uid == userId;
     }
 
+    // Top-level user-owned records. Keep this allowlist aligned with
+    // SyncService._pushLocal and SyncQueueService; unknown collections fail closed.
+    match /users/{userId}/{collectionName}/{documentId} {
+      allow read, create, update, delete: if signedInAs(userId)
+        && collectionName in [
+          'shop',
+          'products',
+          'branches',
+          'mobile_devices',
+          'mobile_repair_jobs',
+          'mobile_repair_job_parts',
+          'mobile_repair_payments',
+          'mobile_repair_warranties',
+          'mobile_repair_warranty_claims',
+          'customers',
+          'bills',
+          'suppliers',
+          'supplier_transactions',
+          'supplier_orders',
+          'sales',
+          'returns',
+          'expenses',
+          'branch_stock',
+          'stock_transfers',
+          'branch_cash_transactions',
+          'customer_ledger',
+          'payment_allocations',
+          'restaurant_menu_items',
+          'restaurant_orders',
+          'restaurant_order_items',
+          'restaurant_order_payments',
+          'restaurant_tables',
+          'vehicle_records',
+          'vehicle_transactions',
+          'cargo_jobs',
+          'cargo_status_history',
+          'transport_routes',
+          'transport_tickets',
+          'school_students',
+          'school_fees',
+          'clinic_patients',
+          'clinic_appointments',
+          'salon_services',
+          'salon_bookings',
+          'farm_plots',
+          'farm_activities',
+          'construction_projects',
+          'construction_tasks',
+          'public_service_cases',
+          'spare_part_compatibility',
+          'service_jobs'
+        ];
+    }
+
+    // Bill/order line items are intentionally stored as child documents.
+    // Firestore parent deletion does not cascade; each child remains scoped
+    // to the same authenticated owner UID.
+    match /users/{userId}/bills/{billId}/items/{itemId} {
+      allow read, create, update, delete: if signedInAs(userId);
+    }
+
+    match /users/{userId}/supplier_orders/{orderId}/items/{itemId} {
+      allow read, create, update, delete: if signedInAs(userId);
+    }
+
+    // No global/default access: root documents, arbitrary subcollections and
+    // documents belonging to another UID are denied.
     match /{document=**} {
       allow read, write: if false;
     }
