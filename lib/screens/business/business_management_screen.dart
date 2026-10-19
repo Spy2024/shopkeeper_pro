@@ -297,6 +297,7 @@ class _BusinessManagementScreenState extends State<BusinessManagementScreen> wit
     final db = await DBService.instance.database;
     final orders = await db.query('restaurant_orders',
         where: 'status = ?', whereArgs: ['open'], orderBy: 'createdAt DESC');
+    if (!mounted) return;
     if (orders.isEmpty) {
       _showError('Koi open restaurant order nahi hai.');
       return;
