@@ -1,0 +1,26 @@
+name: Firebase Rules CI
+
+on:
+  push:
+    branches:
+      - "feature/**"
+      - "fix/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firestore-rules:
+    name: Firestore rules emulator tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Test Firestore security rules in emulator
+        run: npm run test:rules
