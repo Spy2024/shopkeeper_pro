@@ -1,0 +1,16 @@
+{
+  "name": "shopkeeper-pro-firebase-rules-tests",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project demo-shopkeeper-pro-rules \"node --test tests/firestore.rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^14.0.0"
+  }
+}
