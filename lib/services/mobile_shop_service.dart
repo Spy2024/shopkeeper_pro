@@ -455,21 +455,46 @@ class MobileShopService {
     _requireActiveAccount();
     if (warrantyDays <= 0) throw ArgumentError('Warranty days must be greater than zero.');
     final db = await DBService.instance.database;
-    final rows = await db.query('mobile_repair_jobs', where: 'id = ?', whereArgs: [jobId], limit: 1);
-    if (rows.isEmpty) throw StateError('Repair job not found.');
-    final job = MobileRepairJob.fromMap(rows.single);
-    if (job.status != 'delivered') throw StateError('Deliver the repair job before issuing its warranty.');
-    final startsAt = job.deliveredAt ?? DateTime.now();
-    final expiresAt = startsAt.add(Duration(days: warrantyDays));
-    final warranty = <String, Object?>{
-      'id': _uuid.v4(), 'jobId': job.id, 'deviceId': job.deviceId,
-      'customerId': job.customerId, 'customerName': job.customerName,
-      'warrantyType': 'repair', 'startsAt': startsAt.toIso8601String(),
-      'expiresAt': expiresAt.toIso8601String(), 'terms': terms?.trim(),
-      'status': 'active', 'createdAt': DateTime.now().toIso8601String(),
-    };
-    await db.insert('mobile_repair_warranties', warranty);
-    await _queue(operation: 'create', table: 'mobile_repair_warranties', id: warranty['id']! as String, data: warranty);
+    final now = DateTime.now();
+    late Map<String, Object?> warranty;
+    await db.transaction((txn) async {
+      // Re-check the active account after obtaining the DB and inside the
+      // transaction so a logout/account switch cannot authorize a stale write.
+      _requireActiveAccount();
+      final rows = await txn.query(
+        'mobile_repair_jobs',
+        where: 'id = ?',
+        whereArgs: [jobId],
+        limit: 1,
+      );
+      if (rows.isEmpty) throw StateError('Repair job not found.');
+      final job = MobileRepairJob.fromMap(rows.single);
+      if (job.status != 'delivered') {
+        throw StateError('Deliver the repair job before issuing its warranty.');
+      }
+      final startsAt = job.deliveredAt ?? now;
+      final expiresAt = startsAt.add(Duration(days: warrantyDays));
+      warranty = <String, Object?>{
+        'id': _uuid.v4(),
+        'jobId': job.id,
+        'deviceId': job.deviceId,
+        'customerId': job.customerId,
+        'customerName': job.customerName,
+        'warrantyType': 'repair',
+        'startsAt': startsAt.toIso8601String(),
+        'expiresAt': expiresAt.toIso8601String(),
+        'terms': terms?.trim(),
+        'status': 'active',
+        'createdAt': now.toIso8601String(),
+      };
+      await txn.insert('mobile_repair_warranties', warranty);
+    });
+    await _queue(
+      operation: 'create',
+      table: 'mobile_repair_warranties',
+      id: warranty['id']! as String,
+      data: warranty,
+    );
     return warranty;
   }
 
@@ -483,6 +508,7 @@ class MobileShopService {
     final now = DateTime.now();
     late Map<String, Object?> claim;
     await db.transaction((txn) async {
+      _requireActiveAccount();
       final rows = await txn.query('mobile_repair_warranties', where: 'id = ?', whereArgs: [warrantyId], limit: 1);
       if (rows.isEmpty) throw StateError('Warranty record not found.');
       final warranty = rows.single;
