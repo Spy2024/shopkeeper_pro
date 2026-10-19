@@ -184,8 +184,18 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     leading: const Icon(Icons.medical_services), title: Text('${r['appointmentAt']}'),
     subtitle: Text('Patient ${r['patientId']} · ${r['status']} · Paid ${_money(r['paidAmount'])}/${_money(r['fee'])}'),
     trailing: PopupMenuButton<String>(onSelected: (v) {
-      if (v == 'payment') _recordClinicPayment(r);
-      else _chooseStatus('Appointment status', ['scheduled','checked_in','completed','cancelled','no_show'], (s) => _ops.updateClinicAppointmentStatus(appointmentId: r['id']! as String, status: s));
+      if (v == 'payment') {
+        _recordClinicPayment(r);
+      } else {
+        _chooseStatus(
+          'Appointment status',
+          ['scheduled', 'checked_in', 'completed', 'cancelled', 'no_show'],
+          (s) => _ops.updateClinicAppointmentStatus(
+            appointmentId: r['id']! as String,
+            status: s,
+          ),
+        );
+      }
     }, itemBuilder: (_) => const [PopupMenuItem(value: 'payment', child: Text('Record payment')), PopupMenuItem(value: 'status', child: Text('Change status'))]),
   ));
 
