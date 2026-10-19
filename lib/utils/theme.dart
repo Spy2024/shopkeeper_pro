@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 /// Premium Shopkeeper Pro brand system: deep navy, teal and warm gold accents.
 class AppTheme {
-  static const Color ink = Color(0xFF142B4A);
+  static const Color ink = Color(0xFF0B3D91);
   static const Color paper = Color(0xFFFFFFFF);
   static const Color muted = Color(0xFF64748B);
   static const Color line = Color(0xFFE2E8F0);
-  static const Color teal = Color(0xFF0F9D91);
-  static const Color gold = Color(0xFFF2B84B);
+  static const Color teal = Color(0xFF14B8A6);
+  static const Color gold = Color(0xFFFFBF24);
   static const Color canvas = Color(0xFFF4F7FB);
 
   static ThemeData light = ThemeData(
