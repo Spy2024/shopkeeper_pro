@@ -17,13 +17,13 @@
         android:fillColor="#FFBF24"
         android:pathData="M36,59 A5,5 0,1 0 36,69 A5,5 0,1 0 36,59 Z M72,59 A5,5 0,1 0 72,69 A5,5 0,1 0 72,59 Z" />
     <path
-        android:fillColor="#14B8A6"
+        android:fillColor="@android:color/transparent"
         android:strokeColor="#14B8A6"
         android:strokeWidth="3.5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:pathData="M31,83 L46,72 L56,77 L77,58 M67,58 L77,58 L77,68"
-        android:fillType="evenOdd" />
+        />
     <path
         android:fillColor="#FFBF24"
         android:pathData="M79,16 L92,16 L92,29 L86,29 L86,22 L79,22 Z" />
