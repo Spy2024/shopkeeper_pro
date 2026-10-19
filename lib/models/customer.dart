@@ -3,17 +3,18 @@ class Customer {
   final String name;
   final String? phone;
   final String? email;
+  final String? address;
   final String? notes;
   final DateTime createdAt;
 
-  Customer({required this.id, required this.name, this.phone, this.email, this.notes, required this.createdAt}) {
+  Customer({required this.id, required this.name, this.phone, this.email, this.address, this.notes, required this.createdAt}) {
     if (id.trim().isEmpty) throw ArgumentError.value(id, 'id', 'Cannot be empty.');
     if (name.trim().isEmpty) throw ArgumentError.value(name, 'name', 'Cannot be empty.');
   }
 
   Map<String, dynamic> toMap() => {
     'id': id, 'name': name.trim(), 'phone': phone?.trim(),
-    'email': email?.trim(), 'notes': notes?.trim(),
+    'email': email?.trim(), 'address': address?.trim(), 'notes': notes?.trim(),
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -22,6 +23,7 @@ class Customer {
     name: map['name'] as String,
     phone: map['phone'] as String?,
     email: map['email'] as String?,
+    address: map['address'] as String?,
     notes: map['notes'] as String?,
     createdAt: DateTime.parse(map['createdAt'] as String),
   );

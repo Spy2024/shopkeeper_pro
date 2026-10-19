@@ -20,6 +20,11 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
   final _addressCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _taxCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _websiteCtrl = TextEditingController();
+  final _facebookCtrl = TextEditingController();
+  final _instagramCtrl = TextEditingController();
+  final _socialCtrl = TextEditingController();
   String? _logoPath;
   String _businessType = 'general_retail';
 
@@ -32,6 +37,11 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
       _addressCtrl.text = shop.address;
       _phoneCtrl.text = shop.phone;
       _taxCtrl.text = shop.taxNumber ?? '';
+      _emailCtrl.text = shop.email ?? '';
+      _websiteCtrl.text = shop.website ?? '';
+      _facebookCtrl.text = shop.facebookUrl ?? '';
+      _instagramCtrl.text = shop.instagramUrl ?? '';
+      _socialCtrl.text = shop.socialUrl ?? '';
       _logoPath = shop.logoPath;
       _businessType = shop.businessType;
     }
@@ -95,6 +105,27 @@ class _ShopProfileScreenState extends State<ShopProfileScreen> {
                 decoration: const InputDecoration(
                     labelText: 'NTN / Tax Number (optional)', prefixIcon: Icon(Icons.receipt_long)),
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'Shop Email (optional)', prefixIcon: Icon(Icons.email_outlined)),
+                validator: (v) {
+                  final value = v?.trim() ?? '';
+                  return value.isNotEmpty &&
+                          !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)
+                      ? 'Enter a valid email'
+                      : null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(controller: _websiteCtrl, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Website URL (optional)', prefixIcon: Icon(Icons.language))),
+              const SizedBox(height: 12),
+              TextFormField(controller: _facebookCtrl, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Facebook page URL (optional)', prefixIcon: Icon(Icons.facebook))),
+              const SizedBox(height: 12),
+              TextFormField(controller: _instagramCtrl, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Instagram URL (optional)', prefixIcon: Icon(Icons.camera_alt_outlined))),
+              const SizedBox(height: 12),
+              TextFormField(controller: _socialCtrl, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Other social page URL (optional)', prefixIcon: Icon(Icons.share_outlined))),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: BusinessTypes.byId(_businessType).id,

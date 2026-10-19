@@ -89,19 +89,28 @@ class _StartupGateState extends State<_StartupGate> {
   }
 
   Future<void> _bootstrap() async {
-    final auth = context.read<AuthProvider>();
-    final shopProvider = context.read<ShopProvider>();
-    final syncProvider = context.read<SyncProvider>();
-    await auth.checkExistingSession();
-    if (auth.isLoggedIn) {
-      await shopProvider.load();
-      final userId = auth.userUid;
-      if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
-        await syncProvider.init(userId);
+    try {
+      final auth = context.read<AuthProvider>();
+      final shopProvider = context.read<ShopProvider>();
+      final syncProvider = context.read<SyncProvider>();
+      await auth.checkExistingSession();
+      if (auth.isLoggedIn) {
+        await shopProvider.load();
+        final userId = auth.userUid;
+        if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
+          await syncProvider.init(userId);
+        }
+      }
+    } catch (error, stackTrace) {
+      // Startup must not leave the app on an infinite loading screen if a
+      // local database, saved session, or sync bootstrap operation fails.
+      debugPrint('[StartupGate] Bootstrap failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      if (mounted) {
+        setState(() => _ready = true);
       }
     }
-    if (!mounted) return;
-    setState(() => _ready = true);
   }
 
   @override

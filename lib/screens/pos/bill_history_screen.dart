@@ -25,7 +25,11 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<PosProvider>().loadHistory();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    await context.read<PosProvider>().loadHistory();
   }
 
   @override
@@ -54,6 +58,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
     if (bill.items.isEmpty) return;
     final reasonController = TextEditingController();
     BillItem selectedItem = bill.items.first;
+    String refundMethod = 'cash';
     final quantityController = TextEditingController(text: '1');
     String? dialogError;
     double? refundAmount;
@@ -94,6 +99,30 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                   decoration: const InputDecoration(labelText: 'Quantity to return'),
                 ),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: refundMethod,
+                  decoration: const InputDecoration(
+                    labelText: 'Refund method',
+                    helperText: 'Cash refunds update branch cash; credit refunds reduce customer balance.',
+                  ),
+                  items: [
+                    const DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                    const DropdownMenuItem(value: 'card', child: Text('Card')),
+                    const DropdownMenuItem(value: 'bank', child: Text('Bank transfer')),
+                    const DropdownMenuItem(value: 'wallet', child: Text('Wallet')),
+                    if (bill.customerId != null && bill.customerId!.trim().isNotEmpty)
+                      const DropdownMenuItem(value: 'credit', child: Text('Udhaar / credit adjustment')),
+                    const DropdownMenuItem(value: 'other', child: Text('Other')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() {
+                      refundMethod = value;
+                      dialogError = null;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: reasonController,
                   decoration: const InputDecoration(labelText: 'Reason for return'),
@@ -129,6 +158,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                     quantity: quantity,
                     reason: reasonController.text,
                     inventory: context.read<InventoryProvider>(),
+                    refundMethod: refundMethod,
                   );
                   if (!dialogContext.mounted) return;
                   Navigator.pop(dialogContext, true);
@@ -204,9 +234,37 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             ),
           ),
           Expanded(
-            child: results.isEmpty
-                ? const Center(child: Text('No matching bills'))
-                : ListView.builder(
+            child: pos.isLoadingHistory
+                ? const Center(child: CircularProgressIndicator())
+                : pos.historyLoadError != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.error_outline, size: 40),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Bill history could not be loaded',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(pos.historyLoadError!, textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                onPressed: _loadHistory,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Try again'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : results.isEmpty
+                        ? const Center(child: Text('No saved bills found'))
+                        : ListView.builder(
                     itemCount: results.length,
                     itemBuilder: (context, i) {
                       final bill = results[i];

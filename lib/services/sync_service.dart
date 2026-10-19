@@ -255,12 +255,20 @@ class SyncService {
         'sales': 'daily_sales',
         'returns': 'bill_returns',
         'expenses': 'expenses',
+        'stock_transfers': 'stock_transfers',
+        'branch_cash_transactions': 'branch_cash_transactions',
+        'customer_ledger': 'customer_ledger',
+        'payment_allocations': 'payment_allocations',
+        'branch_stock': 'branch_stock',
       };
       for (final entry in tablesByCollection.entries) {
+        final localRows = entry.key == 'branch_stock'
+            ? await _branchStockRows(db)
+            : await _maps(db, entry.value);
         await _deleteCloudDocumentsMissingLocally(
           userId,
           entry.key,
-          await _maps(db, entry.value),
+          localRows,
         );
       }
 
@@ -384,6 +392,20 @@ class SyncService {
     await _writeBatch(userId, 'sales', await _maps(db, 'daily_sales'));
     await _writeBatch(userId, 'returns', await _maps(db, 'bill_returns'));
     await _writeBatch(userId, 'expenses', await _maps(db, 'expenses'));
+    await _writeBatch(userId, 'branch_stock', await _branchStockRows(db));
+    await _writeBatch(userId, 'stock_transfers', await _maps(db, 'stock_transfers'));
+    await _writeBatch(userId, 'branch_cash_transactions', await _maps(db, 'branch_cash_transactions'));
+    await _writeBatch(userId, 'customer_ledger', await _maps(db, 'customer_ledger'));
+    await _writeBatch(userId, 'payment_allocations', await _maps(db, 'payment_allocations'));
+  }
+
+  Future<List<Map<String, dynamic>>> _branchStockRows(Database db) async {
+    final rows = await db.query('branch_stock');
+    return rows.map((raw) {
+      final row = Map<String, dynamic>.from(raw);
+      row['cloudId'] = '${row['branchId']}::${row['productId']}';
+      return row;
+    }).toList(growable: false);
   }
 
   Future<List<Map<String, dynamic>>> _maps(Database db, String table, {String? where, List<Object?>? args}) async {
@@ -524,6 +546,23 @@ class SyncService {
           return false;
         });
         if (skippedForPendingOrderItems) continue;
+      }
+
+      final branchStock = await _collection(userId, 'branch_stock').get();
+      for (final doc in branchStock.docs) {
+        if (await _hasPending(userId, db, doc.id, 'branch_stock')) continue;
+        final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt')..remove('cloudId');
+        if (data['branchId'] == null || data['productId'] == null) continue;
+        await db.insert('branch_stock', data, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      for (final collection in ['stock_transfers', 'branch_cash_transactions', 'customer_ledger', 'payment_allocations']) {
+        final snapshot = await _collection(userId, collection).get();
+        for (final doc in snapshot.docs) {
+          if (await _hasPending(userId, db, doc.id, collection)) continue;
+          final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+          await db.insert(collection, data, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
       }
 
       for (final collection in ['sales', 'expenses', 'returns']) {

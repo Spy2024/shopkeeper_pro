@@ -21,6 +21,11 @@ class ShopProvider extends ChangeNotifier {
     required String address,
     required String phone,
     String? taxNumber,
+    String? email,
+    String? website,
+    String? facebookUrl,
+    String? instagramUrl,
+    String? socialUrl,
     String? logoPath,
     String businessType = 'general_retail',
   }) async {
@@ -32,6 +37,11 @@ class ShopProvider extends ChangeNotifier {
       address: address,
       phone: phone,
       taxNumber: taxNumber,
+      email: email?.trim().isEmpty == true ? null : email?.trim(),
+      website: website?.trim().isEmpty == true ? null : website?.trim(),
+      facebookUrl: facebookUrl?.trim().isEmpty == true ? null : facebookUrl?.trim(),
+      instagramUrl: instagramUrl?.trim().isEmpty == true ? null : instagramUrl?.trim(),
+      socialUrl: socialUrl?.trim().isEmpty == true ? null : socialUrl?.trim(),
       logoPath: logoPath ?? shop?.logoPath,
       businessType: businessType,
     );
