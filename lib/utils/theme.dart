@@ -43,8 +43,8 @@ class AppTheme {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        foregroundColor: paper,
-        backgroundColor: ink,
+        foregroundColor: ink,
+        backgroundColor: teal,
         disabledForegroundColor: muted,
         disabledBackgroundColor: line,
         minimumSize: const Size.fromHeight(52),
@@ -52,9 +52,18 @@ class AppTheme {
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
     ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        foregroundColor: ink,
+        backgroundColor: teal,
+        minimumSize: const Size.fromHeight(48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+    ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: teal,
-      foregroundColor: paper,
+      foregroundColor: ink,
       elevation: 3,
     ),
     navigationBarTheme: NavigationBarThemeData(
