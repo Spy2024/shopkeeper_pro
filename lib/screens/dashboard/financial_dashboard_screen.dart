@@ -135,7 +135,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Text(DateFormat('MMMM yyyy').format(now), style: TextStyle(fontSize: 14, color: AppTheme.muted)),
+                  Text(DateFormat('MMMM yyyy').format(now), style: const TextStyle(fontSize: 14, color: AppTheme.muted)),
                   const SizedBox(height: 4),
                   const Text('Clear Net Profit', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
