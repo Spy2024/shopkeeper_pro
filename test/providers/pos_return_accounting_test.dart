@@ -7,6 +7,7 @@ import 'package:shopkeeper_pro/providers/inventory_provider.dart';
 import 'package:shopkeeper_pro/providers/pos_provider.dart';
 import 'package:shopkeeper_pro/services/branch_accounting_service.dart';
 import 'package:shopkeeper_pro/services/db_service.dart';
+import 'package:shopkeeper_pro/services/mobile_shop_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -139,6 +140,32 @@ void main() {
         inventory: inventory,
       ),
       throwsA(isA<StateError>()),
+    );
+  });
+
+  test('mobile intake rejects a duplicate IMEI before inserting a second device', () async {
+    await insertHandset();
+
+    await expectLater(
+      MobileShopService.instance.createDevice(
+        deviceType: 'new',
+        brand: 'Samsung',
+        model: 'Galaxy S22 duplicate',
+        imei1: '351234567890123',
+        purchasePrice: 40000,
+        sellingPrice: 48000,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final db = await DBService.instance.database;
+    expect(
+      await db.query(
+        'mobile_devices',
+        where: 'imei1 = ? OR imei2 = ?',
+        whereArgs: ['351234567890123', '351234567890123'],
+      ),
+      hasLength(1),
     );
   });
 
