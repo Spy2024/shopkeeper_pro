@@ -13,6 +13,8 @@ import 'providers/sales_provider.dart';
 import 'providers/finance_provider.dart';
 import 'providers/sync_provider.dart';
 import 'screens/auth/phone_entry_screen.dart';
+import 'screens/auth/legacy_database_migration_dialog.dart';
+import 'services/db_service.dart';
 import 'screens/profile/shop_profile_screen.dart';
 import 'screens/dashboard/home_screen.dart';
 import 'utils/theme.dart';
@@ -116,6 +118,40 @@ class _StartupGateState extends State<_StartupGate> {
             debugPrint('[Startup] Cloud sync initialization failed: $error');
             debugPrintStack(stackTrace: stackTrace);
           }
+        }
+      }
+    } on LegacyDatabaseMigrationRequired {
+      // Legacy data import must be an explicit ownership decision. Handle the
+      // known migration state here rather than trapping the user on a retry
+      // screen with no way to confirm the import.
+      try {
+        final imported = await confirmLegacyDatabaseImport(context);
+        if (imported) {
+          final auth = context.read<AuthProvider>();
+          await context.read<ShopProvider>().load();
+          final userId = auth.userUid;
+          if (userId != null && userId.isNotEmpty && auth.firebaseAvailable) {
+            try {
+              await context.read<SyncProvider>().init(userId);
+            } catch (error, stackTrace) {
+              debugPrint('[Startup] Sync after legacy import failed: $error');
+              debugPrintStack(stackTrace: stackTrace);
+            }
+          }
+        } else if (mounted) {
+          setState(() {
+            _startupError =
+                'Existing shop data needs ownership confirmation before it can be opened. Tap Retry to continue.';
+          });
+        }
+      } catch (error, stackTrace) {
+        debugPrint('[Startup] Legacy database import failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (mounted) {
+          setState(() {
+            _startupError =
+                'The existing shop data could not be imported. Please retry or contact support.';
+          });
         }
       }
     } catch (error, stackTrace) {
