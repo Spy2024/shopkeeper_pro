@@ -145,6 +145,24 @@ void main() {
     expect(jobs.single.id, job.id);
   });
 
+  test('repair advance cannot exceed the approved total', () async {
+    await expectLater(
+      MobileShopService.instance.createRepairJob(
+        jobNumber: 'JOB-ADVANCE-OVER-TOTAL',
+        customerName: 'Test Customer',
+        reportedIssue: 'Screen replacement',
+        approvedAmount: 1000,
+        advancePaid: 1200,
+      ),
+      throwsArgumentError,
+    );
+
+    final jobs = await MobileShopService.instance.listRepairJobs(
+      search: 'JOB-ADVANCE-OVER-TOTAL',
+    );
+    expect(jobs, isEmpty);
+  });
+
   test('repair job number is unique', () async {
     await MobileShopService.instance.createRepairJob(
       jobNumber: 'JOB-DUP',
