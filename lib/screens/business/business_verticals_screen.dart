@@ -68,6 +68,136 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
   double _number(Object? value) => value is num ? value.toDouble() : 0;
   String _money(Object? value) => 'Rs. ${_number(value).toStringAsFixed(2)}';
 
+  Future<void> _addCurrentRecord() async {
+    final fieldsByTab = <int, List<(String, String)>>{
+      0: [('Student name', 'required'), ('Guardian name', 'text'), ('Phone', 'text'), ('Class', 'text')],
+      1: [('Patient name', 'required'), ('Phone', 'text'), ('Date of birth', 'text'), ('Notes', 'text')],
+      2: [('Service name', 'required'), ('Duration minutes', 'required_number'), ('Price (Rs.)', 'required_number')],
+      3: [('Plot name', 'required'), ('Area (acre)', 'required_number'), ('Crop', 'required'), ('Season', 'text')],
+      4: [('Project name', 'required'), ('Client name', 'text'), ('Location', 'text'), ('Budget (Rs.)', 'required_number')],
+      5: [('Case number', 'required'), ('Applicant name', 'required'), ('Service type', 'required'), ('Fee (Rs.)', 'required_number')],
+    };
+    const labels = ['student', 'patient', 'salon service', 'farm plot', 'construction project', 'public-service case'];
+    final fields = fieldsByTab[_tabs.index]!;
+    final controllers = <String, TextEditingController>{
+      for (final field in fields) field.$1: TextEditingController(),
+    };
+    String? validationError;
+    final values = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Add ${labels[_tabs.index]}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final field in fields)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: TextField(
+                      controller: controllers[field.$1],
+                      keyboardType: field.$2.contains('number')
+                          ? const TextInputType.numberWithOptions(decimal: true)
+                          : TextInputType.text,
+                      decoration: InputDecoration(labelText: field.$1),
+                    ),
+                  ),
+                if (validationError != null)
+                  Text(validationError!, style: const TextStyle(color: Colors.red)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                final v = {for (final e in controllers.entries) e.key: e.value.text.trim()};
+                final missing = fields.where((f) => f.$2.startsWith('required') && (v[f.$1] ?? '').isEmpty);
+                final invalidNumber = fields.where((f) => f.$2.contains('number') &&
+                    double.tryParse(v[f.$1] ?? '') == null);
+                if (missing.isNotEmpty || invalidNumber.isNotEmpty) {
+                  setDialogState(() => validationError = missing.isNotEmpty
+                      ? '${missing.first.$1} is required.'
+                      : 'Enter a valid number for ${invalidNumber.first.$1}.');
+                  return;
+                }
+                Navigator.pop(dialogContext, v);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+    if (values == null || !mounted) return;
+    double number(String key) => double.parse(values[key]!);
+    try {
+      switch (_tabs.index) {
+        case 0:
+          await _ops.addSchoolStudent(
+            name: values['Student name']!,
+            guardianName: values['Guardian name'],
+            phone: values['Phone'],
+            className: values['Class'],
+          );
+          break;
+        case 1:
+          await _ops.addClinicPatient(
+            name: values['Patient name']!,
+            phone: values['Phone'],
+            dateOfBirth: values['Date of birth'],
+            notes: values['Notes'],
+          );
+          break;
+        case 2:
+          await _ops.addSalonService(
+            name: values['Service name']!,
+            durationMinutes: number('Duration minutes').toInt(),
+            price: number('Price (Rs.)'),
+          );
+          break;
+        case 3:
+          await _ops.addFarmPlot(
+            name: values['Plot name']!,
+            area: number('Area (acre)'),
+            crop: values['Crop']!,
+            season: values['Season'],
+          );
+          break;
+        case 4:
+          await _ops.addConstructionProject(
+            name: values['Project name']!,
+            clientName: values['Client name'],
+            location: values['Location'],
+            budget: number('Budget (Rs.)'),
+          );
+          break;
+        case 5:
+          await _ops.addPublicServiceCase(
+            caseNumber: values['Case number']!,
+            applicantName: values['Applicant name']!,
+            serviceType: values['Service type']!,
+            fee: number('Fee (Rs.)'),
+          );
+          break;
+      }
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${labels[_tabs.index]} saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save record: $e')),
+      );
+    }
+  }
+
   Future<void> _recordSchoolPayment(Map<String, Object?> fee) async {
     final controller = TextEditingController();
     final amount = await showDialog<double>(
@@ -150,6 +280,11 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     appBar: AppBar(
       title: const Text('Business Modules & Reports'),
       actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh), tooltip: 'Refresh')],
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _loading ? null : _addCurrentRecord,
+        icon: const Icon(Icons.add),
+        label: const Text('Add record'),
+      ),
       bottom: TabBar(controller: _tabs, isScrollable: true, tabs: const [
         Tab(text: 'School'), Tab(text: 'Clinic'), Tab(text: 'Salon'),
         Tab(text: 'Agriculture'), Tab(text: 'Construction'), Tab(text: 'Public services'),
