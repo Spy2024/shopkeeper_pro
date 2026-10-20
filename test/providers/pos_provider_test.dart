@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:shopkeeper_pro/services/db_service.dart';
 import 'package:shopkeeper_pro/models/bill.dart';
