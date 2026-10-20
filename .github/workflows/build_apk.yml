@@ -1,4 +1,4 @@
-name: Build Release APK
+name: Build Release-variant Test APK
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Analyze, test and build Android test APK
     runs-on: ubuntu-latest
 
     steps:
@@ -32,15 +32,18 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Run Tests
+      - name: Analyze Dart code
+        run: flutter analyze
+
+      - name: Run unit tests
         run: flutter test
 
-      - name: Build Release APK
+      - name: Build release-variant test APK (debug-key signed)
         run: flutter build apk --release
 
-      - name: Upload Release APK Artifact
+      - name: Upload release-variant test APK (not production signed)
         uses: actions/upload-artifact@v4
         with:
-          name: shopkeeper-pro-release-apk
+          name: shopkeeper-pro-release-test-apk-debug-signed
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+          retention-days: 14

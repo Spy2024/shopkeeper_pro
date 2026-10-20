@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -22,6 +23,8 @@ android {
     }
 
     buildTypes {
+        // Debug-key signed release-variant APK is for sideload testing only.
+        // Production distribution must use a separately configured release keystore.
         release {
             signingConfig = signingConfigs.getByName("debug")
         }
