@@ -1,67 +1,104 @@
-import 'package:shopkeeper_pro/models/daily_sale.dart';
-import 'package:shopkeeper_pro/services/pdf_service.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shopkeeper_pro/models/bill.dart';
+import 'package:shopkeeper_pro/models/daily_sale.dart';
+import 'package:shopkeeper_pro/models/shop.dart';
+import 'package:shopkeeper_pro/services/pdf_service.dart';
 
 void main() {
-  group('PdfService Tests', () {
-    test('generateInvoice should create PDF file', () async {
-      const billId = 'bill-123';
-      const shopName = 'Test Shop';
-      expect(billId, isNotEmpty);
-      expect(shopName, isNotEmpty);
-    });
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+  late Directory documentsDir;
 
-    test('generateInvoice should embed shop logo if available', () async {
-      const logoPath = '/path/to/logo.png';
-      expect(logoPath, isNotEmpty);
+  setUp(() async {
+    documentsDir = await Directory.systemTemp.createTemp('shopkeeper_pdf_test_');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, (call) async {
+      if (call.method == 'getApplicationDocumentsPath') return documentsDir.path;
+      return null;
     });
+  });
 
-    test('generateInvoice should include tax details', () async {
-      const taxPercent = 17.0;
-      const subtotal = 1000.0;
-      const expectedTax = (subtotal * taxPercent) / 100;
-      expect(expectedTax, equals(170.0));
-    });
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProviderChannel, null);
+    if (await documentsDir.exists()) {
+      await documentsDir.delete(recursive: true);
+    }
+  });
 
-    test('generateInvoice should format currency as Rs.', () async {
-      const formatted = 'Rs. 5000.00';
-      expect(formatted, contains('Rs.'));
-    });
+  Bill _sampleBill({
+    String id = 'bill-123',
+    double discount = 20,
+    double taxPercent = 17,
+  }) {
+    return Bill(
+      id: id,
+      date: DateTime(2026, 10, 20, 15, 30),
+      customerName: 'Ahmed Khan',
+      customerAddress: 'Karachi',
+      customerPhone: '+923001234567',
+      items: [
+        BillItem(productId: 'tea-1', productName: 'Tea', quantity: 2, unitPrice: 150),
+        BillItem(productId: 'sugar-1', productName: 'Sugar', quantity: 1, unitPrice: 120),
+      ],
+      discount: discount,
+      taxPercent: taxPercent,
+    );
+  }
 
-    test('generateInvoice should calculate line totals correctly', () async {
-      const quantity = 2;
-      const unitPrice = 500.0;
-      const lineTotal = quantity * unitPrice;
-      expect(lineTotal, equals(1000.0));
-    });
-
-    test('generateInvoice should apply discount correctly', () async {
-      const subtotal = 5000.0;
-      const discount = 500.0;
-      const afterDiscount = subtotal - discount;
-      expect(afterDiscount, equals(4500.0));
-    });
-
-    test('grandTotal should include discount and tax', () async {
-      const subtotal = 5000.0;
-      const discount = 500.0;
-      const taxPercent = 17.0;
-      const afterDiscount = subtotal - discount;
-      const taxAmount = (afterDiscount * taxPercent) / 100;
-      const grandTotal = afterDiscount + taxAmount;
-      expect(grandTotal, equals(5265.0));
-    });
-
-    test('financial statement rejects an inverted date range', () async {
-      await expectLater(
-        PdfService.generateFinancialStatement(
-          startDate: DateTime(2026, 10, 2),
-          endDate: DateTime(2026, 10, 1),
-          sales: const <DailySale>[],
-          expenses: const <Expense>[],
-        ),
-        throwsArgumentError,
+  Shop _sampleShop({String? logoPath}) => Shop(
+        id: 'shop-1',
+        name: 'Test Shop',
+        address: 'Market Road, Karachi',
+        phone: '03001234567',
+        email: 'shop@example.invalid',
+        taxNumber: 'NTN-12345',
+        logoPath: logoPath,
       );
-    });
+
+  test('generateInvoice writes a real, readable PDF file', () async {
+    final file = await PdfService.generateInvoice(_sampleBill(), _sampleShop());
+
+    expect(await file.exists(), isTrue);
+    final bytes = await file.readAsBytes();
+    expect(bytes.length, greaterThan(500));
+    expect(utf8.decode(bytes.take(5).toList()), '%PDF-');
+    expect(file.path, contains('invoice_bill-123.pdf'));
+  });
+
+  test('missing shop logo does not stop invoice generation', () async {
+    final missingLogoPath = '${documentsDir.path}/logo-does-not-exist.png';
+    final file = await PdfService.generateInvoice(
+      _sampleBill(id: 'bill-no-logo'),
+      _sampleShop(logoPath: missingLogoPath),
+    );
+
+    expect(await file.exists(), isTrue);
+    expect(utf8.decode((await file.readAsBytes()).take(5).toList()), '%PDF-');
+  });
+
+  test('Bill model computes the actual invoice totals', () {
+    final bill = _sampleBill();
+
+    expect(bill.subtotal, 420);
+    expect(bill.taxableSubtotal, 400);
+    expect(bill.taxAmount, closeTo(68, 0.0001));
+    expect(bill.grandTotal, closeTo(468, 0.0001));
+  });
+
+  test('financial statement rejects an inverted date range', () async {
+    await expectLater(
+      PdfService.generateFinancialStatement(
+        startDate: DateTime(2026, 10, 2),
+        endDate: DateTime(2026, 10, 1),
+        sales: const <DailySale>[],
+        expenses: const <Expense>[],
+      ),
+      throwsArgumentError,
+    );
   });
 }
