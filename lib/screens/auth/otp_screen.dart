@@ -5,11 +5,7 @@ import '../profile/shop_profile_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
-  /// Only present because this build has no real SMS backend wired up yet —
-  /// see AuthService docstring. Remove this param once a provider is connected.
-  final String demoOtp;
-
-  const OtpScreen({super.key, required this.phoneNumber, required this.demoOtp});
+  const OtpScreen({super.key, required this.phoneNumber});
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -32,20 +28,7 @@ class _OtpScreenState extends State<OtpScreen> {
             Text('Enter the 6-digit code sent to ${widget.phoneNumber}',
                 style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.amber.shade200),
-              ),
-              child: Text(
-                'Demo mode — no SMS provider connected yet. Your code: ${widget.demoOtp}',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-            const SizedBox(height: 24),
-            TextField(
+            const SizedBox(height: 24),            TextField(
               controller: _otpController,
               keyboardType: TextInputType.number,
               maxLength: 6,

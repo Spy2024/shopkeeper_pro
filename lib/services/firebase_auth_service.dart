@@ -35,9 +35,12 @@ class FirebaseAuthService {
   }
 
   /// Verify OTP code
-  Future<bool> verifyOtp(String otp) async {
+  Future<bool> verifyOtp(String otp, {String? expectedPhone}) async {
     try {
-      if (_verificationId == null) return false;
+      // Never authenticate without binding the code to the phone requested by the UI.
+      if (_verificationId == null || expectedPhone == null || expectedPhone.trim().isEmpty) {
+        return false;
+      }
 
       final credential = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
@@ -46,16 +49,25 @@ class FirebaseAuthService {
       final userCredential = await _firebaseAuth.signInWithCredential(credential);
       final phone = userCredential.user?.phoneNumber;
 
-      if (phone != null) {
+      if (phone != null && _normalizePhone(phone) == _normalizePhone(expectedPhone)) {
         await _secureStorage.write(key: 'session_phone', value: phone);
         await _secureStorage.write(key: 'user_uid', value: userCredential.user!.uid);
+        _verificationId = null;
         return true;
       }
+
+      // Firebase has already created a credential session at this point. Rejecting
+      // the phone match must also revoke that session and remove any stale identity.
+      await _firebaseAuth.signOut();
+      await _secureStorage.delete(key: 'session_phone');
+      await _secureStorage.delete(key: 'user_uid');
       return false;
     } catch (e) {
       throw Exception('OTP verification failed: $e');
     }
   }
+
+  String _normalizePhone(String value) => value.replaceAll(RegExp(r'[^0-9+]'), '');
 
   /// Get current user UID for Firestore sync
   Future<String?> getUserUid() async {
