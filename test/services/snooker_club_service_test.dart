@@ -131,6 +131,37 @@ void main() {
     await expectLater(service.openCashSession(openingCash: 100), throwsA(anything));
   });
 
+  test('equipment register tracks cues, ball sets, lockers, assignment and returns', () async {
+    final lockerId = await service.addEquipmentAsset(assetType: 'locker', assetNumber: 'L-01', name: 'Locker 1');
+    final cueId = await service.addEquipmentAsset(assetType: 'cue', assetNumber: 'C-01', name: 'Club cue 1');
+    await service.assignEquipment(assetId: cueId, personName: 'Ali', lockerAssetId: lockerId);
+    var assets = await service.equipmentAssets();
+    final cue = assets.singleWhere((row) => row['id'] == cueId);
+    expect(cue['status'], 'in_use');
+    expect(cue['assignedToName'], 'Ali');
+    expect(cue['lockerAssetId'], lockerId);
+    await service.returnEquipment(assetId: cueId, note: 'Returned in good condition');
+    assets = await service.equipmentAssets();
+    expect(assets.singleWhere((row) => row['id'] == cueId)['status'], 'available');
+    final ballId = await service.addEquipmentAsset(assetType: 'ball_set', assetNumber: 'B-01', name: 'Tournament balls');
+    expect((await service.equipmentAssets(assetType: 'ball_set')).single['id'], ballId);
+    expect((await service.equipmentMovements()).map((row) => row['movementType']), containsAll(['opening_stock', 'issue', 'return']));
+  });
+
+  test('chalk stock purchase, use and low stock quantity persist', () async {
+    final itemId = await service.addInventoryItem(name: 'Blue chalk', category: 'chalk', unit: 'piece', openingQuantity: 20, minimumQuantity: 5);
+    await service.adjustInventory(itemId: itemId, quantityChange: 10, movementType: 'purchase');
+    await service.adjustInventory(itemId: itemId, quantityChange: -8, movementType: 'consume', note: 'Daily use');
+    var items = await service.inventoryItems();
+    expect(items.single['quantity'], 22);
+    await expectLater(
+      service.adjustInventory(itemId: itemId, quantityChange: -23, movementType: 'consume'),
+      throwsStateError,
+    );
+    items = await service.inventoryItems();
+    expect(items.single['quantity'], 22);
+  });
+
   test('game fee default is persisted across service reloads', () async {
     await service.setDefaultGameFee(450);
     expect(await service.defaultGameFee(), 450);
