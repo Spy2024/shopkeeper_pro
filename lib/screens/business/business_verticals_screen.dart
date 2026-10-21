@@ -232,7 +232,6 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
   /// Adds operational records linked to their parent record. The primary
   /// record alone is not enough for these verticals to complete real workflows.
   Future<void> _addRelatedRecord(int tabIndex) async {
-    final db = await DBService.instance.database;
     final parentRows = switch (tabIndex) {
       0 => _rows['students'] ?? <Map<String, Object?>>[],
       1 => _rows['patients'] ?? <Map<String, Object?>>[],
