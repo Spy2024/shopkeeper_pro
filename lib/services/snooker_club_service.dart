@@ -287,6 +287,7 @@ class SnookerClubService {
     required String gameId,
     required double amount,
     required String method,
+    required String payerId,
     String? reference,
     String? idempotencyKey,
     String? actorId,
@@ -303,11 +304,12 @@ class SnookerClubService {
       final games = await txn.query('snooker_games', where: 'id = ?', whereArgs: [gameId], limit: 1);
       final fees = await txn.query('snooker_game_fees', where: 'gameId = ?', whereArgs: [gameId], limit: 1);
       if (games.isEmpty || games.first['status'] != 'completed' || fees.isEmpty) throw StateError('Complete the game before collecting its fee.');
+      if (payerId != games.first['playerAId'] && payerId != games.first['playerBId']) throw ArgumentError('The payer must be one of the players in this game.');
       final paid = await _netPaid(txn, gameId);
       final total = (fees.first['finalAmount'] as num).toDouble();
       if (paid + amount > total + 0.000001) throw StateError('Payment exceeds the outstanding game fee.');
       payment = {
-        'id': id, 'gameId': gameId, 'amount': amount, 'method': method, 'type': 'payment',
+        'id': id, 'gameId': gameId, 'payerId': payerId, 'amount': amount, 'method': method, 'type': 'payment',
         'reference': reference, 'idempotencyKey': key, 'receivedAt': now, 'receivedBy': actorId, 'note': note,
       };
       await txn.insert('snooker_payments', payment);
@@ -336,7 +338,7 @@ class SnookerClubService {
       final paid = await _netPaid(txn, gameId);
       if (amount > paid + 0.000001) throw StateError('Refund exceeds the net amount received.');
       payment = {
-        'id': id, 'gameId': gameId, 'amount': amount, 'method': method, 'type': 'refund',
+        'id': id, 'gameId': gameId, 'payerId': null, 'amount': amount, 'method': method, 'type': 'refund',
         'reference': null, 'idempotencyKey': idempotencyKey?.trim().isNotEmpty == true ? idempotencyKey!.trim() : 'refund:$id',
         'receivedAt': now, 'receivedBy': actorId, 'note': reason.trim(),
       };
@@ -482,7 +484,12 @@ class SnookerClubService {
   }
 
   Future<List<Map<String, Object?>>> recentPayments() async {
-    return (await DBService.instance.database).query('snooker_payments', orderBy: 'receivedAt DESC', limit: 100);
+    return (await DBService.instance.database).rawQuery('''
+      SELECT p.*, pl.name AS payerName
+      FROM snooker_payments p
+      LEFT JOIN snooker_players pl ON pl.id = p.payerId
+      ORDER BY p.receivedAt DESC LIMIT 100
+    ''');
   }
 
   Future<List<Map<String, Object?>>> expenses() async {
