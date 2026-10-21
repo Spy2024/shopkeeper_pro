@@ -3,8 +3,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
-import 'snooker_club_service.dart';
-
 class SnookerReportService {
   static final _money = NumberFormat.currency(locale: 'en_PK', symbol: 'Rs. ', decimalDigits: 2);
 
