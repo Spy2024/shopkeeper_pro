@@ -93,10 +93,16 @@ void main() {
       service.refundPayment(gameId: gameId, amount: 251, method: 'cash', reason: 'Too much'),
       throwsStateError,
     );
+    final saleDate = DateTime.now().toIso8601String();
     await db.insert('daily_sales', {
-      'id': 'snooker-refreshment-sale', 'date': DateTime.now().toIso8601String(),
+      'id': 'snooker-refreshment-sale', 'date': saleDate,
       'productName': 'Cold drink', 'costPrice': 20.0, 'salePrice': 50.0,
       'quantity': 2, 'source': 'pos',
+    });
+    await db.insert('daily_sales', {
+      'id': 'snooker-refreshment-return', 'date': saleDate,
+      'productName': 'Cold drink', 'costPrice': -20.0, 'salePrice': -50.0,
+      'quantity': 1, 'source': 'return',
     });
     final report = await service.dailyReport();
     expect(report['completedGames'], 1);
@@ -104,9 +110,9 @@ void main() {
     expect(report['paymentsReceived'], 300);
     expect(report['refunds'], 50);
     expect(report['outstandingGameFees'], 50);
-    expect(report['refreshmentSales'], 100);
-    expect(report['refreshmentCost'], 40);
-    expect(report['operatingResultBeforeOtherCosts'], 360);
+    expect(report['refreshmentSales'], 50);
+    expect(report['refreshmentCost'], 20);
+    expect(report['operatingResultBeforeOtherCosts'], 330);
   });
 
   test('cancellation releases table, logs reason, and result correction requires authorization', () async {
