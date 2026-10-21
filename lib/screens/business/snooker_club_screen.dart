@@ -287,7 +287,9 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Scaffold(
+    return DefaultTabController(
+      length: 4,
+      child: Scaffold(
       backgroundColor: colors.surface,
       appBar: AppBar(
         title: const Text('Snooker Club'),
@@ -316,7 +318,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
                   _buildReports(),
                 ]),
       floatingActionButton: _busy ? const FloatingActionButton(onPressed: null, child: CircularProgressIndicator()) : null,
-    );
+    ));
   }
 
   Widget _buildTables() {
