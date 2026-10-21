@@ -260,6 +260,8 @@ class SnookerClubService {
       final rows = await txn.query('snooker_games', where: 'id = ?', whereArgs: [gameId], limit: 1);
       if (rows.isEmpty || rows.first['status'] != 'completed') throw StateError('Only completed games can be corrected.');
       final previous = rows.first['winnerId']?.toString();
+      final payments = await txn.query('snooker_payments', where: 'gameId = ?', whereArgs: [gameId], limit: 1);
+      if (payments.isNotEmpty) throw StateError('Refund or reconcile existing payments before correcting this result.');
       if (winnerId != rows.first['playerAId'] && winnerId != rows.first['playerBId']) throw ArgumentError('Winner must be one of the two players.');
       if (previous == winnerId) throw StateError('The selected winner is already recorded.');
       game = {...rows.first, 'winnerId': winnerId, 'updatedAt': _now()};
@@ -304,7 +306,8 @@ class SnookerClubService {
       final games = await txn.query('snooker_games', where: 'id = ?', whereArgs: [gameId], limit: 1);
       final fees = await txn.query('snooker_game_fees', where: 'gameId = ?', whereArgs: [gameId], limit: 1);
       if (games.isEmpty || games.first['status'] != 'completed' || fees.isEmpty) throw StateError('Complete the game before collecting its fee.');
-      if (payerId != games.first['playerAId'] && payerId != games.first['playerBId']) throw ArgumentError('The payer must be one of the players in this game.');
+      final loserId = games.first['winnerId'] == games.first['playerAId'] ? games.first['playerBId'] : games.first['playerAId'];
+      if (payerId != loserId) throw ArgumentError('The losing player is responsible for the game fee.');
       final paid = await _netPaid(txn, gameId);
       final total = (fees.first['finalAmount'] as num).toDouble();
       if (paid + amount > total + 0.000001) throw StateError('Payment exceeds the outstanding game fee.');
