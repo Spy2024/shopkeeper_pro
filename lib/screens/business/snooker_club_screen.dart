@@ -23,6 +23,9 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
   List<Map<String, Object?>> _payments = [];
   List<Map<String, Object?>> _expenses = [];
   List<Map<String, Object?>> _sessions = [];
+  List<Map<String, Object?>> _equipment = [];
+  List<Map<String, Object?>> _inventory = [];
+  List<Map<String, Object?>> _equipmentMovements = [];
   Map<String, Object?> _report = {};
 
   @override
@@ -42,6 +45,9 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
         _service.expenses(),
         _service.cashSessions(),
         _service.dailyReport(),
+        _service.equipmentAssets(),
+        _service.inventoryItems(),
+        _service.equipmentMovements(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -51,6 +57,9 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
         _expenses = (values[3] as List).cast<Map<String, Object?>>();
         _sessions = (values[4] as List).cast<Map<String, Object?>>();
         _report = values[5] as Map<String, Object?>;
+        _equipment = (values[6] as List).cast<Map<String, Object?>>();
+        _inventory = (values[7] as List).cast<Map<String, Object?>>();
+        _equipmentMovements = (values[8] as List).cast<Map<String, Object?>>();
         _loading = false;
       });
     } catch (error) {
@@ -291,7 +300,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
       backgroundColor: colors.surface,
       appBar: AppBar(
@@ -307,6 +316,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
             Tab(icon: Icon(Icons.sports_esports_outlined), text: 'Games'),
             Tab(icon: Icon(Icons.payments_outlined), text: 'Accounts'),
             Tab(icon: Icon(Icons.analytics_outlined), text: 'Reports'),
+            Tab(icon: Icon(Icons.inventory_2_outlined), text: 'Equipment & Stock'),
           ],
         ),
       ),
@@ -319,6 +329,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
                   _buildGames(),
                   _buildAccounts(),
                   _buildReports(),
+                  _buildEquipment(),
                 ]),
       floatingActionButton: _busy ? const FloatingActionButton(onPressed: null, child: CircularProgressIndicator()) : null,
     ));
@@ -440,6 +451,182 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
       ),
     );
   }
+
+
+  Future<void> _addAsset(String type) async {
+    final title = type == 'cue' ? 'Register cue' : type == 'ball_set' ? 'Register ball set' : 'Register locker';
+    final values = await _form(title, ['Asset number / code', 'Name / description']);
+    if (values == null || !mounted) return;
+    await _perform(() async {
+      await _service.addEquipmentAsset(
+        assetType: type,
+        assetNumber: values['Asset number / code']!,
+        name: values['Name / description']!,
+        actorId: _actor,
+      );
+      _message('$title saved.');
+    });
+  }
+
+  Future<void> _addInventory() async {
+    final values = await _form('Add consumable stock', ['Item name', 'Category (chalk/tip/glove/other)', 'Unit (piece/box)', 'Opening quantity', 'Minimum stock warning']);
+    if (values == null || !mounted) return;
+    await _perform(() async {
+      await _service.addInventoryItem(
+        name: values['Item name']!,
+        category: values['Category (chalk/tip/glove/other)']!.toLowerCase(),
+        unit: values['Unit (piece/box)']!,
+        openingQuantity: double.parse(values['Opening quantity']!),
+        minimumQuantity: double.parse(values['Minimum stock warning']!),
+        actorId: _actor,
+      );
+      _message('Stock item added.');
+    });
+  }
+
+  Future<void> _adjustStock(Map<String, Object?> item, String movement) async {
+    final label = movement == 'purchase' ? 'Purchase quantity to add' : movement == 'consume' ? 'Quantity used' : movement == 'damage' ? 'Damaged quantity' : 'Quantity adjustment (+/-)';
+    final values = await _form(label, ['Quantity', 'Note']);
+    if (values == null || !mounted) return;
+    final amount = double.parse(values['Quantity']!);
+    await _perform(() async {
+      await _service.adjustInventory(
+        itemId: item['id']! as String,
+        quantityChange: movement == 'purchase' ? amount : movement == 'adjustment' ? amount : -amount,
+        movementType: movement,
+        note: values['Note'],
+        actorId: _actor,
+      );
+      _message('Stock movement saved.');
+    });
+  }
+
+  Future<void> _assignAsset(Map<String, Object?> asset) async {
+    final values = await _form('Issue ${asset['name']}', ['Player / staff name']);
+    if (values == null || !mounted) return;
+    await _perform(() async {
+      await _service.assignEquipment(assetId: asset['id']! as String, personName: values['Player / staff name']!, actorId: _actor);
+      _message('Equipment issued to ${values['Player / staff name']}.');
+    });
+  }
+
+  Future<void> _markAsset(Map<String, Object?> asset, String status) async {
+    final values = await _form(status == 'repair' ? 'Send to repair' : status == 'missing' ? 'Mark missing' : status == 'retired' ? 'Retire equipment' : 'Mark available', ['Reason / note']);
+    if (values == null || !mounted) return;
+    await _perform(() async {
+      await _service.setEquipmentStatus(assetId: asset['id']! as String, status: status, note: values['Reason / note'], actorId: _actor);
+      _message('Equipment status updated.');
+    });
+  }
+
+  Widget _buildEquipment() {
+    final cues = _equipment.where((e) => e['assetType'] == 'cue').toList();
+    final balls = _equipment.where((e) => e['assetType'] == 'ball_set').toList();
+    final lockers = _equipment.where((e) => e['assetType'] == 'locker').toList();
+    int countStatus(List<Map<String, Object?>> rows, String status) => rows.where((e) => e['status'] == status).length;
+    final lowStock = _inventory.where((i) => ((i['quantity'] as num?)?.toDouble() ?? 0) <= ((i['minimumQuantity'] as num?)?.toDouble() ?? 0)).toList();
+    return RefreshIndicator(
+      onRefresh: _reload,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _heroCard('Equipment & stock register', 'Track cues, ball sets, lockers, chalk and who holds each item', Icons.inventory_2_outlined),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 1.8,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            children: [
+              _equipmentMetric('Cues', '${cues.length}', '${countStatus(cues, 'available')} available'),
+              _equipmentMetric('Ball sets', '${balls.length}', '${countStatus(balls, 'available')} available'),
+              _equipmentMetric('Lockers', '${lockers.length}', '${countStatus(lockers, 'available')} available'),
+              _equipmentMetric('Low stock', '${lowStock.length}', 'items at/below minimum'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            FilledButton.tonalIcon(onPressed: () => _addAsset('cue'), icon: const Icon(Icons.add), label: const Text('Add cue')),
+            FilledButton.tonalIcon(onPressed: () => _addAsset('ball_set'), icon: const Icon(Icons.add), label: const Text('Add ball set')),
+            FilledButton.tonalIcon(onPressed: () => _addAsset('locker'), icon: const Icon(Icons.add), label: const Text('Add locker')),
+            OutlinedButton.icon(onPressed: _addInventory, icon: const Icon(Icons.add_box_outlined), label: const Text('Add stock item')),
+          ]),
+          const SizedBox(height: 16),
+          const Text('Cues, ball sets and lockers', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          if (_equipment.isEmpty) const _EmptyState('Register your existing cues, ball sets and lockers to establish opening counts.'),
+          for (final asset in _equipment) Card(
+            child: ListTile(
+              leading: CircleAvatar(child: Icon(asset['assetType'] == 'cue' ? Icons.sports_esports_outlined : asset['assetType'] == 'ball_set' ? Icons.circle_outlined : Icons.lock_outline)),
+              title: Text('${asset['name']} • #${asset['assetNumber']}'),
+              subtitle: Text('${asset['assetType']} • ${asset['status']}${asset['assignedToName'] == null ? '' : ' • With: ${asset['assignedToName']}'}${asset['tableName'] == null ? '' : ' • ${asset['tableName']}'}${asset['lockerNumber'] == null ? '' : ' • Locker ${asset['lockerNumber']}'}'),
+              isThreeLine: true,
+              trailing: PopupMenuButton<String>(
+                onSelected: (action) {
+                  if (action == 'issue') _assignAsset(asset);
+                  if (action == 'return') _perform(() => _service.returnEquipment(assetId: asset['id']! as String, actorId: _actor));
+                  if (action == 'repair' || action == 'missing' || action == 'retired' || action == 'available') _markAsset(asset, action);
+                },
+                itemBuilder: (_) => [
+                  if (asset['status'] == 'available') const PopupMenuItem(value: 'issue', child: Text('Issue to player/staff')),
+                  if (asset['status'] == 'in_use') const PopupMenuItem(value: 'return', child: Text('Return to club')),
+                  if (asset['status'] != 'repair' && asset['status'] != 'retired') const PopupMenuItem(value: 'repair', child: Text('Send to repair')),
+                  if (asset['status'] != 'missing' && asset['status'] != 'retired') const PopupMenuItem(value: 'missing', child: Text('Mark missing')),
+                  if (asset['status'] != 'retired') const PopupMenuItem(value: 'retired', child: Text('Retire')),
+                  if (asset['status'] == 'repair' || asset['status'] == 'missing') const PopupMenuItem(value: 'available', child: Text('Mark available')),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('Consumables', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          if (_inventory.isEmpty) const _EmptyState('Add chalk, tips, gloves and other consumables with opening stock.'),
+          for (final item in _inventory) Card(
+            child: ListTile(
+              leading: Icon(Icons.inventory_2_outlined, color: ((item['quantity'] as num?)?.toDouble() ?? 0) <= ((item['minimumQuantity'] as num?)?.toDouble() ?? 0) ? Colors.red : Colors.teal),
+              title: Text('${item['name']} • ${item['category']}'),
+              subtitle: Text('Minimum: ${item['minimumQuantity']} ${item['unit']} • ${((item['quantity'] as num?)?.toDouble() ?? 0) <= ((item['minimumQuantity'] as num?)?.toDouble() ?? 0) ? 'LOW STOCK' : 'In stock'}'),
+              trailing: SizedBox(width: 150, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text('${item['quantity']} ${item['unit']}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) => _adjustStock(item, value),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'purchase', child: Text('Record purchase')),
+                    PopupMenuItem(value: 'consume', child: Text('Record used')),
+                    PopupMenuItem(value: 'damage', child: Text('Record damaged')),
+                    PopupMenuItem(value: 'adjustment', child: Text('Stock adjustment')),
+                  ],
+                ),
+              ])),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('Recent equipment activity', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          if (_equipmentMovements.isEmpty) const _EmptyState('Issues, returns, purchases and stock adjustments will be listed here.'),
+          for (final move in _equipmentMovements.take(30)) ListTile(
+            dense: true,
+            leading: const Icon(Icons.history),
+            title: Text('${move['assetNumber'] ?? move['inventoryName'] ?? 'Equipment'} • ${move['movementType']}'),
+            subtitle: Text('${move['occurredAt']} • ${move['personName'] ?? move['note'] ?? ''}'),
+            trailing: Text('${move['quantity']}'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _equipmentMetric(String title, String value, String subtitle) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+        Text(title, style: const TextStyle(fontSize: 12)),
+        Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0B3D91))),
+        Text(subtitle, style: const TextStyle(fontSize: 10)),
+      ]),
+    ),
+  );
 
   Widget _buildReports() {
     final wins = (_report['playerWins'] as List? ?? const []).cast<Map<String, Object?>>();
