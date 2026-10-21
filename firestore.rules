@@ -65,7 +65,15 @@ service cloud.firestore {
           'business_returns',
           'business_return_items',
           'branch_cash_entries',
-          'product_variants'
+          'product_variants',
+          'snooker_tables',
+          'snooker_players',
+          'snooker_games',
+          'snooker_game_fees',
+          'snooker_payments',
+          'snooker_expenses',
+          'snooker_cash_sessions',
+          'snooker_game_events'
         ];
     }
 
