@@ -3,6 +3,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:shopkeeper_pro/services/db_service.dart';
 import 'package:shopkeeper_pro/services/snooker_club_service.dart';
+import 'package:shopkeeper_pro/services/snooker_report_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -179,6 +180,27 @@ void main() {
     );
     items = await service.inventoryItems();
     expect(items.single['quantity'], 22);
+  });
+
+  test('daily and monthly report PDF generation produces a PDF document', () async {
+    final report = {
+      'from': '2026-10-01T00:00:00.000',
+      'to': '2026-10-31T23:59:59.999',
+      'periodLabel': 'Monthly',
+      'completedGames': 12,
+      'gameFeesEarned': 3600.0,
+      'paymentsReceived': 3200.0,
+      'refunds': 100.0,
+      'outstandingGameFees': 500.0,
+      'refreshmentSales': 2400.0,
+      'refreshmentCost': 1200.0,
+      'snookerExpenses': 300.0,
+      'operatingResultBeforeOtherCosts': 4500.0,
+      'playerWins': [{'name': 'Ali', 'wins': 5}, {'name': 'Usman', 'wins': 3}],
+    };
+    final bytes = await SnookerReportService.buildDailyPdf(report);
+    expect(bytes, isNotEmpty);
+    expect(String.fromCharCodes(bytes.take(4)), '%PDF');
   });
 
   test('games, payments, cues and stock survive a local database close and reopen', () async {
