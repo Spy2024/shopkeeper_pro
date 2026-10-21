@@ -76,10 +76,18 @@ void main() {
     );
     await service.recordPayment(gameId: gameId, amount: 200, method: 'bank', payerId: game['playerAId']! as String);
     await expectLater(
+      service.recordPayment(gameId: gameId, amount: 200, method: 'bank', payerId: game['playerAId']! as String),
+      throwsA(anything),
+    );
+    await expectLater(
       service.recordPayment(gameId: gameId, amount: 1, method: 'cash', payerId: game['playerAId']! as String),
       throwsStateError,
     );
     await service.refundPayment(gameId: gameId, amount: 50, method: 'cash', reason: 'Approved correction');
+    await expectLater(
+      service.refundPayment(gameId: gameId, amount: 50, method: 'cash', reason: 'Approved correction'),
+      throwsA(anything),
+    );
     await expectLater(
       service.refundPayment(gameId: gameId, amount: 251, method: 'cash', reason: 'Too much'),
       throwsStateError,
