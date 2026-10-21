@@ -27,11 +27,29 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
   List<Map<String, Object?>> _inventory = [];
   List<Map<String, Object?>> _equipmentMovements = [];
   Map<String, Object?> _report = {};
+  String _reportPeriod = 'daily';
 
   @override
   void initState() {
     super.initState();
     _reload();
+  }
+
+  Future<Map<String, Object?>> _loadReportForPeriod() {
+    final now = DateTime.now();
+    if (_reportPeriod == 'monthly') {
+      return _service.dailyReport(
+        from: DateTime(now.year, now.month, 1),
+        to: DateTime(now.year, now.month + 1, 0),
+      );
+    }
+    return _service.dailyReport();
+  }
+
+  Future<void> _setReportPeriod(String period) async {
+    if (_reportPeriod == period) return;
+    setState(() => _reportPeriod = period);
+    await _reload();
   }
 
   Future<void> _reload() async {
@@ -44,7 +62,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
         _service.recentPayments(),
         _service.expenses(),
         _service.cashSessions(),
-        _service.dailyReport(),
+        _loadReportForPeriod(),
         _service.equipmentAssets(),
         _service.inventoryItems(),
         _service.equipmentMovements(),
@@ -654,7 +672,12 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _heroCard('Daily club report', 'Daily income, stock cost, outstanding fees and cash reconciliation', Icons.analytics_outlined),
+          _heroCard('${_reportPeriod == 'monthly' ? 'Monthly' : 'Daily'} club report', 'Game fees, refreshments, expenses, outstanding balances and cash reconciliation', Icons.analytics_outlined),
+          Wrap(spacing: 8, children: [
+            ChoiceChip(label: const Text('Today'), selected: _reportPeriod == 'daily', onSelected: (_) => _setReportPeriod('daily')),
+            ChoiceChip(label: const Text('This month'), selected: _reportPeriod == 'monthly', onSelected: (_) => _setReportPeriod('monthly')),
+          ]),
+          const SizedBox(height: 8),
           const SizedBox(height: 12),
           _metric('Completed games', '${_report['completedGames'] ?? 0}', Icons.sports_esports_outlined),
           _metric('Game fees earned', _money(_report['gameFeesEarned']), Icons.payments_outlined),
@@ -669,8 +692,8 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
           if (wins.isEmpty) const _EmptyState('Player results will appear after completed games.'),
           for (final win in wins) ListTile(leading: const Icon(Icons.emoji_events_outlined, color: Color(0xFFFFBF24)), title: Text(win['name']?.toString() ?? ''), trailing: Text('${win['wins']} wins')),
           const SizedBox(height: 12),
-          FilledButton.icon(onPressed: () async { try { await SnookerReportService.shareDailyReport(_report); } catch (e) { _message('Could not share report: $e'); } }, icon: const Icon(Icons.picture_as_pdf_outlined), label: const Text('Share daily PDF')),
-          OutlinedButton.icon(onPressed: () async { try { await SnookerReportService.printDailyReport(_report); } catch (e) { _message('Could not print report: $e'); } }, icon: const Icon(Icons.print_outlined), label: const Text('Print report')),
+          FilledButton.icon(onPressed: () async { try { await SnookerReportService.shareDailyReport(_report); } catch (e) { _message('Could not share report: $e'); } }, icon: const Icon(Icons.picture_as_pdf_outlined), label: Text('Share ${_reportPeriod == 'monthly' ? 'monthly' : 'daily'} PDF')),
+          OutlinedButton.icon(onPressed: () async { try { await SnookerReportService.printDailyReport(_report); } catch (e) { _message('Could not print report: $e'); } }, icon: const Icon(Icons.print_outlined), label: Text('Print ${_reportPeriod == 'monthly' ? 'monthly' : 'daily'} report')),
           const SizedBox(height: 8),
           const Text('Refreshment sales use the existing POS sales ledger. Final business profit must also account for all applicable operating costs and accounting adjustments.', style: TextStyle(fontSize: 12, color: AppTheme.muted)),
         ],
