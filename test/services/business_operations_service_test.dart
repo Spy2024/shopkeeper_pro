@@ -118,4 +118,81 @@ void main() {
     expect(history.last['location'], 'Highway');
     expect(history.every((entry) => (entry['recordedAt'] as String).isNotEmpty), isTrue);
   });
+
+  test('clinic, salon, agriculture and construction workflows persist linked records', () async {
+    final patientId = await ops.addClinicPatient(name: 'Patient One', phone: '03000000000');
+    final appointmentId = await ops.bookClinicAppointment(
+      patientId: patientId,
+      appointmentAt: '2026-10-22 10:00',
+      clinician: 'Dr Test',
+      reason: 'Consultation',
+      fee: 1500,
+    );
+    await ops.recordClinicPayment(appointmentId: appointmentId, amount: 500);
+    var db = await DBService.instance.database;
+    var appointment = (await db.query(
+      'clinic_appointments',
+      where: 'id = ?',
+      whereArgs: [appointmentId],
+    )).single;
+    expect((appointment['paidAmount'] as num).toDouble(), 500);
+    await expectLater(
+      ops.recordClinicPayment(appointmentId: appointmentId, amount: 1001),
+      throwsStateError,
+    );
+
+    final serviceId = await ops.addSalonService(
+      name: 'Haircut',
+      durationMinutes: 30,
+      price: 800,
+    );
+    final bookingId = await ops.bookSalonAppointment(
+      customerName: 'Salon Customer',
+      bookingAt: '2026-10-22 11:00',
+      serviceId: serviceId,
+      amount: 800,
+    );
+    await ops.updateSalonBookingStatus(bookingId: bookingId, status: 'completed');
+
+    final plotId = await ops.addFarmPlot(
+      name: 'North Plot',
+      area: 2,
+      crop: 'Wheat',
+      season: 'Winter',
+    );
+    final activityId = await ops.recordFarmActivity(
+      plotId: plotId,
+      activityType: 'fertilizing',
+      inputName: 'Fertilizer',
+      quantity: 20,
+      cost: 4500,
+    );
+
+    final projectId = await ops.addConstructionProject(
+      name: 'House Build',
+      clientName: 'Client One',
+      budget: 100000,
+    );
+    final taskId = await ops.addConstructionTask(
+      projectId: projectId,
+      title: 'Foundation',
+      assignedTo: 'Team A',
+      cost: 12000,
+    );
+    await ops.updateConstructionTaskStatus(taskId: taskId, status: 'in_progress');
+
+    db = await DBService.instance.database;
+    expect(await db.query('clinic_appointments', where: 'id = ?', whereArgs: [appointmentId]), hasLength(1));
+    expect(await db.query('salon_bookings', where: 'id = ?', whereArgs: [bookingId]), hasLength(1));
+    expect(await db.query('farm_activities', where: 'id = ?', whereArgs: [activityId]), hasLength(1));
+    expect(await db.query('construction_tasks', where: 'id = ?', whereArgs: [taskId]), hasLength(1));
+    final project = (await db.query('construction_projects', where: 'id = ?', whereArgs: [projectId])).single;
+    expect((project['spent'] as num).toDouble(), 12000);
+    final report = await ops.businessVerticalReport();
+    expect(((report['clinic'] as Map)['outstanding'] as num).toDouble(), 1000);
+    expect(((report['salon'] as Map)['bookedValue'] as num).toDouble(), 800);
+    expect(((report['agriculture'] as Map)['cost'] as num).toDouble(), 4500);
+    expect(((report['construction'] as Map)['spent'] as num).toDouble(), 12000);
+  });
+
 }
