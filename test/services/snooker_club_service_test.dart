@@ -160,6 +160,14 @@ void main() {
     expect(cue['status'], 'in_use');
     expect(cue['assignedToName'], 'Ali');
     expect(cue['lockerAssetId'], lockerId);
+    expect(assets.singleWhere((row) => row['id'] == lockerId)['status'], 'in_use');
+    expect(assets.singleWhere((row) => row['id'] == lockerId)['assignedToName'], 'Ali');
+    final secondCueId = await service.addEquipmentAsset(assetType: 'cue', assetNumber: 'C-02', name: 'Club cue 2');
+    await expectLater(
+      service.assignEquipment(assetId: secondCueId, personName: 'Bilal', lockerAssetId: lockerId),
+      throwsStateError,
+    );
+    expect((await service.equipmentAssets()).singleWhere((row) => row['id'] == secondCueId)['status'], 'available');
     await service.returnEquipment(assetId: cueId, note: 'Returned in good condition');
     assets = await service.equipmentAssets();
     expect(assets.singleWhere((row) => row['id'] == cueId)['status'], 'available');
