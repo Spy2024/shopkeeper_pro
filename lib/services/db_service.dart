@@ -325,6 +325,7 @@ class DBService {
         }
         if (oldVersion < 23) {
           await _createSnookerTables(db);
+    await _createSnookerEquipmentTables(db);
         }
         if (oldVersion < 24) {
           await _ensureColumn(db, 'snooker_payments', 'payerId', 'TEXT');
