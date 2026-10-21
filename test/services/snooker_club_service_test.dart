@@ -181,6 +181,30 @@ void main() {
     expect(items.single['quantity'], 22);
   });
 
+  test('games, payments, cues and stock survive a local database close and reopen', () async {
+    final table = (await service.tables()).first;
+    final gameId = await service.startGame(
+      tableId: table['id']! as String,
+      playerA: 'Restart Winner',
+      playerB: 'Restart Loser',
+      feeAmount: 150,
+    );
+    final db = await DBService.instance.database;
+    final game = (await db.query('snooker_games', where: 'id = ?', whereArgs: [gameId])).single;
+    await service.completeGame(gameId: gameId, winnerId: game['playerAId']! as String);
+    await service.recordPayment(gameId: gameId, amount: 150, method: 'cash', payerId: game['playerBId']! as String, reference: 'restart-payment');
+    final cueId = await service.addEquipmentAsset(assetType: 'cue', assetNumber: 'RESTART-CUE', name: 'Persistent cue');
+    final stockId = await service.addInventoryItem(name: 'Persistent chalk', category: 'chalk', unit: 'piece', openingQuantity: 12, minimumQuantity: 2);
+
+    await DBService.instance.clearActiveUser();
+    await DBService.instance.configureForUser(userId);
+
+    expect((await service.games()).any((row) => row['id'] == gameId), isTrue);
+    expect((await service.recentPayments()).any((row) => row['reference'] == 'restart-payment'), isTrue);
+    expect((await service.equipmentAssets()).any((row) => row['id'] == cueId), isTrue);
+    expect((await service.inventoryItems()).singleWhere((row) => row['id'] == stockId)['quantity'], 12);
+  });
+
   test('monthly report uses the full current month and labels its period', () async {
     final now = DateTime.now();
     final report = await service.dailyReport(
