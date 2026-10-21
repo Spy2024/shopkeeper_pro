@@ -402,9 +402,15 @@ class SnookerClubService {
         SELECT COALESCE(SUM(refundAmount),0) AS total
         FROM bill_returns WHERE refundMethod = 'cash' AND date >= ? AND date <= ?
       """, [from, to]);
+      // Club game payments and ordinary POS receipts share the till.
+      // Include POS tender allocations and POS refunds exactly once; refreshment
+      // sales are not added separately here because their cash tender is already
+      // represented by payment_allocations.
       final expected = (session['openingCash'] as num).toDouble()
           + (inflow.first['total'] as num).toDouble()
+          + (posCash.first['total'] as num).toDouble()
           - (refunds.first['total'] as num).toDouble()
+          - (posCashRefunds.first['total'] as num).toDouble()
           - (expenses.first['total'] as num).toDouble();
       updated = {
         ...session, 'expectedClosingCash': expected, 'actualClosingCash': actualClosingCash,
