@@ -9,6 +9,13 @@ import '../models/supplier.dart';
 import '../models/daily_sale.dart';
 
 class PdfService {
+  /// Optional directory override for deterministic unit tests. Production uses
+  /// the platform documents directory when no override is configured.
+  static Future<Directory> Function()? documentsDirectoryProviderForTesting;
+
+  static Future<Directory> _documentsDirectory() async =>
+      await (documentsDirectoryProviderForTesting?.call() ?? getApplicationDocumentsDirectory());
+
   static final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
   static final _dateFmt = DateFormat('dd MMM yyyy, hh:mm a');
 
@@ -310,7 +317,7 @@ class PdfService {
       ),
     );
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _documentsDirectory();
     final file = File('${dir.path}/invoice_${bill.id}.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
