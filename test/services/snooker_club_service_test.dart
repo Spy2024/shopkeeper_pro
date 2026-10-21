@@ -93,12 +93,20 @@ void main() {
       service.refundPayment(gameId: gameId, amount: 251, method: 'cash', reason: 'Too much'),
       throwsStateError,
     );
+    await db.insert('daily_sales', {
+      'id': 'snooker-refreshment-sale', 'date': DateTime.now().toIso8601String(),
+      'productName': 'Cold drink', 'costPrice': 20.0, 'salePrice': 50.0,
+      'quantity': 2, 'source': 'pos',
+    });
     final report = await service.dailyReport();
     expect(report['completedGames'], 1);
     expect(report['gameFeesEarned'], 300);
     expect(report['paymentsReceived'], 300);
     expect(report['refunds'], 50);
     expect(report['outstandingGameFees'], 50);
+    expect(report['refreshmentSales'], 100);
+    expect(report['refreshmentCost'], 40);
+    expect(report['operatingResultBeforeOtherCosts'], 360);
   });
 
   test('cancellation releases table, logs reason, and result correction requires authorization', () async {
