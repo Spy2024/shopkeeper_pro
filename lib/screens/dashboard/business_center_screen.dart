@@ -24,6 +24,7 @@ class _BusinessCenterScreenState extends State<BusinessCenterScreen> {
     _BusinessCategory('Clothing', 'Garments, shoes and fashion', Icons.checkroom_outlined, ['Size & Color Variants', 'Inventory', 'POS Billing', 'Purchases', 'Returns', 'Reports']),
     _BusinessCategory('Carpet & Furniture', 'Carpet, furniture and crockery', Icons.chair_outlined, ['Catalog', 'Measurements', 'Orders', 'Inventory', 'Delivery', 'Finance']),
     _BusinessCategory('Restaurant', 'Hotel, cafe, bakery and food', Icons.restaurant_outlined, ['Menu & Recipes', 'Table Orders', 'Kitchen Tickets', 'Ingredient Stock', 'Purchases', 'Daily Closing']),
+    _BusinessCategory('Snooker Club', 'Snooker tables, games, fees and daily club accounts', Icons.sports_esports_outlined, ['9+ Tables', 'Fixed Fee per Game', 'Player Results', 'Payments & Refunds', 'Refreshments POS', 'Cash Closing', 'PDF Reports']),
     _BusinessCategory('Pharmacy', 'Medical store and healthcare stock', Icons.medical_services_outlined, ['Batch & Expiry', 'Inventory', 'Purchases', 'POS Billing', 'Expiry Alerts', 'Reports']),
     _BusinessCategory('Vehicle Showroom', 'Car and motorcycle sales', Icons.directions_car_outlined, ['Vehicle Stock', 'Buy & Sell', 'Customer Ledger', 'Payments', 'Documents', 'Reports']),
     _BusinessCategory('Workshop', 'Vehicle and equipment repair', Icons.car_repair, ['Job Cards', 'Parts Usage', 'Labour Charges', 'Customer Approval', 'Payments', 'Warranty']),
@@ -228,6 +229,7 @@ class _BusinessCenterScreenState extends State<BusinessCenterScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
+                          if (selected.name == 'Snooker Club') _QuickAction(label: 'Open Snooker Club', icon: Icons.sports_esports_outlined, onTap: () => widget.onOpenModule(11)),
                           _QuickAction(label: 'POS Billing', icon: Icons.point_of_sale_outlined, onTap: () => widget.onOpenModule(1)),
                           _QuickAction(label: 'Inventory', icon: Icons.inventory_2_outlined, onTap: () => widget.onOpenModule(3)),
                           _QuickAction(label: 'Customers', icon: Icons.people_outline, onTap: () => widget.onOpenModule(2)),
