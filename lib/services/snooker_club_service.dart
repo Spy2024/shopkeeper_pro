@@ -720,8 +720,10 @@ class SnookerClubService {
     final refreshmentRevenue = (sales.first['revenue'] as num).toDouble();
     final refreshmentCost = (sales.first['cost'] as num).toDouble();
     final expenseTotal = (expenses.first['total'] as num).toDouble();
+    final isFullMonth = from != null && to != null && from.year == to.year && from.month == to.month && from.day == 1 && to.day == DateTime(to.year, to.month + 1, 0).day;
     return {
       'from': start, 'to': end,
+      'periodLabel': isFullMonth ? 'Monthly' : (from == null && to == null ? 'Daily' : 'Selected period'),
       'completedGames': (gameFees.first['games'] as num).toInt(),
       'gameFeesEarned': feeTotal,
       'paymentsReceived': (payments.first['received'] as num).toDouble(),
