@@ -568,6 +568,8 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           _heroCard('Equipment & stock register', 'Track cues, ball sets, lockers, chalk and who holds each item', Icons.inventory_2_outlined),
+          const SizedBox(height: 8),
+          const Text('Drinks and snacks must be sold through Refreshments POS. POS checkout deducts product stock, and approved POS returns restore stock; do not enter drinks/snacks again as separate consumable stock.', style: TextStyle(fontSize: 12, color: AppTheme.muted)),
           const SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 2,
