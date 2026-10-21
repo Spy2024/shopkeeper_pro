@@ -28,14 +28,9 @@ class AuthProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
     try {
+      // Sending an OTP is not authentication. Do not select an account database
+      // or grant app access until verifyOtp confirms the requested phone number.
       await FirebaseAuthService.instance.sendOtp(phone);
-      final uid = await FirebaseAuthService.instance.getUserUid();
-      if (uid != null) {
-        await DBService.instance.configureForUser(uid);
-        phoneNumber = await FirebaseAuthService.instance.getSession() ?? phone;
-        userUid = uid;
-        isLoggedIn = true;
-      }
     } finally {
       isLoading = false;
       notifyListeners();
