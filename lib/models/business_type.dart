@@ -51,6 +51,7 @@ class BusinessTypes {
     BusinessTypeOption(id: 'cosmetics', label: 'Cosmetics / Beauty Products', defaultModules: ['pos', 'inventory', 'batch_expiry', 'purchases', 'customers', 'reports']),
     BusinessTypeOption(id: 'supermarket', label: 'Supermarket', defaultModules: ['pos', 'inventory', 'barcode', 'purchases', 'cashbook', 'staff', 'reports']),
     BusinessTypeOption(id: 'restaurant_cafe', label: 'Restaurant / Cafe', defaultModules: ['pos', 'menu', 'tables', 'kitchen_orders', 'inventory', 'expenses', 'reports']),
+    BusinessTypeOption(id: 'snooker_club', label: 'Snooker / Billiards Club', defaultModules: ['snooker_tables', 'games', 'game_fees', 'payments', 'refreshments_pos', 'equipment_register', 'cashbook', 'expenses', 'daily_reports', 'monthly_reports']),
     BusinessTypeOption(id: 'car_showroom', label: 'Car Showroom / Dealership', defaultModules: ['vehicles', 'vehicle_sales', 'vehicle_purchases', 'customers', 'finance', 'documents', 'reports']),
     BusinessTypeOption(id: 'motorcycle_showroom', label: 'Motorcycle Showroom', defaultModules: ['vehicles', 'vehicle_sales', 'vehicle_purchases', 'customers', 'finance', 'documents', 'reports']),
     BusinessTypeOption(id: 'vehicle_workshop', label: 'Vehicle Workshop / Service Center', defaultModules: ['job_cards', 'service_parts', 'customers', 'technicians', 'estimates', 'invoices', 'reports']),
