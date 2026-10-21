@@ -463,7 +463,7 @@ class SyncService {
       'clinic_patients', 'clinic_appointments', 'salon_services',
       'salon_bookings', 'farm_plots', 'farm_activities',
       'construction_projects', 'construction_tasks', 'public_service_cases',
-      'snooker_settings', 'snooker_settings', 'snooker_tables', 'snooker_players', 'snooker_games', 'snooker_game_fees',
+      'snooker_settings', 'snooker_tables', 'snooker_players', 'snooker_games', 'snooker_game_fees',
       'snooker_payments', 'snooker_expenses', 'snooker_cash_sessions', 'snooker_game_events',
       'snooker_inventory_items', 'snooker_equipment_assets', 'snooker_equipment_movements',
     ]) {
