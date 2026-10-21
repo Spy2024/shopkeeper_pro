@@ -24,6 +24,37 @@ void main() {
     }
   });
 
+  test('schema v24 upgrades snooker equipment and consumable stock tables', () async {
+    final path = p.join(await getDatabasesPath(), 'shopkeeper_pro_$userId.db');
+    final oldDb = await openDatabase(
+      path,
+      version: 24,
+      onCreate: (db, _) async {
+        await db.execute('CREATE TABLE snooker_tables (id TEXT PRIMARY KEY)');
+        await db.execute('CREATE TABLE snooker_players (id TEXT PRIMARY KEY)');
+      },
+    );
+    await oldDb.close();
+
+    await DBService.instance.configureForUser(userId);
+    final db = await DBService.instance.database;
+    final tableRows = await db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table'");
+    final names = tableRows.map((row) => row['name']).toSet();
+    expect(names, containsAll([
+      'snooker_inventory_items',
+      'snooker_equipment_assets',
+      'snooker_equipment_movements',
+    ]));
+    final assetColumns = await db.rawQuery('PRAGMA table_info(snooker_equipment_assets)');
+    expect(assetColumns.map((row) => row['name']), containsAll([
+      'assetType', 'assetNumber', 'status', 'assignedToName', 'lockerAssetId',
+    ]));
+    final movementColumns = await db.rawQuery('PRAGMA table_info(snooker_equipment_movements)');
+    expect(movementColumns.map((row) => row['name']), containsAll([
+      'assetId', 'inventoryItemId', 'movementType', 'occurredAt',
+    ]));
+  });
+
   test('schema v16 upgrades billing fields and creates mobile shop tables', () async {
     final path = p.join(await getDatabasesPath(), 'shopkeeper_pro_$userId.db');
     final oldDb = await openDatabase(
