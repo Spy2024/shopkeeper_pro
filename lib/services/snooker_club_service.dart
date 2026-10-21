@@ -373,6 +373,15 @@ class SnookerClubService {
   Future<String> openCashSession({required double openingCash, String? actorId, String? note}) async {
     if (!openingCash.isFinite || openingCash < 0) throw ArgumentError('Opening cash cannot be negative.');
     final db = await DBService.instance.database;
+    final openSessions = await db.query(
+      'snooker_cash_sessions',
+      columns: ['id'],
+      where: 'closedAt IS NULL',
+      limit: 1,
+    );
+    if (openSessions.isNotEmpty) {
+      throw StateError('A cash session is already open. Close it before starting another.');
+    }
     final id = _uuid.v4();
     final row = {
       'id': id, 'openingCash': openingCash, 'expectedClosingCash': null,
