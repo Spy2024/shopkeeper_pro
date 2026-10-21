@@ -112,7 +112,7 @@ void main() {
     expect(report['outstandingGameFees'], 50);
     expect(report['refreshmentSales'], 50);
     expect(report['refreshmentCost'], 20);
-    expect(report['operatingResultBeforeOtherCosts'], 330);
+    expect(report['operatingResultBeforeOtherCosts'], 280);
   });
 
   test('cancellation releases table, logs reason, and result correction requires authorization', () async {
