@@ -66,6 +66,7 @@ service cloud.firestore {
           'business_return_items',
           'branch_cash_entries',
           'product_variants',
+          'snooker_settings',
           'snooker_tables',
           'snooker_players',
           'snooker_games',
