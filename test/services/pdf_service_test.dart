@@ -30,7 +30,7 @@ void main() {
     }
   });
 
-  Bill _sampleBill({
+  Bill sampleBill({
     String id = 'bill-123',
     double discount = 20,
     double taxPercent = 17,
@@ -50,7 +50,7 @@ void main() {
     );
   }
 
-  Shop _sampleShop({String? logoPath}) => Shop(
+  Shop sampleShop({String? logoPath}) => Shop(
         id: 'shop-1',
         name: 'Test Shop',
         address: 'Market Road, Karachi',
@@ -61,7 +61,7 @@ void main() {
       );
 
   test('generateInvoice writes a real, readable PDF file', () async {
-    final file = await PdfService.generateInvoice(_sampleBill(), _sampleShop());
+    final file = await PdfService.generateInvoice(sampleBill(), sampleShop());
 
     expect(await file.exists(), isTrue);
     final bytes = await file.readAsBytes();
@@ -73,8 +73,8 @@ void main() {
   test('missing shop logo does not stop invoice generation', () async {
     final missingLogoPath = '${documentsDir.path}/logo-does-not-exist.png';
     final file = await PdfService.generateInvoice(
-      _sampleBill(id: 'bill-no-logo'),
-      _sampleShop(logoPath: missingLogoPath),
+      sampleBill(id: 'bill-no-logo'),
+      sampleShop(logoPath: missingLogoPath),
     );
 
     expect(await file.exists(), isTrue);
@@ -82,7 +82,7 @@ void main() {
   });
 
   test('Bill model computes the actual invoice totals', () {
-    final bill = _sampleBill();
+    final bill = sampleBill();
 
     expect(bill.subtotal, 420);
     expect(bill.taxableSubtotal, 400);
