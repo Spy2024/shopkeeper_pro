@@ -295,6 +295,7 @@ class SyncService {
         'construction_projects': 'construction_projects',
         'construction_tasks': 'construction_tasks',
         'public_service_cases': 'public_service_cases',
+        'snooker_settings': 'snooker_settings',
         'snooker_tables': 'snooker_tables',
         'snooker_players': 'snooker_players',
         'snooker_games': 'snooker_games',
@@ -459,7 +460,7 @@ class SyncService {
       'clinic_patients', 'clinic_appointments', 'salon_services',
       'salon_bookings', 'farm_plots', 'farm_activities',
       'construction_projects', 'construction_tasks', 'public_service_cases',
-      'snooker_tables', 'snooker_players', 'snooker_games', 'snooker_game_fees',
+      'snooker_settings', 'snooker_tables', 'snooker_players', 'snooker_games', 'snooker_game_fees',
       'snooker_payments', 'snooker_expenses', 'snooker_cash_sessions', 'snooker_game_events',
     ]) {
       await _writeBatch(userId, table, await _maps(db, table));
