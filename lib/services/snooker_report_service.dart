@@ -57,7 +57,7 @@ class SnookerReportService {
         else pw.TableHelper.fromTextArray(
           headers: const ['Player', 'Wins'],
           headerDecoration: const pw.BoxDecoration(color: navy),
-          headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold),
+          headerStyle: const pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold),
           cellStyle: const pw.TextStyle(fontSize: 10),
           data: wins.map((row) => [row['name']?.toString() ?? '', row['wins']?.toString() ?? '0']).toList(),
         ),
