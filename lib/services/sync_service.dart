@@ -648,7 +648,17 @@ class SyncService {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(userId, db, doc.id, collection)) continue;
-          final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+          final data = Map<String, dynamic>.from(doc.data());
+          final remoteUpdatedAt = data['updatedAt'];
+          data.remove('updatedAt');
+          if (const {
+            'snooker_settings', 'snooker_tables', 'snooker_players',
+            'snooker_games', 'snooker_inventory_items', 'snooker_equipment_assets',
+          }.contains(collection)) {
+            data['updatedAt'] = remoteUpdatedAt is Timestamp
+                ? remoteUpdatedAt.toDate().toIso8601String()
+                : (remoteUpdatedAt?.toString() ?? DateTime.now().toIso8601String());
+          }
           await db.insert(collection, data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
