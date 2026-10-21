@@ -125,7 +125,7 @@ class SnookerClubService {
   Future<void> setDefaultGameFee(double amount) async {
     if (!amount.isFinite || amount < 0) throw ArgumentError('Game fee must be a non-negative amount.');
     final db = await DBService.instance.database;
-    final row = {'key': 'defaultGameFee', 'value': amount.toStringAsFixed(2), 'updatedAt': _now()};
+    final row = {'id': 'defaultGameFee', 'key': 'defaultGameFee', 'value': amount.toStringAsFixed(2), 'updatedAt': _now()};
     await db.insert('snooker_settings', row, conflictAlgorithm: ConflictAlgorithm.replace);
     await _queue('update', 'snooker_settings', 'defaultGameFee', row);
   }
@@ -388,6 +388,15 @@ class SnookerClubService {
       final inflow = await txn.rawQuery("SELECT COALESCE(SUM(amount),0) AS total FROM snooker_payments WHERE method='cash' AND type='payment' AND receivedAt >= ? AND receivedAt <= ?", [from,to]);
       final refunds = await txn.rawQuery("SELECT COALESCE(SUM(amount),0) AS total FROM snooker_payments WHERE method='cash' AND type='refund' AND receivedAt >= ? AND receivedAt <= ?", [from,to]);
       final expenses = await txn.rawQuery("SELECT COALESCE(SUM(amount),0) AS total FROM snooker_expenses WHERE paymentMethod='cash' AND occurredAt >= ? AND occurredAt <= ?", [from,to]);
+      final posCash = await txn.rawQuery("""
+        SELECT COALESCE(SUM(pa.amount),0) AS total
+        FROM payment_allocations pa JOIN bills b ON b.id = pa.billId
+        WHERE pa.method = 'cash' AND b.date >= ? AND b.date <= ?
+      """, [from, to]);
+      final posCashRefunds = await txn.rawQuery("""
+        SELECT COALESCE(SUM(refundAmount),0) AS total
+        FROM bill_returns WHERE refundMethod = 'cash' AND date >= ? AND date <= ?
+      """, [from, to]);
       final expected = (session['openingCash'] as num).toDouble()
           + (inflow.first['total'] as num).toDouble()
           - (refunds.first['total'] as num).toDouble()
