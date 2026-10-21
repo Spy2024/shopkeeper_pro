@@ -372,7 +372,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
               title: Text(table['name']?.toString() ?? 'Table'),
               subtitle: Text((table['status'] ?? 'available').toString().toUpperCase()),
               trailing: table['status'] == 'available'
-                  ? Wrap(mainAxisSize: MainAxisSize.min, children: [
+                  ? Wrap(children: [
                       IconButton(tooltip: 'Start game', onPressed: () => _startGame(table), icon: const Icon(Icons.play_arrow_rounded)),
                       IconButton(tooltip: 'Maintenance', onPressed: () => _perform(() => _service.setTableMaintenance(table['id']! as String, true)), icon: const Icon(Icons.build_outlined)),
                     ])
