@@ -11,20 +11,26 @@ import 'package:shopkeeper_pro/services/pdf_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const pathProviderChannel = MethodChannel('plugins.flutter.io/path_provider');
+  const linuxPathProviderChannel = MethodChannel('plugins.flutter.io/path_provider_linux');
   late Directory documentsDir;
 
   setUp(() async {
     documentsDir = await Directory.systemTemp.createTemp('shopkeeper_pdf_test_');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(pathProviderChannel, (call) async {
+    Future<Object?> handlePathProvider(MethodCall call) async {
       if (call.method == 'getApplicationDocumentsPath') return documentsDir.path;
       return null;
-    });
+    }
+
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(pathProviderChannel, handlePathProvider);
+    // Linux CI can register the platform-specific path_provider_linux channel.
+    messenger.setMockMethodCallHandler(linuxPathProviderChannel, handlePathProvider);
   });
 
   tearDown(() async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(pathProviderChannel, null);
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(pathProviderChannel, null);
+    messenger.setMockMethodCallHandler(linuxPathProviderChannel, null);
     if (await documentsDir.exists()) {
       await documentsDir.delete(recursive: true);
     }
