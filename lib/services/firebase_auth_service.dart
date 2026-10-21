@@ -48,23 +48,37 @@ class FirebaseAuthService {
     await completer.future;
   }
 
-  Future<bool> verifyOtp(String otp) async {
+  Future<bool> verifyOtp(String otp, {required String expectedPhone}) async {
     try {
       final verificationId = _verificationId;
-      if (verificationId == null) return false;
+      if (verificationId == null || expectedPhone.trim().isEmpty) return false;
 
       final credential = PhoneAuthProvider.credential(
         verificationId: verificationId,
         smsCode: otp,
       );
-      await _firebaseAuth.signInWithCredential(credential);
+      final result = await _firebaseAuth.signInWithCredential(credential);
+      final actualPhone = result.user?.phoneNumber;
+      if (actualPhone == null ||
+          _normalizePhone(actualPhone) != _normalizePhone(expectedPhone)) {
+        // Do not keep a valid Firebase session if it does not match the phone
+        // number the user explicitly asked to verify.
+        await _firebaseAuth.signOut();
+        await _secureStorage.delete(key: 'session_phone');
+        await _secureStorage.delete(key: 'user_uid');
+        _verificationId = null;
+        return false;
+      }
       await _persistCurrentUser();
       _verificationId = null;
-      return _firebaseAuth.currentUser != null;
+      return true;
     } on FirebaseAuthException catch (e) {
       throw Exception(e.message ?? 'OTP verification failed.');
     }
   }
+
+  String _normalizePhone(String value) =>
+      value.replaceAll(RegExp(r'[^0-9+]'), '');
 
 
   Future<User?> createEmailAccount({
