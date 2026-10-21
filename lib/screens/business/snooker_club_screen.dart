@@ -505,7 +505,15 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
     final values = await _form('Issue ${asset['name']}', ['Player / staff name', 'Locker number (enter NONE if no locker)'], initial: {'Locker number (enter NONE if no locker)': 'NONE'});
     if (values == null || !mounted) return;
     final lockerNumber = values['Locker number (enter NONE if no locker)']!;
-    final locker = lockerNumber.toUpperCase() == 'NONE' ? null : _equipment.where((e) => e['assetType'] == 'locker' && e['assetNumber'].toString().toLowerCase() == lockerNumber.toLowerCase()).firstOrNull;
+    Map<String, Object?>? locker;
+    if (lockerNumber.toUpperCase() != 'NONE') {
+      for (final item in _equipment) {
+        if (item['assetType'] == 'locker' && item['assetNumber'].toString().toLowerCase() == lockerNumber.toLowerCase()) {
+          locker = item;
+          break;
+        }
+      }
+    }
     if (lockerNumber.toUpperCase() != 'NONE' && locker == null) {
       _message('Locker number not found. Register that locker first.');
       return;
