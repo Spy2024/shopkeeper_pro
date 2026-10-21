@@ -198,6 +198,238 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
     }
   }
 
+  Future<void> _showAddMenu() async {
+    final index = _tabs.index;
+    final options = switch (index) {
+      0 => const [('primary', 'Add student'), ('related', 'Add fee record')],
+      1 => const [('primary', 'Add patient'), ('related', 'Book appointment')],
+      2 => const [('primary', 'Add salon service'), ('related', 'Book appointment')],
+      3 => const [('primary', 'Add farm plot'), ('related', 'Record farm activity')],
+      4 => const [('primary', 'Add project'), ('related', 'Add project task')],
+      _ => const [('primary', 'Add service case')],
+    };
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('What would you like to add?'),
+        children: [
+          for (final option in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, option.$1),
+              child: Text(option.$2),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'related') {
+      await _addRelatedRecord(index);
+    } else {
+      await _addCurrentRecord();
+    }
+  }
+
+  /// Adds operational records linked to their parent record. The primary
+  /// record alone is not enough for these verticals to complete real workflows.
+  Future<void> _addRelatedRecord(int tabIndex) async {
+    final db = await DBService.instance.database;
+    final parentRows = switch (tabIndex) {
+      0 => _rows['students'] ?? <Map<String, Object?>>[],
+      1 => _rows['patients'] ?? <Map<String, Object?>>[],
+      2 => _rows['salonServices'] ?? <Map<String, Object?>>[],
+      3 => _rows['farmPlots'] ?? <Map<String, Object?>>[],
+      4 => _rows['projects'] ?? <Map<String, Object?>>[],
+      _ => <Map<String, Object?>>[],
+    };
+    if (tabIndex != 2 && parentRows.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Create the parent record first, then add this workflow record.')),
+        );
+      }
+      return;
+    }
+
+    final fieldsByTab = <int, List<(String, String)>>{
+      0: [('Amount (Rs.)', 'required_number'), ('Note', 'text')],
+      1: [('Appointment date/time', 'required'), ('Clinician', 'text'), ('Reason', 'text'), ('Fee (Rs.)', 'required_number')],
+      2: [('Customer name', 'required'), ('Phone', 'text'), ('Booking date/time', 'required'), ('Staff name', 'text'), ('Amount (Rs.)', 'required_number')],
+      3: [('Activity type', 'required'), ('Input name', 'text'), ('Quantity', 'required_number'), ('Cost (Rs.)', 'required_number'), ('Notes', 'text')],
+      4: [('Task title', 'required'), ('Assigned to', 'text'), ('Due date', 'text'), ('Cost (Rs.)', 'required_number')],
+    };
+    final fields = fieldsByTab[tabIndex];
+    if (fields == null) return;
+    final controllers = <String, TextEditingController>{
+      for (final field in fields) field.$1: TextEditingController(),
+    };
+    final parentRequired = tabIndex != 2;
+    String? selectedParent = parentRows.isNotEmpty ? parentRows.first['id'] as String? : null;
+    String? validationError;
+    final values = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(switch (tabIndex) {
+            0 => 'Add school fee',
+            1 => 'Book clinic appointment',
+            2 => 'Book salon appointment',
+            3 => 'Record farm activity',
+            _ => 'Add construction task',
+          }),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (parentRows.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedParent,
+                    decoration: InputDecoration(
+                      labelText: switch (tabIndex) {
+                        0 => 'Student',
+                        1 => 'Patient',
+                        2 => 'Service (optional)',
+                        3 => 'Farm plot',
+                        _ => 'Project',
+                      },
+                    ),
+                    items: [
+                      if (!parentRequired)
+                        const DropdownMenuItem<String>(value: '', child: Text('No service selected')),
+                      for (final row in parentRows)
+                        DropdownMenuItem<String>(
+                          value: row['id'] as String,
+                          child: Text('${row['name'] ?? row['id']}'),
+                        ),
+                    ],
+                    onChanged: (value) => setDialogState(
+                      () => selectedParent = value == '' ? null : value,
+                    ),
+                  ),
+                for (final field in fields)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: TextField(
+                      controller: controllers[field.$1],
+                      keyboardType: field.$2.contains('number')
+                          ? const TextInputType.numberWithOptions(decimal: true)
+                          : TextInputType.text,
+                      decoration: InputDecoration(labelText: field.$1),
+                    ),
+                  ),
+                if (validationError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(validationError!, style: const TextStyle(color: Colors.red)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final entered = {
+                  for (final entry in controllers.entries) entry.key: entry.value.text.trim(),
+                };
+                final missing = fields.where(
+                  (field) => field.$2.startsWith('required') && (entered[field.$1] ?? '').isEmpty,
+                );
+                final invalidNumber = fields.where(
+                  (field) => field.$2.contains('number') &&
+                      (double.tryParse(entered[field.$1] ?? '') == null ||
+                       double.parse(entered[field.$1]!) < 0),
+                );
+                if ((parentRequired && selectedParent == null) ||
+                    missing.isNotEmpty || invalidNumber.isNotEmpty) {
+                  setDialogState(() {
+                    validationError = parentRequired && selectedParent == null
+                        ? 'Select a parent record first.'
+                        : missing.isNotEmpty
+                            ? '${missing.first.$1} is required.'
+                            : 'Enter a valid non-negative number for ${invalidNumber.first.$1}.';
+                  });
+                  return;
+                }
+                Navigator.pop(dialogContext, {...entered, '__parentId': selectedParent ?? ''});
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+    if (values == null || !mounted) return;
+
+    double number(String key) => double.parse(values[key]!);
+    try {
+      switch (tabIndex) {
+        case 0:
+          await _ops.addSchoolFee(
+            studentId: values['__parentId']!,
+            amount: number('Amount (Rs.)'),
+            note: values['Note'],
+          );
+          break;
+        case 1:
+          await _ops.bookClinicAppointment(
+            patientId: values['__parentId']!,
+            appointmentAt: values['Appointment date/time']!,
+            clinician: values['Clinician'],
+            reason: values['Reason'],
+            fee: number('Fee (Rs.)'),
+          );
+          break;
+        case 2:
+          await _ops.bookSalonAppointment(
+            customerName: values['Customer name']!,
+            phone: values['Phone'],
+            bookingAt: values['Booking date/time']!,
+            serviceId: values['__parentId']!.isEmpty ? null : values['__parentId'],
+            staffName: values['Staff name'],
+            amount: number('Amount (Rs.)'),
+          );
+          break;
+        case 3:
+          await _ops.recordFarmActivity(
+            plotId: values['__parentId']!,
+            activityType: values['Activity type']!,
+            inputName: values['Input name'],
+            quantity: number('Quantity'),
+            cost: number('Cost (Rs.)'),
+            notes: values['Notes'],
+          );
+          break;
+        case 4:
+          await _ops.addConstructionTask(
+            projectId: values['__parentId']!,
+            title: values['Task title']!,
+            assignedTo: values['Assigned to'],
+            dueDate: values['Due date'],
+            cost: number('Cost (Rs.)'),
+          );
+          break;
+      }
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Workflow record saved.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save workflow record: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _recordSchoolPayment(Map<String, Object?> fee) async {
     final controller = TextEditingController();
     final amount = await showDialog<double>(
@@ -294,9 +526,9 @@ class _BusinessVerticalsScreenState extends State<BusinessVerticalsScreen> with 
           ])),
         ]),
     floatingActionButton: FloatingActionButton.extended(
-      onPressed: _loading ? null : _addCurrentRecord,
+      onPressed: _loading ? null : _showAddMenu,
       icon: const Icon(Icons.add),
-      label: const Text('Add record'),
+      label: const Text('Add workflow'),
     ),
   );
 
