@@ -502,10 +502,21 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
   }
 
   Future<void> _assignAsset(Map<String, Object?> asset) async {
-    final values = await _form('Issue ${asset['name']}', ['Player / staff name']);
+    final values = await _form('Issue ${asset['name']}', ['Player / staff name', 'Locker number (enter NONE if no locker)'], initial: {'Locker number (enter NONE if no locker)': 'NONE'});
     if (values == null || !mounted) return;
+    final lockerNumber = values['Locker number (enter NONE if no locker)']!;
+    final locker = lockerNumber.toUpperCase() == 'NONE' ? null : _equipment.where((e) => e['assetType'] == 'locker' && e['assetNumber'].toString().toLowerCase() == lockerNumber.toLowerCase()).firstOrNull;
+    if (lockerNumber.toUpperCase() != 'NONE' && locker == null) {
+      _message('Locker number not found. Register that locker first.');
+      return;
+    }
     await _perform(() async {
-      await _service.assignEquipment(assetId: asset['id']! as String, personName: values['Player / staff name']!, actorId: _actor);
+      await _service.assignEquipment(
+        assetId: asset['id']! as String,
+        personName: values['Player / staff name']!,
+        lockerAssetId: locker?['id'] as String?,
+        actorId: _actor,
+      );
       _message('Equipment issued to ${values['Player / staff name']}.');
     });
   }
