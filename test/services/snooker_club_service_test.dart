@@ -219,6 +219,17 @@ void main() {
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
   });
 
+  test('snooker equipment remains isolated between two local account databases', () async {
+    final cueId = await service.addEquipmentAsset(assetType: 'cue', assetNumber: 'ACCOUNT-A-CUE', name: 'Private cue');
+    final otherUserId = '$userId-other';
+    await DBService.instance.clearActiveUser();
+    await DBService.instance.configureForUser(otherUserId);
+    expect(await service.equipmentAssets(), isEmpty);
+    await DBService.instance.deleteActiveUserDatabase(otherUserId);
+    await DBService.instance.configureForUser(userId);
+    expect((await service.equipmentAssets()).any((row) => row['id'] == cueId), isTrue);
+  });
+
   test('games, payments, cues and stock survive a local database close and reopen', () async {
     final table = (await service.tables()).first;
     final gameId = await service.startGame(
