@@ -17,7 +17,10 @@ void main() {
     documentsDir = await Directory.systemTemp.createTemp('shopkeeper_pdf_test_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProviderChannel, (call) async {
-      if (call.method == 'getApplicationDocumentsPath') return documentsDir.path;
+      if (call.method == 'getApplicationDocumentsPath' ||
+          call.method == 'getApplicationDocumentsDirectory') {
+        return documentsDir.path;
+      }
       return null;
     });
   });
