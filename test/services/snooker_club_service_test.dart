@@ -187,6 +187,8 @@ void main() {
     await service.returnEquipment(assetId: cueId, note: 'Returned in good condition');
     assets = await service.equipmentAssets();
     expect(assets.singleWhere((row) => row['id'] == cueId)['status'], 'available');
+    expect(assets.singleWhere((row) => row['id'] == lockerId)['status'], 'available');
+    expect(assets.singleWhere((row) => row['id'] == lockerId)['assignedToName'], isNull);
     final ballId = await service.addEquipmentAsset(assetType: 'ball_set', assetNumber: 'B-01', name: 'Tournament balls');
     expect((await service.equipmentAssets(assetType: 'ball_set')).single['id'], ballId);
     expect((await service.equipmentMovements()).map((row) => row['movementType']), containsAll(['opening_stock', 'issue', 'return']));
