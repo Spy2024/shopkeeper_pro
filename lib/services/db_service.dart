@@ -642,7 +642,8 @@ class DBService {
   Future<void> _createSnookerTables(DatabaseExecutor db) async {
     await db.execute("""
       CREATE TABLE IF NOT EXISTS snooker_settings (
-        key TEXT PRIMARY KEY,
+        id TEXT PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
         value TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -724,6 +725,7 @@ class DBService {
       )
     """);
     await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_payments_game_date ON snooker_payments(gameId, receivedAt)');
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_snooker_payment_reference ON snooker_payments(method, reference) WHERE type = 'payment' AND reference IS NOT NULL AND length(trim(reference)) > 0");
     await db.execute("""
       CREATE TABLE IF NOT EXISTS snooker_expenses (
         id TEXT PRIMARY KEY,
