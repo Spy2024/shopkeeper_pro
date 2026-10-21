@@ -118,4 +118,192 @@ void main() {
     expect(history.last['location'], 'Highway');
     expect(history.every((entry) => (entry['recordedAt'] as String).isNotEmpty), isTrue);
   });
+
+  test('clinic, salon, agriculture and construction workflows persist linked records', () async {
+    final patientId = await ops.addClinicPatient(name: 'Patient One', phone: '03000000000');
+    final appointmentId = await ops.bookClinicAppointment(
+      patientId: patientId,
+      appointmentAt: '2026-10-22 10:00',
+      clinician: 'Dr Test',
+      reason: 'Consultation',
+      fee: 1500,
+    );
+    await ops.recordClinicPayment(appointmentId: appointmentId, amount: 500);
+    var db = await DBService.instance.database;
+    var appointment = (await db.query(
+      'clinic_appointments',
+      where: 'id = ?',
+      whereArgs: [appointmentId],
+    )).single;
+    expect((appointment['paidAmount'] as num).toDouble(), 500);
+    await expectLater(
+      ops.recordClinicPayment(appointmentId: appointmentId, amount: 1001),
+      throwsStateError,
+    );
+
+    final serviceId = await ops.addSalonService(
+      name: 'Haircut',
+      durationMinutes: 30,
+      price: 800,
+    );
+    final bookingId = await ops.bookSalonAppointment(
+      customerName: 'Salon Customer',
+      bookingAt: '2026-10-22 11:00',
+      serviceId: serviceId,
+      amount: 800,
+    );
+    await ops.updateSalonBookingStatus(bookingId: bookingId, status: 'completed');
+
+    final plotId = await ops.addFarmPlot(
+      name: 'North Plot',
+      area: 2,
+      crop: 'Wheat',
+      season: 'Winter',
+    );
+    final activityId = await ops.recordFarmActivity(
+      plotId: plotId,
+      activityType: 'fertilizing',
+      inputName: 'Fertilizer',
+      quantity: 20,
+      cost: 4500,
+    );
+
+    final projectId = await ops.addConstructionProject(
+      name: 'House Build',
+      clientName: 'Client One',
+      budget: 100000,
+    );
+    final taskId = await ops.addConstructionTask(
+      projectId: projectId,
+      title: 'Foundation',
+      assignedTo: 'Team A',
+      cost: 12000,
+    );
+    await ops.updateConstructionTaskStatus(taskId: taskId, status: 'in_progress');
+
+    db = await DBService.instance.database;
+    expect(await db.query('clinic_appointments', where: 'id = ?', whereArgs: [appointmentId]), hasLength(1));
+    expect(await db.query('salon_bookings', where: 'id = ?', whereArgs: [bookingId]), hasLength(1));
+    expect(await db.query('farm_activities', where: 'id = ?', whereArgs: [activityId]), hasLength(1));
+    expect(await db.query('construction_tasks', where: 'id = ?', whereArgs: [taskId]), hasLength(1));
+    final project = (await db.query('construction_projects', where: 'id = ?', whereArgs: [projectId])).single;
+    expect((project['spent'] as num).toDouble(), 12000);
+    final report = await ops.businessVerticalReport();
+    expect(((report['clinic'] as Map)['outstanding'] as num).toDouble(), 1000);
+    expect(((report['salon'] as Map)['bookedValue'] as num).toDouble(), 800);
+    expect(((report['agriculture'] as Map)['cost'] as num).toDouble(), 4500);
+    expect(((report['construction'] as Map)['spent'] as num).toDouble(), 12000);
+  });
+
+
+  test('vehicle showroom records sale profit and prevents duplicate sale', () async {
+    final vehicleId = await ops.addVehicleRecord(
+      type: 'car',
+      make: 'Test',
+      model: 'Sedan',
+      registrationNumber: 'ABC-123',
+      purchasePrice: 100000,
+    );
+    await ops.recordVehicleTransaction(
+      vehicleId: vehicleId,
+      type: 'purchase',
+      partyName: 'Seller',
+      amount: 100000,
+    );
+    await ops.recordVehicleTransaction(
+      vehicleId: vehicleId,
+      type: 'expense',
+      partyName: 'Workshop',
+      amount: 5000,
+      notes: 'Preparation',
+    );
+    await ops.recordVehicleTransaction(
+      vehicleId: vehicleId,
+      type: 'sale',
+      partyName: 'Buyer',
+      amount: 130000,
+    );
+    await expectLater(
+      ops.recordVehicleTransaction(
+        vehicleId: vehicleId,
+        type: 'sale',
+        partyName: 'Second Buyer',
+        amount: 140000,
+      ),
+      throwsStateError,
+    );
+
+    final db = await DBService.instance.database;
+    final vehicle = (await db.query(
+      'vehicle_records',
+      where: 'id = ?',
+      whereArgs: [vehicleId],
+    )).single;
+    expect(vehicle['status'], 'sold');
+    expect((vehicle['salePrice'] as num).toDouble(), 130000);
+    expect(await db.query('vehicle_transactions', where: 'vehicleId = ?', whereArgs: [vehicleId]), hasLength(3));
+    final reports = await ops.vehicleProfitReport();
+    final report = reports.singleWhere((row) => row['vehicleId'] == vehicleId);
+    expect((report['netProfit'] as num).toDouble(), 25000);
+  });
+
+  test('cargo tracking stores status history and passenger transport blocks duplicate seats', () async {
+    final routeId = await ops.addTransportRoute(
+      name: 'Karachi to Hyderabad',
+      origin: 'Karachi',
+      destination: 'Hyderabad',
+    );
+    final cargoId = await ops.createCargoJob(
+      routeId: routeId,
+      customerName: 'Cargo Customer',
+      loadDescription: 'Boxes',
+      weight: 120,
+      freightAmount: 8500,
+    );
+    await ops.updateCargoStatus(
+      cargoId: cargoId,
+      status: 'picked_up',
+      location: 'Karachi warehouse',
+      note: 'Collected',
+    );
+    await ops.updateCargoStatus(
+      cargoId: cargoId,
+      status: 'in_transit',
+      location: 'Super Highway',
+    );
+    final db = await DBService.instance.database;
+    final cargo = (await db.query('cargo_jobs', where: 'id = ?', whereArgs: [cargoId])).single;
+    expect(cargo['status'], 'in_transit');
+    expect((cargo['trackingToken'] as String).length, greaterThan(30));
+    expect(await db.query('cargo_status_history', where: 'cargoId = ?', whereArgs: [cargoId]), hasLength(2));
+    await expectLater(
+      ops.updateCargoStatus(cargoId: cargoId, status: 'unknown_status'),
+      throwsArgumentError,
+    );
+
+    final ticketId = await ops.addTransportTicket(
+      routeId: routeId,
+      passengerName: 'Passenger One',
+      travelDate: '2026-10-22',
+      fare: 1200,
+      seatNumber: 'A1',
+    );
+    expect(ticketId, isNotEmpty);
+    await expectLater(
+      ops.addTransportTicket(
+        routeId: routeId,
+        passengerName: 'Passenger Two',
+        travelDate: '2026-10-22',
+        fare: 1200,
+        seatNumber: 'A1',
+      ),
+      throwsStateError,
+    );
+    expect(await db.query(
+      'transport_tickets',
+      where: 'routeId = ? AND travelDate = ? AND seatNumber = ?',
+      whereArgs: [routeId, '2026-10-22', 'A1'],
+    ), hasLength(1));
+  });
+
 }

@@ -210,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 22,
+      version: 25,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -322,6 +322,16 @@ class DBService {
         if (oldVersion < 22) {
           await _createBusinessVerticalTables(db);
           await _ensureColumn(db, 'cargo_jobs', 'trackingToken', 'TEXT');
+        }
+        if (oldVersion < 23) {
+          await _createSnookerTables(db);
+    await _createSnookerEquipmentTables(db);
+        }
+        if (oldVersion < 24) {
+          await _ensureColumn(db, 'snooker_payments', 'payerId', 'TEXT');
+        }
+        if (oldVersion < 25) {
+          await _createSnookerEquipmentTables(db);
         }
       },
     );
@@ -634,6 +644,201 @@ class DBService {
     await db.execute('CREATE TABLE IF NOT EXISTS public_service_cases (id TEXT PRIMARY KEY, caseNumber TEXT NOT NULL, applicantName TEXT NOT NULL, serviceType TEXT NOT NULL, openedAt TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'open\', fee REAL NOT NULL DEFAULT 0, notes TEXT)');
   }
 
+  Future<void> _createSnookerEquipmentTables(DatabaseExecutor db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_inventory_items (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL CHECK(category IN ('chalk','tip','glove','other')),
+        unit TEXT NOT NULL DEFAULT 'piece',
+        quantity REAL NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+        minimumQuantity REAL NOT NULL DEFAULT 0 CHECK(minimumQuantity >= 0),
+        updatedAt TEXT NOT NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_inventory_category ON snooker_inventory_items(category)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_equipment_assets (
+        id TEXT PRIMARY KEY,
+        assetType TEXT NOT NULL CHECK(assetType IN ('cue','ball_set','locker')),
+        assetNumber TEXT NOT NULL,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'available'
+          CHECK(status IN ('available','in_use','repair','missing','retired')),
+        assignedToName TEXT,
+        assignedPlayerId TEXT,
+        lockerAssetId TEXT,
+        tableId TEXT,
+        notes TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        UNIQUE(assetType, assetNumber),
+        FOREIGN KEY (assignedPlayerId) REFERENCES snooker_players(id) ON DELETE SET NULL,
+        FOREIGN KEY (lockerAssetId) REFERENCES snooker_equipment_assets(id) ON DELETE SET NULL,
+        FOREIGN KEY (tableId) REFERENCES snooker_tables(id) ON DELETE SET NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_assets_type_status ON snooker_equipment_assets(assetType, status)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_assets_assignee ON snooker_equipment_assets(assignedToName)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_equipment_movements (
+        id TEXT PRIMARY KEY,
+        assetId TEXT,
+        inventoryItemId TEXT,
+        movementType TEXT NOT NULL CHECK(movementType IN ('opening_stock','purchase','issue','return','consume','damage','missing','repair','repair_return','adjustment','retire')),
+        quantity REAL NOT NULL,
+        personName TEXT,
+        fromLocation TEXT,
+        toLocation TEXT,
+        note TEXT,
+        occurredAt TEXT NOT NULL,
+        actorId TEXT,
+        CHECK((assetId IS NOT NULL AND inventoryItemId IS NULL) OR
+              (assetId IS NULL AND inventoryItemId IS NOT NULL)),
+        FOREIGN KEY (assetId) REFERENCES snooker_equipment_assets(id) ON DELETE RESTRICT,
+        FOREIGN KEY (inventoryItemId) REFERENCES snooker_inventory_items(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_equipment_movements_date ON snooker_equipment_movements(occurredAt)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_equipment_movements_asset ON snooker_equipment_movements(assetId)');
+  }
+
+  /// Snooker club records are stored separately from ordinary POS bills so
+  /// game fees, refreshment sales and cash receipts cannot be double-counted.
+  Future<void> _createSnookerTables(DatabaseExecutor db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_settings (
+        id TEXT PRIMARY KEY,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    """);
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_tables (
+        id TEXT PRIMARY KEY,
+        tableNumber INTEGER NOT NULL UNIQUE CHECK(tableNumber > 0),
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'available'
+          CHECK(status IN ('available','occupied','maintenance')),
+        activeGameId TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_tables_status ON snooker_tables(status)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_players (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        normalizedName TEXT NOT NULL UNIQUE,
+        phone TEXT,
+        notes TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_players_name ON snooker_players(name COLLATE NOCASE)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_games (
+        id TEXT PRIMARY KEY,
+        tableId TEXT NOT NULL,
+        playerAId TEXT NOT NULL,
+        playerBId TEXT NOT NULL,
+        playerAName TEXT NOT NULL,
+        playerBName TEXT NOT NULL,
+        winnerId TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('active','completed','cancelled')),
+        startedAt TEXT NOT NULL,
+        endedAt TEXT,
+        createdBy TEXT,
+        updatedAt TEXT NOT NULL,
+        CHECK(playerAId != playerBId),
+        FOREIGN KEY (tableId) REFERENCES snooker_tables(id) ON DELETE RESTRICT,
+        FOREIGN KEY (playerAId) REFERENCES snooker_players(id) ON DELETE RESTRICT,
+        FOREIGN KEY (playerBId) REFERENCES snooker_players(id) ON DELETE RESTRICT,
+        FOREIGN KEY (winnerId) REFERENCES snooker_players(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_snooker_one_active_game_per_table ON snooker_games(tableId) WHERE status = 'active'");
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_games_started ON snooker_games(startedAt)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_games_status ON snooker_games(status)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_game_fees (
+        id TEXT PRIMARY KEY,
+        gameId TEXT NOT NULL UNIQUE,
+        feeAmount REAL NOT NULL CHECK(feeAmount >= 0),
+        discountAmount REAL NOT NULL DEFAULT 0 CHECK(discountAmount >= 0),
+        finalAmount REAL NOT NULL CHECK(finalAmount >= 0),
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (gameId) REFERENCES snooker_games(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_payments (
+        id TEXT PRIMARY KEY,
+        gameId TEXT NOT NULL,
+        payerId TEXT,
+        amount REAL NOT NULL CHECK(amount > 0),
+        method TEXT NOT NULL CHECK(method IN ('cash','bank','card','wallet','other')),
+        type TEXT NOT NULL CHECK(type IN ('payment','refund')),
+        reference TEXT,
+        idempotencyKey TEXT NOT NULL UNIQUE,
+        receivedAt TEXT NOT NULL,
+        receivedBy TEXT,
+        note TEXT,
+        FOREIGN KEY (gameId) REFERENCES snooker_games(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_payments_game_date ON snooker_payments(gameId, receivedAt)');
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_snooker_payment_reference ON snooker_payments(method, reference) WHERE type = 'payment' AND reference IS NOT NULL AND length(trim(reference)) > 0");
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_expenses (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        amount REAL NOT NULL CHECK(amount > 0),
+        paymentMethod TEXT NOT NULL DEFAULT 'cash'
+          CHECK(paymentMethod IN ('cash','bank','card','wallet','other')),
+        occurredAt TEXT NOT NULL,
+        note TEXT,
+        createdBy TEXT,
+        idempotencyKey TEXT NOT NULL UNIQUE
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_expenses_date ON snooker_expenses(occurredAt)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_cash_sessions (
+        id TEXT PRIMARY KEY,
+        openingCash REAL NOT NULL CHECK(openingCash >= 0),
+        expectedClosingCash REAL,
+        actualClosingCash REAL,
+        difference REAL,
+        openedAt TEXT NOT NULL,
+        closedAt TEXT,
+        openedBy TEXT,
+        closedBy TEXT,
+        note TEXT
+      )
+    """);
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_snooker_single_open_cash_session ON snooker_cash_sessions((1)) WHERE closedAt IS NULL");
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_game_events (
+        id TEXT PRIMARY KEY,
+        gameId TEXT NOT NULL,
+        eventType TEXT NOT NULL CHECK(eventType IN ('started','completed','cancelled','result_corrected')),
+        previousValue TEXT,
+        newValue TEXT,
+        reason TEXT,
+        actorId TEXT,
+        occurredAt TEXT NOT NULL,
+        idempotencyKey TEXT NOT NULL UNIQUE,
+        FOREIGN KEY (gameId) REFERENCES snooker_games(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_game_events_game_date ON snooker_game_events(gameId, occurredAt)');
+  }
+
   Future<void> _createSchema(Database db) async {
     await db.execute("CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT, taxNumber TEXT, email TEXT, website TEXT, facebookUrl TEXT, instagramUrl TEXT, socialUrl TEXT, logoPath TEXT, businessType TEXT NOT NULL DEFAULT 'general_retail')");
     await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5, barcode TEXT, expiryDate TEXT)');
@@ -655,6 +860,8 @@ class DBService {
     await _createMobileShopTables(db);
     await _createMobileRepairFinanceTables(db);
     await _createBusinessVerticalTables(db);
+    await _createSnookerTables(db);
+    await _createSnookerEquipmentTables(db);
     await db.execute('CREATE TABLE supplier_transactions (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, referenceId TEXT, FOREIGN KEY (supplierId) REFERENCES suppliers(id) ON DELETE CASCADE)');
     await db.execute('CREATE INDEX idx_supplier_transactions_supplier ON supplier_transactions(supplierId, date)');
     await db.execute('CREATE INDEX idx_products_name ON products(name)');

@@ -57,6 +57,16 @@ test('known bill and supplier order child paths remain owner-scoped', async () =
   await assertFails(setDoc(doc(otherDb, 'users/user-a/bills/bill-1/items/injected'), { quantity: 1 }));
 });
 
+test('snooker equipment sync collections are scoped to the signed-in owner', async () => {
+  const ownDb = env.authenticatedContext('user-a').firestore();
+  const otherDb = env.authenticatedContext('user-b').firestore();
+  await assertSucceeds(setDoc(doc(ownDb, 'users/user-a/snooker_equipment_assets/cue-1'), { assetNumber: 'C-01' }));
+  await assertSucceeds(setDoc(doc(ownDb, 'users/user-a/snooker_inventory_items/chalk-1'), { quantity: 12 }));
+  await assertSucceeds(setDoc(doc(ownDb, 'users/user-a/snooker_equipment_movements/move-1'), { movementType: 'issue' }));
+  await assertFails(getDoc(doc(ownDb, 'users/user-b/snooker_equipment_assets/private-cue')));
+  await assertFails(setDoc(doc(otherDb, 'users/user-a/snooker_inventory_items/injected'), { quantity: 999 }));
+});
+
 test('unknown collections and root-level documents are denied', async () => {
   const db = env.authenticatedContext('user-a').firestore();
   await assertFails(setDoc(doc(db, 'users/user-a/arbitrary-secret-collection/item'), { value: 1 }));

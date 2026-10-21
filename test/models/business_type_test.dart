@@ -11,6 +11,7 @@ void main() {
       expect(ids.length, BusinessTypes.all.length);
       expect(ids, containsAll([
         'general_retail',
+        'snooker_club',
         'wholesale_distribution',
         'mobile_electronics',
         'cosmetics',
@@ -36,6 +37,22 @@ void main() {
         'plumbing_sanitary_parts',
         'other_spare_parts',
         'other',
+      ]));
+    });
+
+    test('Snooker Club exposes game, payments, refreshments, equipment and reports modules', () {
+      final snooker = BusinessTypes.byId('snooker_club');
+      expect(snooker.label, contains('Snooker'));
+      expect(snooker.defaultModules, containsAll([
+        'snooker_tables',
+        'games',
+        'game_fees',
+        'payments',
+        'refreshments_pos',
+        'equipment_register',
+        'cashbook',
+        'daily_reports',
+        'monthly_reports',
       ]));
     });
 

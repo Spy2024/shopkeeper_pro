@@ -142,6 +142,18 @@ class BackupRestoreService {
     'return_items',
     'branch_cash_entries',
     'product_variants',
+    'snooker_settings',
+    'snooker_tables',
+    'snooker_players',
+    'snooker_games',
+    'snooker_game_fees',
+    'snooker_payments',
+    'snooker_expenses',
+    'snooker_cash_sessions',
+    'snooker_game_events',
+    'snooker_inventory_items',
+    'snooker_equipment_assets',
+    'snooker_equipment_movements',
     'restaurant_tables',
     'restaurant_orders',
     'restaurant_order_payments',
@@ -341,6 +353,18 @@ class BackupRestoreService {
                   table == 'return_items' ||
                   table == 'branch_cash_entries' ||
                   table == 'product_variants' ||
+                  table == 'snooker_settings' ||
+                  table == 'snooker_tables' ||
+                  table == 'snooker_players' ||
+                  table == 'snooker_games' ||
+                  table == 'snooker_game_fees' ||
+                  table == 'snooker_payments' ||
+                  table == 'snooker_expenses' ||
+                  table == 'snooker_cash_sessions' ||
+                  table == 'snooker_game_events' ||
+                  table == 'snooker_inventory_items' ||
+                  table == 'snooker_equipment_assets' ||
+                  table == 'snooker_equipment_movements' ||
                   table == 'restaurant_tables' ||
                   table == 'restaurant_orders' ||
                   table == 'restaurant_order_payments' ||
@@ -405,6 +429,18 @@ class BackupRestoreService {
         'shop',
         'sync_queue',
         'public_service_cases',
+        'snooker_game_events',
+        'snooker_payments',
+        'snooker_game_fees',
+        'snooker_games',
+        'snooker_tables',
+        'snooker_players',
+        'snooker_cash_sessions',
+        'snooker_expenses',
+        'snooker_equipment_movements',
+        'snooker_equipment_assets',
+        'snooker_inventory_items',
+        'snooker_settings',
         'construction_tasks',
         'construction_projects',
         'farm_activities',

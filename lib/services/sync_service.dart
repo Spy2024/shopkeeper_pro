@@ -295,6 +295,18 @@ class SyncService {
         'construction_projects': 'construction_projects',
         'construction_tasks': 'construction_tasks',
         'public_service_cases': 'public_service_cases',
+        'snooker_settings': 'snooker_settings',
+        'snooker_tables': 'snooker_tables',
+        'snooker_players': 'snooker_players',
+        'snooker_games': 'snooker_games',
+        'snooker_game_fees': 'snooker_game_fees',
+        'snooker_payments': 'snooker_payments',
+        'snooker_expenses': 'snooker_expenses',
+        'snooker_cash_sessions': 'snooker_cash_sessions',
+        'snooker_game_events': 'snooker_game_events',
+        'snooker_inventory_items': 'snooker_inventory_items',
+        'snooker_equipment_assets': 'snooker_equipment_assets',
+        'snooker_equipment_movements': 'snooker_equipment_movements',
       };
       for (final entry in tablesByCollection.entries) {
         final localRows = entry.key == 'branch_stock'
@@ -451,6 +463,9 @@ class SyncService {
       'clinic_patients', 'clinic_appointments', 'salon_services',
       'salon_bookings', 'farm_plots', 'farm_activities',
       'construction_projects', 'construction_tasks', 'public_service_cases',
+      'snooker_settings', 'snooker_tables', 'snooker_players', 'snooker_games', 'snooker_game_fees',
+      'snooker_payments', 'snooker_expenses', 'snooker_cash_sessions', 'snooker_game_events',
+      'snooker_inventory_items', 'snooker_equipment_assets', 'snooker_equipment_movements',
     ]) {
       await _writeBatch(userId, table, await _maps(db, table));
     }
@@ -633,7 +648,17 @@ class SyncService {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(userId, db, doc.id, collection)) continue;
-          final data = Map<String, dynamic>.from(doc.data())..remove('updatedAt');
+          final data = Map<String, dynamic>.from(doc.data());
+          final remoteUpdatedAt = data['updatedAt'];
+          data.remove('updatedAt');
+          if (const {
+            'snooker_settings', 'snooker_tables', 'snooker_players',
+            'snooker_games', 'snooker_inventory_items', 'snooker_equipment_assets',
+          }.contains(collection)) {
+            data['updatedAt'] = remoteUpdatedAt is Timestamp
+                ? remoteUpdatedAt.toDate().toIso8601String()
+                : (remoteUpdatedAt?.toString() ?? DateTime.now().toIso8601String());
+          }
           await db.insert(collection, data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
@@ -649,6 +674,9 @@ class SyncService {
         'clinic_patients', 'clinic_appointments', 'salon_services',
         'salon_bookings', 'farm_plots', 'farm_activities',
         'construction_projects', 'construction_tasks', 'public_service_cases',
+        'snooker_settings', 'snooker_tables', 'snooker_players', 'snooker_games', 'snooker_game_fees',
+        'snooker_payments', 'snooker_expenses', 'snooker_cash_sessions', 'snooker_game_events',
+        'snooker_inventory_items', 'snooker_equipment_assets', 'snooker_equipment_movements',
       ]) {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {

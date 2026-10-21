@@ -148,7 +148,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       if (firebaseAvailable) {
-        final ok = await FirebaseAuthService.instance.verifyOtp(otp);
+        final ok = await FirebaseAuthService.instance.verifyOtp(otp, expectedPhone: phone);
         if (!ok) return false;
         final user = FirebaseAuthService.instance.currentUser;
         if (user == null) {
