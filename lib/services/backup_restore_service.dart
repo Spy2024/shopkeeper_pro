@@ -151,6 +151,9 @@ class BackupRestoreService {
     'snooker_expenses',
     'snooker_cash_sessions',
     'snooker_game_events',
+    'snooker_inventory_items',
+    'snooker_equipment_assets',
+    'snooker_equipment_movements',
     'restaurant_tables',
     'restaurant_orders',
     'restaurant_order_payments',
@@ -359,6 +362,9 @@ class BackupRestoreService {
                   table == 'snooker_expenses' ||
                   table == 'snooker_cash_sessions' ||
                   table == 'snooker_game_events' ||
+                  table == 'snooker_inventory_items' ||
+                  table == 'snooker_equipment_assets' ||
+                  table == 'snooker_equipment_movements' ||
                   table == 'restaurant_tables' ||
                   table == 'restaurant_orders' ||
                   table == 'restaurant_order_payments' ||
@@ -431,6 +437,9 @@ class BackupRestoreService {
         'snooker_players',
         'snooker_cash_sessions',
         'snooker_expenses',
+        'snooker_equipment_movements',
+        'snooker_equipment_assets',
+        'snooker_inventory_items',
         'snooker_settings',
         'construction_tasks',
         'construction_projects',
