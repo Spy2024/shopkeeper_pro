@@ -589,6 +589,8 @@ class SnookerClubService {
     final db = await DBService.instance.database;
     late Map<String, Object?> updated;
     late Map<String, Object?> movement;
+    Map<String, Object?>? lockerUpdated;
+    Map<String, Object?>? lockerMovement;
     await db.transaction((txn) async {
       final rows = await txn.query('snooker_equipment_assets', where: 'id = ?', whereArgs: [assetId], limit: 1);
       if (rows.isEmpty) throw StateError('Equipment asset not found.');
@@ -601,8 +603,27 @@ class SnookerClubService {
         if (players.isEmpty) throw StateError('Player not found.');
       }
       if (lockerAssetId != null) {
-        final lockers = await txn.query('snooker_equipment_assets', where: "id = ? AND assetType = 'locker' AND status != 'retired'", whereArgs: [lockerAssetId], limit: 1);
+        final lockers = await txn.query('snooker_equipment_assets', where: "id = ? AND assetType = 'locker'", whereArgs: [lockerAssetId], limit: 1);
         if (lockers.isEmpty) throw StateError('Locker not found.');
+        final locker = lockers.first;
+        if (locker['status'] == 'missing' || locker['status'] == 'repair' || locker['status'] == 'retired') {
+          throw StateError('Missing, repair or retired lockers cannot be assigned.');
+        }
+        final lockerHolder = locker['assignedToName']?.toString().trim().toLowerCase();
+        if (locker['status'] == 'in_use' && lockerHolder != cleanName.toLowerCase()) {
+          throw StateError('This locker is already assigned to another person.');
+        }
+        if (locker['status'] == 'available') {
+          final lockerNow = _now();
+          lockerUpdated = {...locker, 'status': 'in_use', 'assignedToName': cleanName, 'assignedPlayerId': playerId, 'updatedAt': lockerNow};
+          await txn.update('snooker_equipment_assets', lockerUpdated!, where: 'id = ?', whereArgs: [lockerAssetId]);
+          lockerMovement = {
+            'id': _uuid.v4(), 'assetId': lockerAssetId, 'inventoryItemId': null, 'movementType': 'issue',
+            'quantity': 1, 'personName': cleanName, 'fromLocation': 'club', 'toLocation': cleanName,
+            'note': 'Locker assigned with equipment', 'occurredAt': lockerNow, 'actorId': actorId,
+          };
+          await txn.insert('snooker_equipment_movements', lockerMovement!);
+        }
       }
       if (tableId != null) {
         final tables = await txn.query('snooker_tables', where: 'id = ?', whereArgs: [tableId], limit: 1);
@@ -619,6 +640,12 @@ class SnookerClubService {
     });
     await _queue('update', 'snooker_equipment_assets', assetId, updated);
     await _queue('create', 'snooker_equipment_movements', movement['id']! as String, movement);
+    if (lockerUpdated != null && lockerAssetId != null) {
+      await _queue('update', 'snooker_equipment_assets', lockerAssetId, lockerUpdated!);
+    }
+    if (lockerMovement != null) {
+      await _queue('create', 'snooker_equipment_movements', lockerMovement!['id']! as String, lockerMovement!);
+    }
   }
 
   Future<void> returnEquipment({required String assetId, String? note, String? actorId}) async {
