@@ -861,6 +861,7 @@ class DBService {
     await _createMobileRepairFinanceTables(db);
     await _createBusinessVerticalTables(db);
     await _createSnookerTables(db);
+    await _createSnookerEquipmentTables(db);
     await db.execute('CREATE TABLE supplier_transactions (id TEXT PRIMARY KEY, supplierId TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL, date TEXT NOT NULL, referenceId TEXT, FOREIGN KEY (supplierId) REFERENCES suppliers(id) ON DELETE CASCADE)');
     await db.execute('CREATE INDEX idx_supplier_transactions_supplier ON supplier_transactions(supplierId, date)');
     await db.execute('CREATE INDEX idx_products_name ON products(name)');
