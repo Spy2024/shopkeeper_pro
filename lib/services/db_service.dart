@@ -210,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 23,
+      version: 24,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -325,6 +325,9 @@ class DBService {
         }
         if (oldVersion < 23) {
           await _createSnookerTables(db);
+        }
+        if (oldVersion < 24) {
+          await _ensureColumn(db, 'snooker_payments', 'payerId', 'TEXT');
         }
       },
     );
@@ -713,6 +716,7 @@ class DBService {
       CREATE TABLE IF NOT EXISTS snooker_payments (
         id TEXT PRIMARY KEY,
         gameId TEXT NOT NULL,
+        payerId TEXT,
         amount REAL NOT NULL CHECK(amount > 0),
         method TEXT NOT NULL CHECK(method IN ('cash','bank','card','wallet','other')),
         type TEXT NOT NULL CHECK(type IN ('payment','refund')),
