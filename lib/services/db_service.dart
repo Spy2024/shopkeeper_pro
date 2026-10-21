@@ -641,6 +641,13 @@ class DBService {
   /// game fees, refreshment sales and cash receipts cannot be double-counted.
   Future<void> _createSnookerTables(DatabaseExecutor db) async {
     await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    """);
+    await db.execute("""
       CREATE TABLE IF NOT EXISTS snooker_tables (
         id TEXT PRIMARY KEY,
         tableNumber INTEGER NOT NULL UNIQUE CHECK(tableNumber > 0),
