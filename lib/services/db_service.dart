@@ -210,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 24,
+      version: 25,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -328,6 +328,9 @@ class DBService {
         }
         if (oldVersion < 24) {
           await _ensureColumn(db, 'snooker_payments', 'payerId', 'TEXT');
+        }
+        if (oldVersion < 25) {
+          await _createSnookerEquipmentTables(db);
         }
       },
     );
@@ -638,6 +641,65 @@ class DBService {
     await db.execute('CREATE TABLE IF NOT EXISTS construction_projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, clientName TEXT, location TEXT, budget REAL NOT NULL DEFAULT 0, spent REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT \'planned\', startDate TEXT, dueDate TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS construction_tasks (id TEXT PRIMARY KEY, projectId TEXT NOT NULL, title TEXT NOT NULL, assignedTo TEXT, status TEXT NOT NULL DEFAULT \'todo\', cost REAL NOT NULL DEFAULT 0, dueDate TEXT)');
     await db.execute('CREATE TABLE IF NOT EXISTS public_service_cases (id TEXT PRIMARY KEY, caseNumber TEXT NOT NULL, applicantName TEXT NOT NULL, serviceType TEXT NOT NULL, openedAt TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'open\', fee REAL NOT NULL DEFAULT 0, notes TEXT)');
+  }
+
+  Future<void> _createSnookerEquipmentTables(DatabaseExecutor db) async {
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_inventory_items (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL CHECK(category IN ('chalk','tip','glove','other')),
+        unit TEXT NOT NULL DEFAULT 'piece',
+        quantity REAL NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+        minimumQuantity REAL NOT NULL DEFAULT 0 CHECK(minimumQuantity >= 0),
+        updatedAt TEXT NOT NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_inventory_category ON snooker_inventory_items(category)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_equipment_assets (
+        id TEXT PRIMARY KEY,
+        assetType TEXT NOT NULL CHECK(assetType IN ('cue','ball_set','locker')),
+        assetNumber TEXT NOT NULL,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'available'
+          CHECK(status IN ('available','in_use','repair','missing','retired')),
+        assignedToName TEXT,
+        assignedPlayerId TEXT,
+        lockerAssetId TEXT,
+        tableId TEXT,
+        notes TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        UNIQUE(assetType, assetNumber),
+        FOREIGN KEY (assignedPlayerId) REFERENCES snooker_players(id) ON DELETE SET NULL,
+        FOREIGN KEY (lockerAssetId) REFERENCES snooker_equipment_assets(id) ON DELETE SET NULL,
+        FOREIGN KEY (tableId) REFERENCES snooker_tables(id) ON DELETE SET NULL
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_assets_type_status ON snooker_equipment_assets(assetType, status)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_assets_assignee ON snooker_equipment_assets(assignedToName)');
+    await db.execute("""
+      CREATE TABLE IF NOT EXISTS snooker_equipment_movements (
+        id TEXT PRIMARY KEY,
+        assetId TEXT,
+        inventoryItemId TEXT,
+        movementType TEXT NOT NULL CHECK(movementType IN ('opening_stock','purchase','issue','return','consume','damage','missing','repair','repair_return','adjustment','retire')),
+        quantity REAL NOT NULL,
+        personName TEXT,
+        fromLocation TEXT,
+        toLocation TEXT,
+        note TEXT,
+        occurredAt TEXT NOT NULL,
+        actorId TEXT,
+        CHECK((assetId IS NOT NULL AND inventoryItemId IS NULL) OR
+              (assetId IS NULL AND inventoryItemId IS NOT NULL)),
+        FOREIGN KEY (assetId) REFERENCES snooker_equipment_assets(id) ON DELETE RESTRICT,
+        FOREIGN KEY (inventoryItemId) REFERENCES snooker_inventory_items(id) ON DELETE RESTRICT
+      )
+    """);
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_equipment_movements_date ON snooker_equipment_movements(occurredAt)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_snooker_equipment_movements_asset ON snooker_equipment_movements(assetId)');
   }
 
   /// Snooker club records are stored separately from ordinary POS bills so
