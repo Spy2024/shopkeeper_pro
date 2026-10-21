@@ -22,7 +22,7 @@ class SnookerReportService {
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text('SHOPKEEPER PRO', style: pw.TextStyle(color: PdfColors.white, fontSize: 10, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 4),
-            pw.Text('SNOOKER CLUB REPORT', style: pw.TextStyle(color: PdfColors.white, fontSize: 18, fontWeight: pw.FontWeight.bold)),
+            pw.Text('SNOOKER CLUB ${(report['periodLabel']?.toString() ?? 'Daily').toUpperCase()} REPORT', style: pw.TextStyle(color: PdfColors.white, fontSize: 18, fontWeight: pw.FontWeight.bold)),
           ]),
           pw.Container(width: 12, height: 36, color: gold),
         ]),
@@ -68,7 +68,8 @@ class SnookerReportService {
 
   static Future<void> shareDailyReport(Map<String, Object?> report) async {
     final bytes = await buildDailyPdf(report);
-    await Printing.sharePdf(bytes: bytes, filename: 'snooker-club-report.pdf');
+    final period = report['periodLabel']?.toString().toLowerCase() ?? 'daily';
+    await Printing.sharePdf(bytes: bytes, filename: 'snooker-club-$period-report.pdf');
   }
 
   static Future<void> printDailyReport(Map<String, Object?> report) async {
