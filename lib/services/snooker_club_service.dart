@@ -299,8 +299,10 @@ class SnookerClubService {
     if (!{'cash','bank','card','wallet','other'}.contains(method)) throw ArgumentError('Unsupported payment method.');
     final db = await DBService.instance.database;
     final id = _uuid.v4();
-    final key = idempotencyKey?.trim().isNotEmpty == true ? idempotencyKey!.trim() : 'payment:$id';
     final now = _now();
+    final key = idempotencyKey?.trim().isNotEmpty == true
+        ? idempotencyKey!.trim()
+        : 'payment:$gameId:$payerId:${amount.toStringAsFixed(2)}:$method:${now.substring(0, 16)}';
     late Map<String, Object?> payment;
     await db.transaction((txn) async {
       final games = await txn.query('snooker_games', where: 'id = ?', whereArgs: [gameId], limit: 1);
@@ -342,7 +344,9 @@ class SnookerClubService {
       if (amount > paid + 0.000001) throw StateError('Refund exceeds the net amount received.');
       payment = {
         'id': id, 'gameId': gameId, 'payerId': null, 'amount': amount, 'method': method, 'type': 'refund',
-        'reference': null, 'idempotencyKey': idempotencyKey?.trim().isNotEmpty == true ? idempotencyKey!.trim() : 'refund:$id',
+        'reference': null, 'idempotencyKey': idempotencyKey?.trim().isNotEmpty == true
+            ? idempotencyKey!.trim()
+            : 'refund:$gameId:${amount.toStringAsFixed(2)}:$method:${reason.trim().toLowerCase()}',
         'receivedAt': now, 'receivedBy': actorId, 'note': reason.trim(),
       };
       await txn.insert('snooker_payments', payment);
