@@ -773,7 +773,7 @@ class SnookerClubService {
       'refreshmentSales': refreshmentRevenue,
       'refreshmentCost': refreshmentCost,
       'snookerExpenses': expenseTotal,
-      'operatingResultBeforeOtherCosts': feeTotal + refreshmentRevenue - refreshmentCost - expenseTotal,
+      'operatingResultBeforeOtherCosts': feeTotal - (payments.first['refunded'] as num).toDouble() + refreshmentRevenue - refreshmentCost - expenseTotal,
       'playerWins': wins,
     };
   }
