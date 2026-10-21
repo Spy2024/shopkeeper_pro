@@ -415,6 +415,232 @@ class SnookerClubService {
     await _queue('update', 'snooker_cash_sessions', sessionId, updated);
   }
 
+
+  Future<List<Map<String, Object?>>> inventoryItems() async {
+    return (await DBService.instance.database).query('snooker_inventory_items', orderBy: 'category ASC, name COLLATE NOCASE ASC');
+  }
+
+  Future<List<Map<String, Object?>>> equipmentAssets({String? assetType}) async {
+    final db = await DBService.instance.database;
+    if (assetType == null) {
+      return db.rawQuery("""
+        SELECT a.*, l.assetNumber AS lockerNumber, t.name AS tableName, p.name AS assignedPlayer
+        FROM snooker_equipment_assets a
+        LEFT JOIN snooker_equipment_assets l ON l.id = a.lockerAssetId
+        LEFT JOIN snooker_tables t ON t.id = a.tableId
+        LEFT JOIN snooker_players p ON p.id = a.assignedPlayerId
+        ORDER BY a.assetType ASC, a.assetNumber COLLATE NOCASE ASC
+      """);
+    }
+    return db.rawQuery("""
+      SELECT a.*, l.assetNumber AS lockerNumber, t.name AS tableName, p.name AS assignedPlayer
+      FROM snooker_equipment_assets a
+      LEFT JOIN snooker_equipment_assets l ON l.id = a.lockerAssetId
+      LEFT JOIN snooker_tables t ON t.id = a.tableId
+      LEFT JOIN snooker_players p ON p.id = a.assignedPlayerId
+      WHERE a.assetType = ?
+      ORDER BY a.assetNumber COLLATE NOCASE ASC
+    """, [assetType]);
+  }
+
+  Future<List<Map<String, Object?>>> equipmentMovements({int limit = 100}) async {
+    return (await DBService.instance.database).rawQuery("""
+      SELECT m.*, a.assetNumber, a.name AS assetName, i.name AS inventoryName
+      FROM snooker_equipment_movements m
+      LEFT JOIN snooker_equipment_assets a ON a.id = m.assetId
+      LEFT JOIN snooker_inventory_items i ON i.id = m.inventoryItemId
+      ORDER BY m.occurredAt DESC LIMIT ?
+    """, [limit]);
+  }
+
+  Future<String> addEquipmentAsset({
+    required String assetType,
+    required String assetNumber,
+    required String name,
+    String? lockerAssetId,
+    String? tableId,
+    String? notes,
+    String? actorId,
+  }) async {
+    if (!const ['cue', 'ball_set', 'locker'].contains(assetType)) throw ArgumentError('Invalid equipment type.');
+    final number = assetNumber.trim();
+    if (number.isEmpty || name.trim().isEmpty) throw ArgumentError('Asset number and name are required.');
+    final db = await DBService.instance.database;
+    final id = _uuid.v4();
+    final now = _now();
+    final row = <String, Object?>{
+      'id': id, 'assetType': assetType, 'assetNumber': number, 'name': name.trim(),
+      'status': 'available', 'assignedToName': null, 'assignedPlayerId': null,
+      'lockerAssetId': lockerAssetId, 'tableId': tableId, 'notes': notes?.trim(),
+      'createdAt': now, 'updatedAt': now,
+    };
+    await db.transaction((txn) async {
+      if (lockerAssetId != null) {
+        final lockers = await txn.query('snooker_equipment_assets', where: "id = ? AND assetType = 'locker'", whereArgs: [lockerAssetId], limit: 1);
+        if (lockers.isEmpty) throw StateError('Selected locker does not exist.');
+      }
+      if (tableId != null) {
+        final tables = await txn.query('snooker_tables', where: 'id = ?', whereArgs: [tableId], limit: 1);
+        if (tables.isEmpty) throw StateError('Selected table does not exist.');
+      }
+      await txn.insert('snooker_equipment_assets', row);
+      await txn.insert('snooker_equipment_movements', {
+        'id': _uuid.v4(), 'assetId': id, 'inventoryItemId': null, 'movementType': 'opening_stock',
+        'quantity': 1, 'personName': null, 'fromLocation': null, 'toLocation': 'club',
+        'note': 'Asset registered', 'occurredAt': now, 'actorId': actorId,
+      });
+    });
+    await _queue('create', 'snooker_equipment_assets', id, row);
+    return id;
+  }
+
+  Future<String> addInventoryItem({
+    required String name,
+    required String category,
+    required String unit,
+    required double openingQuantity,
+    required double minimumQuantity,
+    String? actorId,
+  }) async {
+    if (!const ['chalk', 'tip', 'glove', 'other'].contains(category)) throw ArgumentError('Invalid inventory category.');
+    if (name.trim().isEmpty || unit.trim().isEmpty || !openingQuantity.isFinite || openingQuantity < 0 || !minimumQuantity.isFinite || minimumQuantity < 0) {
+      throw ArgumentError('Enter a valid item name and non-negative quantities.');
+    }
+    final db = await DBService.instance.database;
+    final id = _uuid.v4();
+    final now = _now();
+    final row = <String, Object?>{
+      'id': id, 'name': name.trim(), 'category': category, 'unit': unit.trim(),
+      'quantity': openingQuantity, 'minimumQuantity': minimumQuantity, 'updatedAt': now,
+    };
+    await db.transaction((txn) async {
+      await txn.insert('snooker_inventory_items', row);
+      await txn.insert('snooker_equipment_movements', {
+        'id': _uuid.v4(), 'assetId': null, 'inventoryItemId': id,
+        'movementType': 'opening_stock', 'quantity': openingQuantity, 'personName': null,
+        'fromLocation': null, 'toLocation': 'club', 'note': 'Opening stock',
+        'occurredAt': now, 'actorId': actorId,
+      });
+    });
+    await _queue('create', 'snooker_inventory_items', id, row);
+    return id;
+  }
+
+  Future<void> adjustInventory({
+    required String itemId,
+    required double quantityChange,
+    required String movementType,
+    String? note,
+    String? actorId,
+  }) async {
+    if (!quantityChange.isFinite || quantityChange == 0) throw ArgumentError('Quantity change cannot be zero.');
+    if (!const ['purchase', 'consume', 'damage', 'adjustment'].contains(movementType)) throw ArgumentError('Invalid stock movement.');
+    final db = await DBService.instance.database;
+    late Map<String, Object?> updated;
+    await db.transaction((txn) async {
+      final rows = await txn.query('snooker_inventory_items', where: 'id = ?', whereArgs: [itemId], limit: 1);
+      if (rows.isEmpty) throw StateError('Inventory item not found.');
+      final old = (rows.first['quantity'] as num).toDouble();
+      final next = old + quantityChange;
+      if (next < 0) throw StateError('Insufficient stock.');
+      if (movementType == 'purchase' && quantityChange < 0) throw ArgumentError('A purchase must increase stock.');
+      if (movementType == 'consume' && quantityChange > 0) throw ArgumentError('Consumption must reduce stock.');
+      updated = {...rows.first, 'quantity': next, 'updatedAt': _now()};
+      await txn.update('snooker_inventory_items', updated, where: 'id = ?', whereArgs: [itemId]);
+      await txn.insert('snooker_equipment_movements', {
+        'id': _uuid.v4(), 'assetId': null, 'inventoryItemId': itemId,
+        'movementType': movementType, 'quantity': quantityChange, 'personName': null,
+        'fromLocation': quantityChange < 0 ? 'club' : null, 'toLocation': quantityChange > 0 ? 'club' : null,
+        'note': note?.trim(), 'occurredAt': _now(), 'actorId': actorId,
+      });
+    });
+    await _queue('update', 'snooker_inventory_items', itemId, updated);
+  }
+
+  Future<void> assignEquipment({
+    required String assetId,
+    required String personName,
+    String? playerId,
+    String? lockerAssetId,
+    String? tableId,
+    String? actorId,
+  }) async {
+    final cleanName = personName.trim();
+    if (cleanName.isEmpty) throw ArgumentError('Enter the person responsible for the equipment.');
+    final db = await DBService.instance.database;
+    late Map<String, Object?> updated;
+    await db.transaction((txn) async {
+      final rows = await txn.query('snooker_equipment_assets', where: 'id = ?', whereArgs: [assetId], limit: 1);
+      if (rows.isEmpty) throw StateError('Equipment asset not found.');
+      if (rows.first['status'] == 'retired' || rows.first['status'] == 'missing' || rows.first['status'] == 'repair') {
+        throw StateError('Missing, repair or retired equipment cannot be assigned.');
+      }
+      if (rows.first['status'] == 'in_use') throw StateError('Equipment is already assigned; return it before re-issuing.');
+      if (playerId != null) {
+        final players = await txn.query('snooker_players', where: 'id = ?', whereArgs: [playerId], limit: 1);
+        if (players.isEmpty) throw StateError('Player not found.');
+      }
+      if (lockerAssetId != null) {
+        final lockers = await txn.query('snooker_equipment_assets', where: "id = ? AND assetType = 'locker' AND status != 'retired'", whereArgs: [lockerAssetId], limit: 1);
+        if (lockers.isEmpty) throw StateError('Locker not found.');
+      }
+      if (tableId != null) {
+        final tables = await txn.query('snooker_tables', where: 'id = ?', whereArgs: [tableId], limit: 1);
+        if (tables.isEmpty) throw StateError('Table not found.');
+      }
+      updated = {...rows.first, 'status': 'in_use', 'assignedToName': cleanName, 'assignedPlayerId': playerId, 'lockerAssetId': lockerAssetId, 'tableId': tableId, 'updatedAt': _now()};
+      await txn.update('snooker_equipment_assets', updated, where: 'id = ?', whereArgs: [assetId]);
+      await txn.insert('snooker_equipment_movements', {
+        'id': _uuid.v4(), 'assetId': assetId, 'inventoryItemId': null, 'movementType': 'issue',
+        'quantity': 1, 'personName': cleanName, 'fromLocation': 'club', 'toLocation': tableId ?? lockerAssetId ?? cleanName,
+        'note': null, 'occurredAt': _now(), 'actorId': actorId,
+      });
+    });
+    await _queue('update', 'snooker_equipment_assets', assetId, updated);
+  }
+
+  Future<void> returnEquipment({required String assetId, String? note, String? actorId}) async {
+    final db = await DBService.instance.database;
+    late Map<String, Object?> updated;
+    await db.transaction((txn) async {
+      final rows = await txn.query('snooker_equipment_assets', where: 'id = ?', whereArgs: [assetId], limit: 1);
+      if (rows.isEmpty) throw StateError('Equipment asset not found.');
+      if (rows.first['status'] != 'in_use') throw StateError('This equipment is not currently issued.');
+      updated = {...rows.first, 'status': 'available', 'assignedToName': null, 'assignedPlayerId': null, 'lockerAssetId': null, 'tableId': null, 'updatedAt': _now()};
+      await txn.update('snooker_equipment_assets', updated, where: 'id = ?', whereArgs: [assetId]);
+      await txn.insert('snooker_equipment_movements', {
+        'id': _uuid.v4(), 'assetId': assetId, 'inventoryItemId': null, 'movementType': 'return',
+        'quantity': 1, 'personName': rows.first['assignedToName'], 'fromLocation': rows.first['assignedToName'],
+        'toLocation': 'club', 'note': note?.trim(), 'occurredAt': _now(), 'actorId': actorId,
+      });
+    });
+    await _queue('update', 'snooker_equipment_assets', assetId, updated);
+  }
+
+  Future<void> setEquipmentStatus({
+    required String assetId,
+    required String status,
+    String? note,
+    String? actorId,
+  }) async {
+    if (!const ['available', 'repair', 'missing', 'retired'].contains(status)) throw ArgumentError('Invalid equipment status.');
+    final db = await DBService.instance.database;
+    late Map<String, Object?> updated;
+    await db.transaction((txn) async {
+      final rows = await txn.query('snooker_equipment_assets', where: 'id = ?', whereArgs: [assetId], limit: 1);
+      if (rows.isEmpty) throw StateError('Equipment asset not found.');
+      if (rows.first['status'] == 'in_use' && status == 'available') throw StateError('Use Return to register an issued item coming back.');
+      updated = {...rows.first, 'status': status, 'assignedToName': status == 'available' ? null : rows.first['assignedToName'], 'assignedPlayerId': status == 'available' ? null : rows.first['assignedPlayerId'], 'updatedAt': _now()};
+      await txn.update('snooker_equipment_assets', updated, where: 'id = ?', whereArgs: [assetId]);
+      await txn.insert('snooker_equipment_movements', {
+        'id': _uuid.v4(), 'assetId': assetId, 'inventoryItemId': null, 'movementType': status == 'repair' ? 'repair' : status == 'missing' ? 'missing' : status == 'retired' ? 'retire' : 'repair_return',
+        'quantity': 1, 'personName': rows.first['assignedToName'], 'fromLocation': rows.first['status'],
+        'toLocation': status, 'note': note?.trim(), 'occurredAt': _now(), 'actorId': actorId,
+      });
+    });
+    await _queue('update', 'snooker_equipment_assets', assetId, updated);
+  }
+
   Future<List<Map<String, Object?>>> games({String? status}) async {
     final db = await DBService.instance.database;
     final where = status == null ? '' : 'WHERE g.status = ?';
