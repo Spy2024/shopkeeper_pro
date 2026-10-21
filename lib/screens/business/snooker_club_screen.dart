@@ -559,9 +559,9 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
             crossAxisSpacing: 8,
             mainAxisSpacing: 8,
             children: [
-              _equipmentMetric('Cues', '${cues.length}', '${countStatus(cues, 'available')} available'),
-              _equipmentMetric('Ball sets', '${balls.length}', '${countStatus(balls, 'available')} available'),
-              _equipmentMetric('Lockers', '${lockers.length}', '${countStatus(lockers, 'available')} available'),
+              _equipmentMetric('Cues', '${cues.length}', '${countStatus(cues, 'available')} available • ${countStatus(cues, 'in_use')} issued'),
+              _equipmentMetric('Ball sets', '${balls.length}', '${countStatus(balls, 'available')} available • ${countStatus(balls, 'in_use')} assigned'),
+              _equipmentMetric('Lockers', '${lockers.length}', '${countStatus(lockers, 'available')} available • ${countStatus(lockers, 'in_use')} assigned'),
               _equipmentMetric('Low stock', '${lowStock.length}', 'items at/below minimum'),
             ],
           ),
