@@ -69,14 +69,14 @@ void main() {
     final db = await DBService.instance.database;
     final game = (await db.query('snooker_games', where: 'id = ?', whereArgs: [gameId])).single;
     await service.completeGame(gameId: gameId, winnerId: game['playerBId']! as String);
-    await service.recordPayment(gameId: gameId, amount: 100, method: 'cash', reference: 'receipt-001');
+    await service.recordPayment(gameId: gameId, amount: 100, method: 'cash', payerId: game['playerAId']! as String, reference: 'receipt-001');
     await expectLater(
-      service.recordPayment(gameId: gameId, amount: 100, method: 'cash', reference: 'receipt-001'),
+      service.recordPayment(gameId: gameId, amount: 100, method: 'cash', payerId: game['playerAId']! as String, reference: 'receipt-001'),
       throwsA(anything),
     );
-    await service.recordPayment(gameId: gameId, amount: 200, method: 'bank');
+    await service.recordPayment(gameId: gameId, amount: 200, method: 'bank', payerId: game['playerAId']! as String);
     await expectLater(
-      service.recordPayment(gameId: gameId, amount: 1, method: 'cash'),
+      service.recordPayment(gameId: gameId, amount: 1, method: 'cash', payerId: game['playerAId']! as String),
       throwsStateError,
     );
     await service.refundPayment(gameId: gameId, amount: 50, method: 'cash', reason: 'Approved correction');
@@ -121,7 +121,7 @@ void main() {
     final game = (await db.query('snooker_games', where: 'id = ?', whereArgs: [gameId])).single;
     await service.completeGame(gameId: gameId, winnerId: game['playerAId']! as String);
     final sessionId = await service.openCashSession(openingCash: 1000);
-    await service.recordPayment(gameId: gameId, amount: 200, method: 'cash');
+    await service.recordPayment(gameId: gameId, amount: 200, method: 'cash', payerId: game['playerBId']! as String);
     await service.addExpense(category: 'Cleaning', amount: 50, paymentMethod: 'cash');
     await service.closeCashSession(sessionId: sessionId, actualClosingCash: 1150);
     final session = (await service.cashSessions()).first;
