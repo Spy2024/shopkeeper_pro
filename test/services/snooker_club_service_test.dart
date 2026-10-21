@@ -144,6 +144,7 @@ void main() {
     final game = (await db.query('snooker_games', where: 'id = ?', whereArgs: [gameId])).single;
     await service.completeGame(gameId: gameId, winnerId: game['playerAId']! as String);
     final sessionId = await service.openCashSession(openingCash: 1000);
+    await expectLater(service.openCashSession(openingCash: 100), throwsStateError);
     await service.recordPayment(gameId: gameId, amount: 200, method: 'cash', payerId: game['playerBId']! as String);
     await service.addExpense(category: 'Cleaning', amount: 50, paymentMethod: 'cash');
     final now = DateTime.now().toIso8601String();
@@ -162,7 +163,8 @@ void main() {
     expect(session['expectedClosingCash'], 1230);
     expect(session['actualClosingCash'], 1230);
     expect(session['difference'], 0);
-    await expectLater(service.openCashSession(openingCash: 100), throwsA(anything));
+    final nextSessionId = await service.openCashSession(openingCash: 100);
+    expect(nextSessionId, isNotEmpty);
   });
 
   test('equipment register tracks cues, ball sets, lockers, assignment and returns', () async {
