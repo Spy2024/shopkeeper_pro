@@ -738,7 +738,7 @@ class SnookerClubService {
     final sales = await db.rawQuery('''
       SELECT COALESCE(SUM(salePrice * quantity),0) AS revenue,
         COALESCE(SUM(costPrice * quantity),0) AS cost
-      FROM daily_sales WHERE source='pos' AND date >= ? AND date <= ?
+      FROM daily_sales WHERE source IN ('pos','return') AND date >= ? AND date <= ?
     ''', [start, end]);
     final expenses = await db.rawQuery('SELECT COALESCE(SUM(amount),0) AS total FROM snooker_expenses WHERE occurredAt >= ? AND occurredAt <= ?', [start, end]);
     final wins = await db.rawQuery('''
