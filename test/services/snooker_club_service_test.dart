@@ -123,10 +123,21 @@ void main() {
     final sessionId = await service.openCashSession(openingCash: 1000);
     await service.recordPayment(gameId: gameId, amount: 200, method: 'cash', payerId: game['playerBId']! as String);
     await service.addExpense(category: 'Cleaning', amount: 50, paymentMethod: 'cash');
-    await service.closeCashSession(sessionId: sessionId, actualClosingCash: 1150);
+    final now = DateTime.now().toIso8601String();
+    await db.insert('bills', {'id': 'snooker-pos-cash-bill', 'date': now});
+    await db.insert('payment_allocations', {
+      'id': 'snooker-pos-cash-payment', 'billId': 'snooker-pos-cash-bill',
+      'method': 'cash', 'amount': 100, 'createdAt': now,
+    });
+    await db.insert('bill_returns', {
+      'id': 'snooker-pos-cash-refund', 'billId': 'snooker-pos-cash-bill',
+      'productId': 'test-product', 'productName': 'Test drink', 'quantity': 1,
+      'refundAmount': 20, 'refundMethod': 'cash', 'date': now, 'reason': 'Test refund',
+    });
+    await service.closeCashSession(sessionId: sessionId, actualClosingCash: 1230);
     final session = (await service.cashSessions()).first;
-    expect(session['expectedClosingCash'], 1150);
-    expect(session['actualClosingCash'], 1150);
+    expect(session['expectedClosingCash'], 1230);
+    expect(session['actualClosingCash'], 1230);
     expect(session['difference'], 0);
     await expectLater(service.openCashSession(openingCash: 100), throwsA(anything));
   });
@@ -160,6 +171,16 @@ void main() {
     );
     items = await service.inventoryItems();
     expect(items.single['quantity'], 22);
+  });
+
+  test('monthly report uses the full current month and labels its period', () async {
+    final now = DateTime.now();
+    final report = await service.dailyReport(
+      from: DateTime(now.year, now.month, 1),
+      to: DateTime(now.year, now.month + 1, 0),
+    );
+    expect(report['periodLabel'], 'Monthly');
+    expect((report['from'] as String).substring(0, 7), now.toIso8601String().substring(0, 7));
   });
 
   test('game fee default is persisted across service reloads', () async {
