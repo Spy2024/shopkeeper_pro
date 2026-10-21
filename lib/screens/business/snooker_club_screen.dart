@@ -206,7 +206,9 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
       _message('This game has no outstanding fee.');
       return;
     }
-    final values = await _form('Collect game fee', ['Amount (Rs.)', 'Payment method (cash/bank/card/wallet/other)', 'Reference (enter NONE if unavailable)'], initial: {
+    final loserId = game['winnerId'] == game['playerAId'] ? game['playerBId']! as String : game['playerAId']! as String;
+    final loserName = game['winnerId'] == game['playerAId'] ? game['playerBName'] : game['playerAName'];
+    final values = await _form('Collect game fee from $loserName', ['Amount (Rs.)', 'Payment method (cash/bank/card/wallet/other)', 'Reference (enter NONE if unavailable)'], initial: {
       'Amount (Rs.)': remaining.toStringAsFixed(2),
       'Payment method (cash/bank/card/wallet/other)': 'cash',
       'Reference (enter NONE if unavailable)': 'NONE',
@@ -218,6 +220,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
         gameId: game['id']! as String,
         amount: double.parse(values['Amount (Rs.)']!),
         method: values['Payment method (cash/bank/card/wallet/other)']!,
+        payerId: loserId,
         reference: reference,
         idempotencyKey: reference == null ? null : 'payment:${values['Payment method (cash/bank/card/wallet/other)']}:$reference',
         actorId: _actor,
@@ -374,6 +377,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
                 const SizedBox(height: 8),
                 Text('${game['playerAName']}  vs  ${game['playerBName']}'),
                 if (game['winnerId'] != null) Text('Winner: ${game['winnerId'] == game['playerAId'] ? game['playerAName'] : game['playerBName']}'),
+                if (game['winnerId'] != null) Text('Fee payer (loser): ${game['winnerId'] == game['playerAId'] ? game['playerBName'] : game['playerAName']}'),
                 Text('Paid: ${_money(game['netPaid'])} • Due: ${_money((((game['finalAmount'] as num?)?.toDouble() ?? 0) - ((game['netPaid'] as num?)?.toDouble() ?? 0)).clamp(0, double.infinity))}'),
                 const SizedBox(height: 8),
                 Wrap(spacing: 8, children: [
@@ -410,7 +414,7 @@ class _SnookerClubScreenState extends State<SnookerClubScreen> {
             child: ListTile(
               leading: Icon(payment['type'] == 'refund' ? Icons.undo : Icons.payments_outlined, color: payment['type'] == 'refund' ? Colors.red : Colors.teal),
               title: Text('${payment['type']} • ${_money(payment['amount'])}'),
-              subtitle: Text('Game ${payment['gameId']} • ${payment['method']} • ${payment['receivedAt']}'),
+              subtitle: Text('${payment['payerName'] == null ? 'Club' : 'Paid by ${payment['payerName']}'} • Game ${payment['gameId']} • ${payment['method']} • ${payment['receivedAt']}'),
               trailing: payment['type'] == 'payment' ? IconButton(tooltip: 'Refund', onPressed: () => _refund(payment), icon: const Icon(Icons.reply)) : null,
             ),
           ),
