@@ -304,6 +304,9 @@ class SyncService {
         'snooker_expenses': 'snooker_expenses',
         'snooker_cash_sessions': 'snooker_cash_sessions',
         'snooker_game_events': 'snooker_game_events',
+        'snooker_inventory_items': 'snooker_inventory_items',
+        'snooker_equipment_assets': 'snooker_equipment_assets',
+        'snooker_equipment_movements': 'snooker_equipment_movements',
       };
       for (final entry in tablesByCollection.entries) {
         final localRows = entry.key == 'branch_stock'
