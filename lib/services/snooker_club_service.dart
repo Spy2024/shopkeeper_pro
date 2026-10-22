@@ -154,7 +154,10 @@ class SnookerClubService {
     String? actorId,
   }) async {
     if (playerA.trim().isEmpty || playerB.trim().isEmpty) throw ArgumentError('Both player names are required.');
-    if (playerA.trim().toLowerCase() == playerB.trim().toLowerCase()) throw ArgumentError('Players must be different.');
+    String normalizePlayerName(String value) => value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalizePlayerName(playerA) == normalizePlayerName(playerB)) {
+      throw ArgumentError('Players must be different.');
+    }
     if (!feeAmount.isFinite || feeAmount < 0 || !discountAmount.isFinite || discountAmount < 0 || discountAmount > feeAmount) {
       throw ArgumentError('Invalid game fee or discount.');
     }
