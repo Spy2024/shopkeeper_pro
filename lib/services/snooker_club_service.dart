@@ -41,7 +41,9 @@ class SnookerClubService {
         final number = (row['tableNumber'] as num?)?.toInt() ?? 0;
         return number > max ? number : max;
       }) + 1;
-      while (next <= minimumTables) {
+      // Ensure a minimum count, even if legacy table numbers have gaps or
+      // existing custom table numbers are greater than the default minimum.
+      while (rows.length + created.length < minimumTables) {
         final now = _now();
         final row = <String, Object?>{
           'id': _uuid.v4(),
