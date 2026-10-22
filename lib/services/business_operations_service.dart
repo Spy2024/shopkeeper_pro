@@ -183,8 +183,17 @@ class BusinessOperationsService {
         if (soldDevice.isEmpty) {
           throw StateError('IMEI ${item.imei} was not sold on this bill or has already been returned.');
         }
-        final soldItem = await txn.query('bill_items',
-            where: 'billId = ? AND mobileImei = ?', whereArgs: [billId, item.imei], limit: 1);
+        final soldProductId = soldDevice.first['productId'] as String?;
+        final soldItem = await txn.query(
+          'bill_items',
+          where: soldProductId == null
+              ? 'billId = ? AND mobileImei = ?'
+              : 'billId = ? AND (mobileImei = ? OR productId = ?)',
+          whereArgs: soldProductId == null
+              ? [billId, item.imei]
+              : [billId, item.imei, soldProductId],
+          limit: 1,
+        );
         if (soldItem.isEmpty) throw StateError('IMEI ${item.imei} is not part of this bill.');
       }
       final requestedReturns = <String, int>{};
