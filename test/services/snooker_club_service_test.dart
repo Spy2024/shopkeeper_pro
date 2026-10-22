@@ -49,6 +49,25 @@ void main() {
     expect(await service.games(), isEmpty);
   });
 
+  test('minimum table count is restored even when existing table numbers have gaps', () async {
+    final db = await DBService.instance.database;
+    await db.delete('snooker_tables');
+    for (final number in [1, 3, 9]) {
+      await db.insert('snooker_tables', {
+        'id': 'legacy-table-$number',
+        'tableNumber': number,
+        'name': 'Legacy $number',
+        'status': 'available',
+        'activeGameId': null,
+        'createdAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+    }
+    final tables = await service.tables();
+    expect(tables, hasLength(9));
+    expect(tables.map((row) => row['tableNumber']).toSet(), containsAll([1, 3, 9, 10, 11, 12, 13, 14, 15]));
+  });
+
   test('one table cannot have duplicate active games and completion records winner', () async {
     final table = (await service.tables()).first;
     final gameId = await service.startGame(
