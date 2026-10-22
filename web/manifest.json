@@ -1,0 +1,9 @@
+{
+  "name": "Shopkeeper Pro",
+  "short_name": "Shopkeeper Pro",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0B3D91",
+  "description": "Shopkeeper Pro business management dashboard"
+}
