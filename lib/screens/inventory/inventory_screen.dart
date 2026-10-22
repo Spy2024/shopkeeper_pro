@@ -825,7 +825,8 @@ List<String> _inventoryFieldsForBusiness(String businessType) {
   if (type.contains('cloth') || type.contains('garment') || type.contains('fashion')) return ['Brand', 'Size', 'Colour', 'Fabric / Material', 'Design / SKU'];
   if (type.contains('carpet')) return ['Material', 'Length', 'Width', 'Colour / Design', 'Unit'];
   if (type.contains('furniture')) return ['Material', 'Dimensions', 'Colour / Finish', 'Model / SKU', 'Warranty'];
-  if (type.contains('spare') || type.contains('auto') || type.contains('vehicle')) return ['Part Number', 'Compatible Make / Model', 'Year Range', 'Brand', 'Condition'];
+  if (type.contains('showroom') || type.contains('vehicle_dealer') || type.contains('car_dealer')) return ['Make', 'Model', 'Year', 'Registration / VIN', 'Mileage', 'Fuel / Transmission', 'Condition'];
+  if (type.contains('spare') || type.contains('auto_parts') || type.contains('vehicle_parts')) return ['Part Number', 'Compatible Make / Model', 'Year Range', 'Brand', 'Condition'];
   if (type.contains('cosmetic') || type.contains('pharmacy') || type.contains('medical')) return ['Brand', 'Unit / Pack Size', 'Batch Number', 'Manufacturer', 'Expiry / Best Before'];
   if (type.contains('transport') || type.contains('cargo')) return ['Item / Service Type', 'Unit', 'Route / Compatibility', 'Reference Code'];
   if (type.contains('agriculture')) return ['Brand', 'Unit / Pack Size', 'Batch Number', 'Expiry / Season'];
