@@ -7,6 +7,7 @@ import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/sales_provider.dart';
+import '../../utils/theme.dart';
 
 class FinancialDashboardScreen extends StatefulWidget {
   const FinancialDashboardScreen({super.key});
@@ -129,12 +130,12 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Card(
-            color: netProfit >= 0 ? Colors.green.shade50 : Colors.red.shade50,
+            color: netProfit >= 0 ? AppTheme.teal.withValues(alpha: 0.12) : Colors.red.shade50,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Text(DateFormat('MMMM yyyy').format(now), style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text(DateFormat('MMMM yyyy').format(now), style: const TextStyle(fontSize: 14, color: AppTheme.muted)),
                   const SizedBox(height: 4),
                   const Text('Clear Net Profit', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
@@ -143,7 +144,7 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
                     style: TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.bold,
-                      color: netProfit >= 0 ? Colors.green.shade800 : Colors.red.shade800,
+                      color: netProfit >= 0 ? AppTheme.ink : Colors.red.shade800,
                     ),
                   ),
                 ],
@@ -153,11 +154,11 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: _statCard('Revenue', _currency.format(revenue), Colors.blue)),
+              Expanded(child: _statCard('Revenue', _currency.format(revenue), AppTheme.ink)),
               const SizedBox(width: 10),
-              Expanded(child: _statCard('COGS', _currency.format(cogs), Colors.orange)),
+              Expanded(child: _statCard('COGS', _currency.format(cogs), AppTheme.gold)),
               const SizedBox(width: 10),
-              Expanded(child: _statCard('Expenses', _currency.format(expensesTotal), Colors.purple)),
+              Expanded(child: _statCard('Expenses', _currency.format(expensesTotal), AppTheme.teal)),
             ],
           ),
           const SizedBox(height: 20),
@@ -167,10 +168,10 @@ class _FinancialDashboardScreenState extends State<FinancialDashboardScreen> {
               child: PieChart(
                 PieChartData(
                   sections: [
-                    PieChartSectionData(value: cogs, color: Colors.orange, title: 'COGS'),
-                    PieChartSectionData(value: expensesTotal, color: Colors.purple, title: 'Expenses'),
+                    PieChartSectionData(value: cogs, color: AppTheme.gold, title: 'COGS'),
+                    PieChartSectionData(value: expensesTotal, color: AppTheme.teal, title: 'Expenses'),
                     PieChartSectionData(
-                        value: netProfit > 0 ? netProfit : 0, color: Colors.green, title: 'Profit'),
+                        value: netProfit > 0 ? netProfit : 0, color: AppTheme.ink, title: 'Profit'),
                   ],
                   sectionsSpace: 2,
                   centerSpaceRadius: 30,

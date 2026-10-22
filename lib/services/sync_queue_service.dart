@@ -7,6 +7,16 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
 
+/// Exponential retry delays, capped to roughly four minutes.
+/// Kept pure so the policy can be tested without a live Firebase connection.
+Duration syncRetryDelayForAttempt(int attempt) {
+  if (attempt < 1) {
+    throw ArgumentError.value(attempt, 'attempt', 'Must be at least 1.');
+  }
+  final exponent = (attempt - 1).clamp(0, 8).toInt();
+  return Duration(seconds: 1 << exponent);
+}
+
 class SyncQueueService {
   SyncQueueService._internal();
   static final SyncQueueService instance = SyncQueueService._internal();
@@ -15,6 +25,7 @@ class SyncQueueService {
   FirebaseFirestore get _dbFirestore => _firestore ??= FirebaseFirestore.instance;
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
+  int _consecutiveFailures = 0;
   String? _loadedQueueUserId;
   Timer? _scheduledSync;
   static const queueTableName = 'sync_queue';
@@ -120,7 +131,15 @@ class SyncQueueService {
         (expectedUserId != null && activeUserId != expectedUserId)) {
       _pendingQueue.clear();
       _loadedQueueUserId = null;
+      _scheduledSync?.cancel();
+      _scheduledSync = null;
+      _consecutiveFailures = 0;
       return;
+    }
+    if (_loadedQueueUserId != activeUserId) {
+      _scheduledSync?.cancel();
+      _scheduledSync = null;
+      _consecutiveFailures = 0;
     }
     final db = await DBService.instance.database;
     if (DBService.instance.activeUserId != activeUserId) {
@@ -180,6 +199,7 @@ class SyncQueueService {
     // Another caller may have finished loading the queue while this caller
     // was awaiting it; only one sync loop may acknowledge pending operations.
     _isSyncing = true;
+    var hadFailure = false;
     try {
       final db = await DBService.instance.database;
       if (FirebaseAuth.instance.currentUser?.uid != userId ||
@@ -216,12 +236,42 @@ class SyncQueueService {
           );
           _pendingQueue.remove(op);
         } catch (e) {
+          hadFailure = true;
           debugPrint('[SyncQueue] failed ${op.id}: $e');
         }
+      }
+
+      if (hadFailure && _pendingQueue.isNotEmpty) {
+        _scheduleRetry(userId);
+      } else if (_pendingQueue.isEmpty) {
+        _consecutiveFailures = 0;
+        _scheduledSync?.cancel();
+        _scheduledSync = null;
       }
     } finally {
       _isSyncing = false;
     }
+  }
+
+  void _scheduleRetry(String userId) {
+    if (FirebaseAuth.instance.currentUser?.uid != userId ||
+        DBService.instance.activeUserId != userId ||
+        _loadedQueueUserId != userId ||
+        _pendingQueue.isEmpty) {
+      return;
+    }
+
+    _consecutiveFailures++;
+    final delay = syncRetryDelayForAttempt(_consecutiveFailures);
+    _scheduledSync?.cancel();
+    debugPrint('[SyncQueue] retry scheduled in ${delay.inSeconds}s for ${_pendingQueue.length} pending operation(s).');
+    _scheduledSync = Timer(delay, () {
+      if (FirebaseAuth.instance.currentUser?.uid != userId ||
+          DBService.instance.activeUserId != userId) {
+        return;
+      }
+      unawaited(syncPendingOperations(userId));
+    });
   }
 
   int get pendingCount => _pendingQueue.length;

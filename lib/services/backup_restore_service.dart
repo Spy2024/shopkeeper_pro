@@ -137,6 +137,35 @@ class BackupRestoreService {
     'supplier_transactions',
     'daily_sales',
     'expenses',
+    'payments',
+    'returns',
+    'return_items',
+    'branch_cash_entries',
+    'product_variants',
+    'restaurant_tables',
+    'restaurant_orders',
+    'restaurant_order_payments',
+    'restaurant_menu_items',
+    'restaurant_order_items',
+    'vehicle_records',
+    'vehicle_transactions',
+    'transport_routes',
+    'transport_tickets',
+    'cargo_jobs',
+    'cargo_status_history',
+    'service_jobs',
+    'spare_part_compatibility',
+    'school_students',
+    'school_fees',
+    'clinic_patients',
+    'clinic_appointments',
+    'salon_services',
+    'salon_bookings',
+    'farm_plots',
+    'farm_activities',
+    'construction_projects',
+    'construction_tasks',
+    'public_service_cases',
   ];
 
   void _ensureOwnerStillActive(String userId) {
@@ -306,7 +335,36 @@ class BackupRestoreService {
                   table == 'mobile_repair_job_parts' ||
                   table == 'mobile_repair_payments' ||
                   table == 'mobile_repair_warranties' ||
-                  table == 'mobile_repair_warranty_claims')
+                  table == 'mobile_repair_warranty_claims' ||
+                  table == 'payments' ||
+                  table == 'returns' ||
+                  table == 'return_items' ||
+                  table == 'branch_cash_entries' ||
+                  table == 'product_variants' ||
+                  table == 'restaurant_tables' ||
+                  table == 'restaurant_orders' ||
+                  table == 'restaurant_order_payments' ||
+                  table == 'restaurant_menu_items' ||
+                  table == 'restaurant_order_items' ||
+                  table == 'vehicle_records' ||
+                  table == 'vehicle_transactions' ||
+                  table == 'transport_routes' ||
+                  table == 'transport_tickets' ||
+                  table == 'cargo_jobs' ||
+                  table == 'cargo_status_history' ||
+                  table == 'service_jobs' ||
+                  table == 'spare_part_compatibility' ||
+                  table == 'school_students' ||
+                  table == 'school_fees' ||
+                  table == 'clinic_patients' ||
+                  table == 'clinic_appointments' ||
+                  table == 'salon_services' ||
+                  table == 'salon_bookings' ||
+                  table == 'farm_plots' ||
+                  table == 'farm_activities' ||
+                  table == 'construction_projects' ||
+                  table == 'construction_tasks' ||
+                  table == 'public_service_cases')
               ? <dynamic>[]
               : null);
       if (rows is! List) throw FormatException('Backup is missing table: $table');
@@ -346,6 +404,35 @@ class BackupRestoreService {
         'branches',
         'shop',
         'sync_queue',
+        'public_service_cases',
+        'construction_tasks',
+        'construction_projects',
+        'farm_activities',
+        'farm_plots',
+        'salon_bookings',
+        'salon_services',
+        'clinic_appointments',
+        'clinic_patients',
+        'school_fees',
+        'school_students',
+        'spare_part_compatibility',
+        'service_jobs',
+        'cargo_status_history',
+        'cargo_jobs',
+        'transport_tickets',
+        'transport_routes',
+        'vehicle_transactions',
+        'vehicle_records',
+        'restaurant_order_items',
+        'restaurant_menu_items',
+        'restaurant_order_payments',
+        'restaurant_orders',
+        'restaurant_tables',
+        'product_variants',
+        'branch_cash_entries',
+        'return_items',
+        'returns',
+        'payments',
       ]) {
         _ensureOwnerStillActive(userId);
         await txn.delete(table);

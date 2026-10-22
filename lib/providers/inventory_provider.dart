@@ -82,7 +82,33 @@ class InventoryProvider extends ChangeNotifier {
       stockQuantity: stockQuantity, costPrice: costPrice, sellingPrice: sellingPrice,
       lowStockThreshold: lowStockThreshold, barcode: cleanBarcode, expiryDate: expiryDate);
     final db = await DBService.instance.database;
-    await db.insert('products', product.toMap());
+    String? autoAllocatedBranchId;
+    final allocationTime = DateTime.now().toIso8601String();
+
+    // In a single-active-branch shop, initial stock is available to that branch
+    // immediately. In multi-branch shops, do not guess the owner's allocation;
+    // require an explicit allocation in the Branch Stock screen.
+    await db.transaction((txn) async {
+      await txn.insert('products', product.toMap());
+      final activeBranches = await txn.query(
+        'branches',
+        columns: ['id'],
+        where: 'isActive = ?',
+        whereArgs: [1],
+        orderBy: 'isMain DESC, name COLLATE NOCASE',
+      );
+      if (activeBranches.length == 1) {
+        final branchId = activeBranches.single['id'] as String;
+        await txn.insert('branch_stock', {
+          'branchId': branchId,
+          'productId': product.id,
+          'quantity': stockQuantity,
+          'updatedAt': allocationTime,
+        });
+        autoAllocatedBranchId = branchId;
+      }
+    });
+
     try {
       await SyncQueueService.instance.queueOperation(
         operation: 'create',
@@ -95,6 +121,29 @@ class InventoryProvider extends ChangeNotifier {
       // this product from SQLite even if the queue insert temporarily fails.
       debugPrint('[InventoryProvider] Product saved locally; queue insert failed: $e');
     }
+
+    final branchId = autoAllocatedBranchId;
+    if (branchId != null) {
+      final cloudId = '$branchId::${product.id}';
+      try {
+        await SyncQueueService.instance.queueOperation(
+          operation: 'create',
+          tableName: 'branch_stock',
+          documentId: cloudId,
+          data: {
+            'cloudId': cloudId,
+            'branchId': branchId,
+            'productId': product.id,
+            'quantity': stockQuantity,
+            'updatedAt': allocationTime,
+          },
+        );
+      } catch (e) {
+        // Local allocation is already committed; a full sync reconciles the row.
+        debugPrint('[InventoryProvider] Initial branch allocation saved locally; queue insert failed: $e');
+      }
+    }
+
     _products.add(product);
     notifyListeners();
   }

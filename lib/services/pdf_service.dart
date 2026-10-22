@@ -9,6 +9,13 @@ import '../models/supplier.dart';
 import '../models/daily_sale.dart';
 
 class PdfService {
+  /// Optional directory override for deterministic unit tests. Production uses
+  /// the platform documents directory when no override is configured.
+  static Future<Directory> Function()? documentsDirectoryProviderForTesting;
+
+  static Future<Directory> _documentsDirectory() async =>
+      await (documentsDirectoryProviderForTesting?.call() ?? getApplicationDocumentsDirectory());
+
   static final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
   static final _dateFmt = DateFormat('dd MMM yyyy, hh:mm a');
 
@@ -17,9 +24,9 @@ class PdfService {
   /// branded A4 document does not reduce printer compatibility.
   static Future<File> generateInvoice(Bill bill, Shop? shop) async {
     final doc = pw.Document();
-    const navy = PdfColor.fromInt(0xFF142B4A);
-    const teal = PdfColor.fromInt(0xFF0F9D91);
-    const gold = PdfColor.fromInt(0xFFF2B84B);
+    const navy = PdfColor.fromInt(0xFF0B3D91);
+    const teal = PdfColor.fromInt(0xFF14B8A6);
+    const gold = PdfColor.fromInt(0xFFFFBF24);
     const pale = PdfColor.fromInt(0xFFF2F6FA);
     const border = PdfColor.fromInt(0xFFE2E8F0);
 
@@ -310,7 +317,7 @@ class PdfService {
       ),
     );
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _documentsDirectory();
     final file = File('${dir.path}/invoice_${bill.id}.pdf');
     await file.writeAsBytes(await doc.save());
     return file;
@@ -390,6 +397,11 @@ class PdfService {
     final expenseTotal = reportExpenses.fold<double>(0, (sum, expense) => sum + expense.amount);
     final grossProfit = revenue - cogs;
     final netProfit = grossProfit - expenseTotal;
+    const navy = PdfColor.fromInt(0xFF0B3D91);
+    const teal = PdfColor.fromInt(0xFF14B8A6);
+    const gold = PdfColor.fromInt(0xFFFFBF24);
+    const pale = PdfColor.fromInt(0xFFF2F6FA);
+    const border = PdfColor.fromInt(0xFFE2E8F0);
     final doc = pw.Document();
 
     doc.addPage(
@@ -397,13 +409,48 @@ class PdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          pw.Text(shop?.name.trim().isNotEmpty == true ? shop!.name : 'Shopkeeper Pro',
-              style: const pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
-          if (shop?.address.trim().isNotEmpty == true) pw.Text(shop!.address),
-          if (shop?.phone.trim().isNotEmpty == true) pw.Text('Phone: ${shop!.phone}'),
-          pw.SizedBox(height: 12),
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(18),
+            decoration: const pw.BoxDecoration(
+              color: navy,
+              borderRadius: pw.BorderRadius.all(pw.Radius.circular(12)),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  shop?.name.trim().isNotEmpty == true ? shop!.name : 'Shopkeeper Pro',
+                  style: const pw.TextStyle(
+                    fontSize: 22,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.white,
+                  ),
+                ),
+                if (shop?.address.trim().isNotEmpty == true)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 5),
+                    child: pw.Text(shop!.address,
+                      style: const pw.TextStyle(color: PdfColors.white, fontSize: 9)),
+                  ),
+                if (shop?.phone.trim().isNotEmpty == true)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 3),
+                    child: pw.Text('Phone: ${shop!.phone}',
+                      style: const pw.TextStyle(color: PdfColors.white, fontSize: 9)),
+                  ),
+                if (shop?.email?.trim().isNotEmpty == true)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 3),
+                    child: pw.Text('Email: ${shop!.email}',
+                      style: const pw.TextStyle(color: PdfColors.white, fontSize: 9)),
+                  ),
+              ],
+            ),
+          ),
+          pw.Container(height: 4, margin: const pw.EdgeInsets.only(bottom: 16), color: gold),
           pw.Text('Financial Statement',
-              style: const pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: teal)),
           pw.Text('Period: ${DateFormat('dd MMM yyyy').format(start)} - ${DateFormat('dd MMM yyyy').format(endExclusive.subtract(const Duration(days: 1)))}'),
           pw.SizedBox(height: 16),
           pw.TableHelper.fromTextArray(
@@ -415,13 +462,25 @@ class PdfService {
               ['Operating expenses', _currency.format(expenseTotal)],
               ['Net profit / (loss)', _currency.format(netProfit)],
             ],
-            headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headerStyle: const pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.white,
+              fontSize: 9,
+            ),
+            headerDecoration: const pw.BoxDecoration(color: navy),
+            cellStyle: const pw.TextStyle(color: navy, fontSize: 9),
+            cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+            oddRowDecoration: const pw.BoxDecoration(color: pale),
+            border: const pw.TableBorder(
+              horizontalInside: pw.BorderSide(color: border, width: 0.5),
+              bottom: pw.BorderSide(color: border, width: 0.8),
+            ),
             cellAlignment: pw.Alignment.centerLeft,
             cellAlignments: {1: pw.Alignment.centerRight},
           ),
           pw.SizedBox(height: 20),
           pw.Text('Sales Detail',
-              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: teal)),
           pw.SizedBox(height: 6),
           if (reportSales.isEmpty)
             pw.Text('No sales recorded for this period.')
@@ -435,7 +494,19 @@ class PdfService {
                 _currency.format(sale.revenue),
                 _currency.format(sale.costOfGoods),
               ]).toList(),
-              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+                fontSize: 9,
+              ),
+              headerDecoration: const pw.BoxDecoration(color: navy),
+              cellStyle: const pw.TextStyle(color: navy, fontSize: 9),
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              oddRowDecoration: const pw.BoxDecoration(color: pale),
+              border: const pw.TableBorder(
+                horizontalInside: pw.BorderSide(color: border, width: 0.5),
+                bottom: pw.BorderSide(color: border, width: 0.8),
+              ),
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {
                 2: pw.Alignment.centerRight,
@@ -445,7 +516,7 @@ class PdfService {
             ),
           pw.SizedBox(height: 20),
           pw.Text('Expense Detail',
-              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              style: const pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: teal)),
           pw.SizedBox(height: 6),
           if (reportExpenses.isEmpty)
             pw.Text('No expenses recorded for this period.')
@@ -457,7 +528,19 @@ class PdfService {
                 expense.label,
                 _currency.format(expense.amount),
               ]).toList(),
-              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+                fontSize: 9,
+              ),
+              headerDecoration: const pw.BoxDecoration(color: navy),
+              cellStyle: const pw.TextStyle(color: navy, fontSize: 9),
+              cellPadding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+              oddRowDecoration: const pw.BoxDecoration(color: pale),
+              border: const pw.TableBorder(
+                horizontalInside: pw.BorderSide(color: border, width: 0.5),
+                bottom: pw.BorderSide(color: border, width: 0.8),
+              ),
               cellAlignment: pw.Alignment.centerLeft,
               cellAlignments: {2: pw.Alignment.centerRight},
             ),

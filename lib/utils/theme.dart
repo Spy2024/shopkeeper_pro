@@ -31,11 +31,11 @@ class AppTheme {
     appBarTheme: const AppBarTheme(
       centerTitle: false,
       elevation: 0,
-      backgroundColor: paper,
-      foregroundColor: ink,
+      backgroundColor: ink,
+      foregroundColor: paper,
       surfaceTintColor: Colors.transparent,
       titleTextStyle: TextStyle(
-        color: ink,
+        color: paper,
         fontSize: 21,
         fontWeight: FontWeight.w800,
         letterSpacing: -0.4,
@@ -43,8 +43,8 @@ class AppTheme {
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        foregroundColor: paper,
-        backgroundColor: ink,
+        foregroundColor: ink,
+        backgroundColor: teal,
         disabledForegroundColor: muted,
         disabledBackgroundColor: line,
         minimumSize: const Size.fromHeight(52),
@@ -52,22 +52,31 @@ class AppTheme {
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
     ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        foregroundColor: ink,
+        backgroundColor: teal,
+        minimumSize: const Size.fromHeight(48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+      ),
+    ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: teal,
-      foregroundColor: paper,
+      foregroundColor: ink,
       elevation: 3,
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: paper,
-      indicatorColor: teal.withValues(alpha: 0.14),
+      backgroundColor: ink,
+      indicatorColor: teal.withValues(alpha: 0.22),
       elevation: 8,
       labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
         fontSize: 11,
         fontWeight: states.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w500,
-        color: states.contains(WidgetState.selected) ? teal : muted,
+        color: states.contains(WidgetState.selected) ? gold : paper,
       )),
       iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
-        color: states.contains(WidgetState.selected) ? teal : muted,
+        color: states.contains(WidgetState.selected) ? teal : paper,
       )),
     ),
     textButtonTheme: TextButtonThemeData(

@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:shopkeeper_pro/services/db_service.dart';
 import 'package:shopkeeper_pro/models/bill.dart';
 import 'package:shopkeeper_pro/models/product.dart';
 import 'package:shopkeeper_pro/models/mobile_device.dart';
@@ -329,6 +331,73 @@ void main() {
       );
 
       expect(resolveProductForReturn(catalogueItem, products)?.id, 'tea-new');
+    });
+  });
+
+
+  group('Bill History SQLite restart round-trip', () {
+    const testUserId = 'bill-history-restart-test-user';
+    late PosProvider historyProvider;
+
+    setUpAll(() async {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      await databaseFactoryFfi.setDatabasesPath('/tmp/shopkeeper_pro_bill_history_test');
+    });
+
+    setUp(() async {
+      await DBService.instance.clearActiveUser();
+      await DBService.instance.configureForUser(testUserId);
+      historyProvider = PosProvider();
+      final db = await DBService.instance.database;
+      await db.delete('bills');
+      // Bill items cascade-delete with their parent when foreign keys are enabled.
+    });
+
+    tearDown(() async {
+      await DBService.instance.clearActiveUser();
+    });
+
+    test('reloads saved bill and items after closing and reopening SQLite', () async {
+      final db = await DBService.instance.database;
+      final bill = Bill(
+        id: 'restart-round-trip-bill',
+        date: DateTime(2026, 10, 20, 10, 30),
+        customerName: 'Restart Customer',
+        customerPhone: '03001234567',
+        items: [
+          BillItem(productId: 'tea-1', productName: 'Tea', quantity: 2, unitPrice: 150),
+          BillItem(productName: 'Gift wrap', quantity: 1, unitPrice: 25),
+        ],
+        discount: 10,
+        taxPercent: 5,
+      );
+
+      await db.transaction((txn) async {
+        await txn.insert('bills', bill.toMap());
+        for (final item in bill.items) {
+          await txn.insert('bill_items', {
+            ...item.toMap(),
+            'billId': bill.id,
+            'cloudId': 'cloud-${bill.items.indexOf(item)}',
+          });
+        }
+      });
+
+      await DBService.instance.clearActiveUser();
+      await DBService.instance.configureForUser(testUserId);
+      await historyProvider.loadHistory();
+
+      expect(historyProvider.savedBills, hasLength(1));
+      final restored = historyProvider.savedBills.single;
+      expect(restored.id, bill.id);
+      expect(restored.customerName, 'Restart Customer');
+      expect(restored.customerPhone, '03001234567');
+      expect(restored.items, hasLength(2));
+      expect(restored.items[0].productId, 'tea-1');
+      expect(restored.items[0].quantity, 2);
+      expect(restored.items[1].productName, 'Gift wrap');
+      expect(restored.grandTotal, closeTo(330.75, 0.001));
     });
   });
 

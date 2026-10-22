@@ -266,6 +266,35 @@ class SyncService {
         'mobile_repair_warranties': 'mobile_repair_warranties',
         'mobile_repair_warranty_claims': 'mobile_repair_warranty_claims',
         'branch_stock': 'branch_stock',
+        'payments': 'payments',
+        'business_returns': 'returns',
+        'business_return_items': 'return_items',
+        'branch_cash_entries': 'branch_cash_entries',
+        'product_variants': 'product_variants',
+        'restaurant_tables': 'restaurant_tables',
+        'restaurant_orders': 'restaurant_orders',
+        'restaurant_order_payments': 'restaurant_order_payments',
+        'restaurant_menu_items': 'restaurant_menu_items',
+        'restaurant_order_items': 'restaurant_order_items',
+        'vehicle_records': 'vehicle_records',
+        'vehicle_transactions': 'vehicle_transactions',
+        'transport_routes': 'transport_routes',
+        'transport_tickets': 'transport_tickets',
+        'cargo_jobs': 'cargo_jobs',
+        'cargo_status_history': 'cargo_status_history',
+        'service_jobs': 'service_jobs',
+        'spare_part_compatibility': 'spare_part_compatibility',
+        'school_students': 'school_students',
+        'school_fees': 'school_fees',
+        'clinic_patients': 'clinic_patients',
+        'clinic_appointments': 'clinic_appointments',
+        'salon_services': 'salon_services',
+        'salon_bookings': 'salon_bookings',
+        'farm_plots': 'farm_plots',
+        'farm_activities': 'farm_activities',
+        'construction_projects': 'construction_projects',
+        'construction_tasks': 'construction_tasks',
+        'public_service_cases': 'public_service_cases',
       };
       for (final entry in tablesByCollection.entries) {
         final localRows = entry.key == 'branch_stock'
@@ -409,6 +438,24 @@ class SyncService {
     await _writeBatch(userId, 'branch_cash_transactions', await _maps(db, 'branch_cash_transactions'));
     await _writeBatch(userId, 'customer_ledger', await _maps(db, 'customer_ledger'));
     await _writeBatch(userId, 'payment_allocations', await _maps(db, 'payment_allocations'));
+
+    // Additional business verticals use explicit collection names so their
+    // records participate in offline-first bidirectional sync and restore.
+    for (final table in [
+      'payments', 'branch_cash_entries', 'product_variants',
+      'restaurant_tables', 'restaurant_orders', 'restaurant_order_payments',
+      'restaurant_menu_items', 'restaurant_order_items', 'vehicle_records',
+      'vehicle_transactions', 'transport_routes', 'transport_tickets',
+      'cargo_jobs', 'cargo_status_history', 'service_jobs',
+      'spare_part_compatibility', 'school_students', 'school_fees',
+      'clinic_patients', 'clinic_appointments', 'salon_services',
+      'salon_bookings', 'farm_plots', 'farm_activities',
+      'construction_projects', 'construction_tasks', 'public_service_cases',
+    ]) {
+      await _writeBatch(userId, table, await _maps(db, table));
+    }
+    await _writeBatch(userId, 'business_returns', await _maps(db, 'returns'));
+    await _writeBatch(userId, 'business_return_items', await _maps(db, 'return_items'));
   }
 
   Future<List<Map<String, dynamic>>> _branchStockRows(Database db) async {
@@ -591,7 +638,18 @@ class SyncService {
         }
       }
 
-      for (final collection in ['sales', 'expenses', 'returns']) {
+      for (final collection in [
+        'sales', 'expenses', 'returns', 'payments', 'business_returns',
+        'business_return_items', 'branch_cash_entries', 'product_variants',
+        'restaurant_tables', 'restaurant_orders', 'restaurant_order_payments',
+        'restaurant_menu_items', 'restaurant_order_items', 'vehicle_records',
+        'vehicle_transactions', 'transport_routes', 'transport_tickets',
+        'cargo_jobs', 'cargo_status_history', 'service_jobs',
+        'spare_part_compatibility', 'school_students', 'school_fees',
+        'clinic_patients', 'clinic_appointments', 'salon_services',
+        'salon_bookings', 'farm_plots', 'farm_activities',
+        'construction_projects', 'construction_tasks', 'public_service_cases',
+      ]) {
         final snapshot = await _collection(userId, collection).get();
         for (final doc in snapshot.docs) {
           if (await _hasPending(userId, db, doc.id, collection)) continue;
@@ -600,7 +658,11 @@ class SyncService {
               ? 'daily_sales'
               : collection == 'returns'
                   ? 'bill_returns'
-                  : 'expenses';
+                  : collection == 'business_returns'
+                      ? 'returns'
+                      : collection == 'business_return_items'
+                          ? 'return_items'
+                          : collection;
           await db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.replace);
         }
       }
