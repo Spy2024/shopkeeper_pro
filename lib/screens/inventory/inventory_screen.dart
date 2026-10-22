@@ -356,7 +356,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     ),
                                   ],
                                 ),
-                                if ((p.barcode != null && p.barcode!.isNotEmpty) || p.expiryDate != null) ...[
+                                if ((p.barcode != null && p.barcode!.isNotEmpty) || p.expiryDate != null || p.businessAttributes.isNotEmpty) ...[
                                   const SizedBox(height: 10),
                                   const Divider(height: 1),
                                   const SizedBox(height: 8),
@@ -366,6 +366,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     children: [
                                       if (p.barcode != null && p.barcode!.isNotEmpty)
                                         _ProductMeta(icon: Icons.qr_code_2, text: p.barcode!),
+                                      ...p.businessAttributes.entries.where((entry) => entry.value.trim().isNotEmpty).map((entry) => _ProductMeta(icon: Icons.tune, text: '${entry.key}: ${entry.value}')),
                                       if (p.expiryDate != null)
                                         _ProductMeta(
                                           icon: Icons.event_outlined,
