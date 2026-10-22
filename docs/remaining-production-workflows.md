@@ -59,3 +59,8 @@ For each of school, clinic, salon, agriculture, construction and public services
 - [ ] Real-device two-account test is recorded separately from emulator/local tests.
 - [ ] Restaurant, vehicle/cargo and each business vertical have end-to-end evidence.
 - [ ] Hosting URL, security rules, privacy policy, backups/restore and printing are checked before production claims.
+
+
+## Integrated branch validation note
+
+The `feature/integrated-business-snooker` branch combines the Snooker Club module with the web dashboard, Firebase web options, Cloud Functions, deployment configuration, and APK workflow. This branch is a validation candidate only: do not merge or publish a release APK until the combined Flutter CI, Firestore Rules CI, and Android APK build all pass. Manual two-account/two-device Firebase isolation and phone restart checks remain required.
