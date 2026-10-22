@@ -334,7 +334,7 @@ class DBService {
           await _createSnookerEquipmentTables(db);
         }
         if (oldVersion < 26) {
-          await db.execute("ALTER TABLE products ADD COLUMN businessAttributes TEXT NOT NULL DEFAULT '{}'");
+          await _ensureColumn(db, 'products', 'businessAttributes', "TEXT NOT NULL DEFAULT '{}'");
         }
       },
     );
