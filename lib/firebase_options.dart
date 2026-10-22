@@ -31,12 +31,14 @@ class DefaultFirebaseOptions {
     storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
   );
 
+  // Registered Android client for Shopkeeper Pro Firebase project.
+  // Other platforms remain configurable via dart-defines below.
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: String.fromEnvironment('FIREBASE_ANDROID_API_KEY'),
-    appId: String.fromEnvironment('FIREBASE_ANDROID_APP_ID'),
-    messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
-    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
-    storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+    apiKey: 'AIzaSyDXSGv-dYcJRr4mVIAbC5QJ-86LApExdwU',
+    appId: '1:728675496441:android:876c99ab74649178368d28',
+    messagingSenderId: '728675496441',
+    projectId: 'shopkeeper-2de9a',
+    storageBucket: 'shopkeeper-2de9a.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
