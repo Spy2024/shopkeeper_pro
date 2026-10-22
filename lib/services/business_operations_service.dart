@@ -178,8 +178,8 @@ class BusinessOperationsService {
       final branchId = billRows.first['branchId'] as String?;
       for (final item in items.where((item) => item.imei != null)) {
         final soldDevice = await txn.query('mobile_devices',
-            where: 'imei1 = ? AND soldBillId = ? AND status = ?',
-            whereArgs: [item.imei, billId, 'sold'], limit: 1);
+            where: '(imei1 = ? OR imei2 = ?) AND soldBillId = ? AND status = ?',
+            whereArgs: [item.imei, item.imei, billId, 'sold'], limit: 1);
         if (soldDevice.isEmpty) {
           throw StateError('IMEI ${item.imei} was not sold on this bill or has already been returned.');
         }
@@ -230,7 +230,10 @@ class BusinessOperationsService {
         String? resolvedProductId = item.productId;
         if (item.imei != null && resolvedProductId == null) {
           final devices = await txn.query('mobile_devices',
-              columns: ['productId'], where: 'imei = ?', whereArgs: [item.imei], limit: 1);
+              columns: ['productId'],
+              where: '(imei1 = ? OR imei2 = ?)',
+              whereArgs: [item.imei, item.imei],
+              limit: 1);
           if (devices.isNotEmpty) resolvedProductId = devices.first['productId'] as String?;
         }
         final products = resolvedProductId != null
@@ -243,8 +246,8 @@ class BusinessOperationsService {
         if (item.imei != null) {
           await txn.update('mobile_devices', {
             'status': 'returned', 'branchId': branchId,
-          }, where: 'imei1 = ? AND soldBillId = ? AND status = ?',
-              whereArgs: [item.imei, billId, 'sold']);
+          }, where: '(imei1 = ? OR imei2 = ?) AND soldBillId = ? AND status = ?',
+              whereArgs: [item.imei, item.imei, billId, 'sold']);
         }
         if (branchId != null) {
           final branchRows = await txn.query('branch_stock',
