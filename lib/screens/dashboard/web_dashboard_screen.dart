@@ -51,12 +51,12 @@ class WebDashboardScreen extends StatelessWidget {
           final customers = snapshot.data![2].docs;
           final expenses = snapshot.data![3].docs;
           double sumAmount(Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> rows, List<String> keys) {
-            return rows.fold<double>(0, (sum, row) {
+            return rows.fold<double>(0, (runningTotal, row) {
               for (final key in keys) {
                 final value = row.data()[key];
-                if (value is num) return sum + value.toDouble();
+                if (value is num) return runningTotal + value.toDouble();
               }
-              return sum;
+              return runningTotal;
             });
           }
           final sales = sumAmount(bills, ['total', 'grandTotal', 'totalAmount', 'amount']);
