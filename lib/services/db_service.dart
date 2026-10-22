@@ -210,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 25,
+      version: 26,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -332,6 +332,9 @@ class DBService {
         }
         if (oldVersion < 25) {
           await _createSnookerEquipmentTables(db);
+        }
+        if (oldVersion < 26) {
+          await _ensureColumn(db, 'products', 'businessAttributes', "TEXT NOT NULL DEFAULT '{}'");
         }
       },
     );
@@ -606,6 +609,15 @@ class DBService {
   }
 
   Future<void> _ensureColumn(DatabaseExecutor db, String table, String column, String type) async {
+    // Some legacy upgrade fixtures (and partially migrated installations) do
+    // not contain every feature table. Never issue ALTER TABLE for a missing
+    // table; its owning migration is responsible for creating it when needed.
+    final tableRows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [table],
+    );
+    if (tableRows.isEmpty) return;
+
     final columns = await db.rawQuery('PRAGMA table_info($table)');
     if (!columns.any((entry) => entry['name'] == column)) {
       await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
@@ -841,7 +853,7 @@ class DBService {
 
   Future<void> _createSchema(Database db) async {
     await db.execute("CREATE TABLE shop (id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT, phone TEXT, taxNumber TEXT, email TEXT, website TEXT, facebookUrl TEXT, instagramUrl TEXT, socialUrl TEXT, logoPath TEXT, businessType TEXT NOT NULL DEFAULT 'general_retail')");
-    await db.execute('CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5, barcode TEXT, expiryDate TEXT)');
+    await db.execute("CREATE TABLE products (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT, stockQuantity INTEGER NOT NULL DEFAULT 0, costPrice REAL NOT NULL DEFAULT 0, sellingPrice REAL NOT NULL DEFAULT 0, lowStockThreshold INTEGER NOT NULL DEFAULT 5, barcode TEXT, expiryDate TEXT, businessAttributes TEXT NOT NULL DEFAULT '{}')");
     await db.execute('CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, address TEXT, notes TEXT, createdAt TEXT NOT NULL)');
     await db.execute('CREATE INDEX idx_customers_name ON customers(name)');
     await db.execute('CREATE TABLE bills (id TEXT PRIMARY KEY, date TEXT NOT NULL, customerName TEXT, customerId TEXT, customerAddress TEXT, customerPhone TEXT, customerEmail TEXT, discount REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0, branchId TEXT)');

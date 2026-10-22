@@ -356,7 +356,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     ),
                                   ],
                                 ),
-                                if ((p.barcode != null && p.barcode!.isNotEmpty) || p.expiryDate != null) ...[
+                                if ((p.barcode != null && p.barcode!.isNotEmpty) || p.expiryDate != null || p.businessAttributes.isNotEmpty) ...[
                                   const SizedBox(height: 10),
                                   const Divider(height: 1),
                                   const SizedBox(height: 8),
@@ -366,6 +366,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                     children: [
                                       if (p.barcode != null && p.barcode!.isNotEmpty)
                                         _ProductMeta(icon: Icons.qr_code_2, text: p.barcode!),
+                                      ...p.businessAttributes.entries.where((entry) => entry.value.trim().isNotEmpty).map((entry) => _ProductMeta(icon: Icons.tune, text: '${entry.key}: ${entry.value}')),
                                       if (p.expiryDate != null)
                                         _ProductMeta(
                                           icon: Icons.event_outlined,
@@ -816,6 +817,23 @@ class _ProductMeta extends StatelessWidget {
       );
 }
 
+List<String> _inventoryFieldsForBusiness(String businessType) {
+  final type = businessType.toLowerCase();
+  if (type.contains('mobile')) return ['Brand', 'Model', 'Storage / Variant', 'Colour', 'IMEI / Serial', 'Condition', 'Warranty'];
+  if (type.contains('restaurant') || type.contains('food')) return ['Unit (kg/litre/pcs)', 'Ingredient or Menu Item', 'Recipe / Menu Group', 'Supplier Batch', 'Wastage %'];
+  if (type.contains('snooker')) return ['Item Type (drink/snack/other)', 'Unit', 'Brand', 'Expiry / Batch'];
+  if (type.contains('cloth') || type.contains('garment') || type.contains('fashion')) return ['Brand', 'Size', 'Colour', 'Fabric / Material', 'Design / SKU'];
+  if (type.contains('carpet')) return ['Material', 'Length', 'Width', 'Colour / Design', 'Unit'];
+  if (type.contains('furniture')) return ['Material', 'Dimensions', 'Colour / Finish', 'Model / SKU', 'Warranty'];
+  if (type.contains('showroom') || type.contains('vehicle_dealer') || type.contains('car_dealer')) return ['Make', 'Model', 'Year', 'Registration / VIN', 'Mileage', 'Fuel / Transmission', 'Condition'];
+  if (type.contains('spare') || type.contains('auto_parts') || type.contains('vehicle_parts')) return ['Part Number', 'Compatible Make / Model', 'Year Range', 'Brand', 'Condition'];
+  if (type.contains('cosmetic') || type.contains('pharmacy') || type.contains('medical')) return ['Brand', 'Unit / Pack Size', 'Batch Number', 'Manufacturer', 'Expiry / Best Before'];
+  if (type.contains('transport') || type.contains('cargo')) return ['Item / Service Type', 'Unit', 'Route / Compatibility', 'Reference Code'];
+  if (type.contains('agriculture')) return ['Brand', 'Unit / Pack Size', 'Batch Number', 'Expiry / Season'];
+  if (type.contains('construction')) return ['Material Grade', 'Unit (bag/ft/kg/pcs)', 'Size / Dimensions', 'Brand'];
+  return ['Brand', 'Unit / Pack Size', 'SKU / Model', 'Supplier Batch'];
+}
+
 class _ProductFormSheet extends StatefulWidget {
   final Product? existing;
   const _ProductFormSheet({this.existing});
@@ -833,12 +851,21 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
   late final _spCtrl = TextEditingController(text: widget.existing?.sellingPrice.toString() ?? '');
   late final _barcodeCtrl = TextEditingController(text: widget.existing?.barcode ?? '');
   DateTime? _expiryDate;
+  late final String _businessType;
+  late final List<String> _attributeFields;
+  late final Map<String, TextEditingController> _attributeCtrls;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _expiryDate = widget.existing?.expiryDate;
+    _businessType = context.read<ShopProvider>().shop?.businessType ?? 'general_retail';
+    _attributeFields = _inventoryFieldsForBusiness(_businessType);
+    _attributeCtrls = {
+      for (final field in _attributeFields)
+        field: TextEditingController(text: widget.existing?.businessAttributes[field] ?? ''),
+    };
   }
 
   @override
@@ -849,6 +876,7 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
     _cpCtrl.dispose();
     _spCtrl.dispose();
     _barcodeCtrl.dispose();
+    for (final controller in _attributeCtrls.values) { controller.dispose(); }
     super.dispose();
   }
 
@@ -892,6 +920,19 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('$_businessType inventory details', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(height: 4),
+            ..._attributeFields.map((field) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextFormField(
+                controller: _attributeCtrls[field],
+                decoration: InputDecoration(labelText: field, isDense: true),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+            )),
             TextFormField(
               controller: _barcodeCtrl,
               decoration: InputDecoration(
@@ -984,6 +1025,7 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                                 ? null
                                 : _barcodeCtrl.text.trim(),
                             expiryDate: _expiryDate,
+                            businessAttributes: {for (final entry in _attributeCtrls.entries) if (entry.value.text.trim().isNotEmpty) entry.key: entry.value.text.trim()},
                           ));
                         } else {
                           await inventory.addProduct(
@@ -996,6 +1038,7 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
                                 ? null
                                 : _barcodeCtrl.text.trim(),
                             expiryDate: _expiryDate,
+                            businessAttributes: {for (final entry in _attributeCtrls.entries) if (entry.value.text.trim().isNotEmpty) entry.key: entry.value.text.trim()},
                           );
                         }
                         if (context.mounted) Navigator.pop(context);

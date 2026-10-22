@@ -55,13 +55,13 @@ class InventoryProvider extends ChangeNotifier {
     _products[index] = Product(id: current.id, name: current.name, category: current.category,
       stockQuantity: stockQuantity, costPrice: current.costPrice, sellingPrice: current.sellingPrice,
       lowStockThreshold: current.lowStockThreshold, barcode: current.barcode,
-      expiryDate: current.expiryDate);
+      expiryDate: current.expiryDate, businessAttributes: current.businessAttributes);
     notifyListeners();
   }
 
   Future<void> addProduct({required String name, required String category, required int stockQuantity,
       required double costPrice, required double sellingPrice, int lowStockThreshold = 5,
-      String? barcode, DateTime? expiryDate}) async {
+      String? barcode, DateTime? expiryDate, Map<String, String>? businessAttributes}) async {
     final cleanName = name.trim();
     final cleanCategory = category.trim();
     final cleanBarcode = barcode?.trim().isEmpty == true ? null : barcode?.trim();
@@ -80,7 +80,8 @@ class InventoryProvider extends ChangeNotifier {
     }
     final product = Product(id: _uuid.v4(), name: cleanName, category: cleanCategory,
       stockQuantity: stockQuantity, costPrice: costPrice, sellingPrice: sellingPrice,
-      lowStockThreshold: lowStockThreshold, barcode: cleanBarcode, expiryDate: expiryDate);
+      lowStockThreshold: lowStockThreshold, barcode: cleanBarcode, expiryDate: expiryDate,
+      businessAttributes: businessAttributes);
     final db = await DBService.instance.database;
     String? autoAllocatedBranchId;
     final allocationTime = DateTime.now().toIso8601String();
@@ -166,7 +167,8 @@ class InventoryProvider extends ChangeNotifier {
     }
     final updated = Product(id: product.id, name: cleanName, category: product.category.trim(),
       stockQuantity: product.stockQuantity, costPrice: product.costPrice, sellingPrice: product.sellingPrice,
-      lowStockThreshold: product.lowStockThreshold, barcode: cleanBarcode, expiryDate: product.expiryDate);
+      lowStockThreshold: product.lowStockThreshold, barcode: cleanBarcode, expiryDate: product.expiryDate,
+      businessAttributes: product.businessAttributes);
     final db = await DBService.instance.database;
     final changed = await db.update('products', updated.toMap(), where: 'id = ?', whereArgs: [updated.id]);
     if (changed != 1) throw StateError('Product not found');
