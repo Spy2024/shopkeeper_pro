@@ -35,6 +35,20 @@ void main() {
     expect(await service.tables(), hasLength(10));
   });
 
+  test('players that differ only by repeated whitespace are treated as the same player', () async {
+    final table = (await service.tables()).first;
+    await expectLater(
+      service.startGame(
+        tableId: table['id']! as String,
+        playerA: 'Ali   Khan',
+        playerB: ' ali Khan ',
+        feeAmount: 300,
+      ),
+      throwsArgumentError,
+    );
+    expect(await service.games(), isEmpty);
+  });
+
   test('one table cannot have duplicate active games and completion records winner', () async {
     final table = (await service.tables()).first;
     final gameId = await service.startGame(
