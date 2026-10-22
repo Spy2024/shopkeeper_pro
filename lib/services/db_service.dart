@@ -609,6 +609,15 @@ class DBService {
   }
 
   Future<void> _ensureColumn(DatabaseExecutor db, String table, String column, String type) async {
+    // Some legacy upgrade fixtures (and partially migrated installations) do
+    // not contain every feature table. Never issue ALTER TABLE for a missing
+    // table; its owning migration is responsible for creating it when needed.
+    final tableRows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [table],
+    );
+    if (tableRows.isEmpty) return;
+
     final columns = await db.rawQuery('PRAGMA table_info($table)');
     if (!columns.any((entry) => entry['name'] == column)) {
       await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
