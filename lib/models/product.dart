@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Product {
   final String id;
   String name;
@@ -8,6 +10,8 @@ class Product {
   int lowStockThreshold;
   String? barcode;
   DateTime? expiryDate;
+  /// Business-specific attributes such as size/colour, IMEI, unit, batch or compatibility.
+  Map<String, String> businessAttributes;
 
   Product({
     required this.id,
@@ -19,7 +23,8 @@ class Product {
     this.lowStockThreshold = 5,
     this.barcode,
     this.expiryDate,
-  });
+    Map<String, String>? businessAttributes,
+  }) : businessAttributes = businessAttributes ?? {};
 
   bool get isOutOfStock => stockQuantity <= 0;
   bool get isLowStock => stockQuantity > 0 && stockQuantity <= lowStockThreshold;
@@ -40,7 +45,21 @@ class Product {
         'lowStockThreshold': lowStockThreshold,
         'barcode': barcode,
         'expiryDate': expiryDate?.toIso8601String(),
+        'businessAttributes': jsonEncode(businessAttributes),
       };
+
+  static Map<String, String> _decodeBusinessAttributes(dynamic value) {
+    if (value == null || value == '') return <String, String>{};
+    try {
+      final decoded = value is String ? jsonDecode(value) : value;
+      if (decoded is Map) {
+        return decoded.map((key, item) => MapEntry(key.toString(), item?.toString() ?? ''));
+      }
+    } catch (_) {
+      // Older or malformed metadata must not prevent legacy products loading.
+    }
+    return <String, String>{};
+  }
 
   factory Product.fromMap(Map<String, dynamic> map) => Product(
         id: map['id'] as String,
@@ -57,5 +76,6 @@ class Product {
                 (map['expiryDate'] as String).isEmpty
             ? null
             : DateTime.tryParse(map['expiryDate'] as String),
+        businessAttributes: _decodeBusinessAttributes(map['businessAttributes']),
       );
 }
