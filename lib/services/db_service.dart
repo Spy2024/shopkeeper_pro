@@ -210,7 +210,7 @@ class DBService {
   Future<Database> _openAt(String path) async {
     return openDatabase(
       path,
-      version: 25,
+      version: 26,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, version) => _createSchema(db),
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -332,6 +332,9 @@ class DBService {
         }
         if (oldVersion < 25) {
           await _createSnookerEquipmentTables(db);
+        }
+        if (oldVersion < 26) {
+          await db.execute("ALTER TABLE products ADD COLUMN businessAttributes TEXT NOT NULL DEFAULT '{}'");
         }
       },
     );
