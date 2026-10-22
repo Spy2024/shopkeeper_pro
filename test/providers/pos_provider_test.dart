@@ -1,44 +1,149 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:shopkeeper_pro/providers/inventory_provider.dart';
+import 'package:shopkeeper_pro/providers/pos_provider.dart';
+import 'package:shopkeeper_pro/services/db_service.dart';
+import 'package:shopkeeper_pro/services/business_operations_service.dart';
 
 void main() {
-  group('PosProvider Tests', () {
-    test('addItem should add to cart', () async {
-      const productName = 'Tea';
-      const quantity = 2;
-      const unitPrice = 150.0;
-      final lineTotal = quantity * unitPrice;
-      expect(lineTotal, equals(300.0));
-    });
+  TestWidgetsFlutterBinding.ensureInitialized();
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
 
-    test('subtotal should sum all line items', () async {
-      final item1 = 2 * 150.0; // 300
-      final item2 = 1 * 120.0; // 120
-      final subtotal = item1 + item2;
-      expect(subtotal, equals(420.0));
-    });
+  final dbService = DBService.instance;
+  late InventoryProvider inventory;
+  late PosProvider pos;
+  late String uid;
 
-    test('setDiscount should apply to calculation', () async {
-      const subtotal = 5000.0;
-      const discount = 500.0;
-      final afterDiscount = subtotal - discount;
-      expect(afterDiscount, equals(4500.0));
-    });
+  setUp(() async {
+    uid = 'pos_test_${DateTime.now().microsecondsSinceEpoch}';
+    await dbService.configureForUser(uid);
+    inventory = InventoryProvider();
+    pos = PosProvider();
+  });
 
-    test('setTax should calculate percentage', () async {
-      const subtotal = 5000.0;
-      const taxPercent = 17.0;
-      final taxAmount = (subtotal * taxPercent) / 100;
-      expect(taxAmount, equals(850.0));
-    });
+  tearDown(() async {
+    await dbService.clearActiveUser();
+    inventory.dispose();
+    pos.dispose();
+  });
 
-    test('grandTotal calculation should be correct', () async {
-      const subtotal = 5000.0;
-      const discount = 500.0;
-      const taxPercent = 17.0;
-      final afterDiscount = subtotal - discount;
-      final tax = (afterDiscount * taxPercent) / 100;
-      final grandTotal = afterDiscount + tax;
-      expect(grandTotal, equals(5265.0));
-    });
+  test('checkout saves bill and stock atomically and history survives database restart', () async {
+    await inventory.addProduct(
+      name: 'Tea', category: 'grocery', stockQuantity: 10,
+      costPrice: 100, sellingPrice: 150,
+    );
+    pos.addItem('Tea', 2, 150);
+    pos.setCustomerName('Restart Customer');
+
+    final bill = await pos.checkout(inventory);
+    expect(bill.grandTotal, 300);
+
+    var db = await dbService.database;
+    expect(await db.query('bills', where: 'id = ?', whereArgs: [bill.id]), hasLength(1));
+    expect(await db.query('bill_items', where: 'billId = ?', whereArgs: [bill.id]), hasLength(1));
+    expect((await db.query('products')).single['stockQuantity'], 8);
+
+    await dbService.clearActiveUser();
+    await dbService.configureForUser(uid);
+    db = await dbService.database;
+    final reloaded = PosProvider();
+    await reloaded.loadHistory();
+
+    expect(reloaded.savedBills, hasLength(1));
+    expect(reloaded.savedBills.single.id, bill.id);
+    expect(reloaded.savedBills.single.customerName, 'Restart Customer');
+    expect(reloaded.savedBills.single.items.single.quantity, 2);
+    expect((await db.query('products')).single['stockQuantity'], 8);
+    reloaded.dispose();
+  });
+
+  test('duplicate cart lines cannot oversell and failed checkout writes no bill', () async {
+    await inventory.addProduct(
+      name: 'Sugar', category: 'grocery', stockQuantity: 3,
+      costPrice: 50, sellingPrice: 80,
+    );
+    pos.addItem('Sugar', 2, 80);
+    pos.addItem('Sugar', 2, 80);
+
+    await expectLater(pos.checkout(inventory), throwsStateError);
+    final db = await dbService.database;
+    expect(await db.query('bills'), isEmpty);
+    expect((await db.query('products')).single['stockQuantity'], 3);
+  });
+
+  test('exact IMEI phone sale and return update the same device atomically', () async {
+    await inventory.addProduct(
+      name: 'Phone Model X', category: 'mobile', stockQuantity: 10,
+      costPrice: 500, sellingPrice: 700,
+    );
+    final product = inventory.products.single;
+    final operations = BusinessOperationsService.instance;
+    await operations.addMobileDevice(
+      productId: product.id, imei: '123456789012345',
+      purchasePrice: 500, salePrice: 700,
+    );
+    pos.addItem('Phone Model X', 1, 700, productId: product.id, imei: '123456789012345');
+    final bill = await pos.checkout(inventory);
+
+    var db = await dbService.database;
+    var device = (await db.query('mobile_devices', where: 'imei = ?', whereArgs: ['123456789012345'])).single;
+    expect(device['status'], 'sold');
+    expect(device['billId'], bill.id);
+    final billItem = (await db.query('bill_items', where: 'billId = ?', whereArgs: [bill.id])).single;
+    expect(billItem['imei'], '123456789012345');
+    expect(billItem['productId'], product.id);
+
+    await operations.processReturn(
+      billId: bill.id,
+      items: const [ReturnLine(productId: null, productName: 'Phone Model X', imei: '123456789012345', quantity: 1, unitPrice: 700)],
+      refundAmount: 700,
+      customerName: 'Phone Customer',
+    );
+    device = (await db.query('mobile_devices', where: 'imei = ?', whereArgs: ['123456789012345'])).single;
+    expect(device['status'], 'in_stock');
+    expect(device['billId'], isNull);
+    expect((await db.query('products', where: 'id = ?', whereArgs: [product.id])).single['stockQuantity'], 10);
+  });
+
+  test('branch checkout deducts branch stock and records branch on bill', () async {
+    await inventory.addProduct(
+      name: 'Flour', category: 'grocery', stockQuantity: 100,
+      costPrice: 40, sellingPrice: 60,
+    );
+    final operations = BusinessOperationsService.instance;
+    final branchId = await operations.createBranch(name: 'North Branch');
+    final product = inventory.products.single;
+    await operations.setBranchStock(branchId: branchId, productId: product.id, quantity: 5);
+    pos.addItem('Flour', 2, 60);
+
+    final bill = await pos.checkout(inventory, branchId: branchId);
+    final db = await dbService.database;
+    final branchStock = await db.query('branch_stock',
+        where: 'branchId = ? AND productId = ?', whereArgs: [branchId, product.id]);
+    final productRows = await db.query('products', where: 'id = ?', whereArgs: [product.id]);
+
+    expect(bill.branchId, branchId);
+    expect(branchStock.single['quantity'], 3);
+    expect(productRows.single['stockQuantity'], 100);
+    expect((await db.query('bills', where: 'id = ?', whereArgs: [bill.id])).single['branchId'], branchId);
+  });
+
+  test('split tender rows are committed with the bill', () async {
+    await inventory.addProduct(
+      name: 'Milk', category: 'grocery', stockQuantity: 5,
+      costPrice: 60, sellingPrice: 100,
+    );
+    pos.addItem('Milk', 2, 100);
+    final bill = await pos.checkout(inventory, payments: const [
+      // Two tenders sum to the persisted bill total.
+      PaymentLine(method: 'cash', amount: 125),
+      PaymentLine(method: 'card_or_bank', amount: 75),
+    ]);
+    final db = await dbService.database;
+    final payments = await db.query('payments', where: 'billId = ?', whereArgs: [bill.id]);
+    expect(payments, hasLength(2));
+    expect(payments.fold<double>(0, (sum, row) => sum + (row['amount'] as num).toDouble()), 200);
   });
 }

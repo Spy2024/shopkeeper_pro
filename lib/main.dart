@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -68,6 +70,9 @@ class _StartupGate extends StatefulWidget {
 
 class _StartupGateState extends State<_StartupGate> {
   bool _ready = false;
+  String? _initializedUserId;
+  String? _initializingUserId;
+  AuthProvider? _authProvider;
 
   @override
   void initState() {
@@ -78,16 +83,53 @@ class _StartupGateState extends State<_StartupGate> {
   Future<void> _bootstrap() async {
     final auth = context.read<AuthProvider>();
     await auth.checkExistingSession();
-
     if (!mounted) return;
+    _authProvider = auth;
+    auth.addListener(_onAuthChanged);
+    if (auth.isLoggedIn && auth.userUid != null) {
+      await _initializeAccountServices(auth.userUid!);
+    }
+    if (mounted) setState(() => _ready = true);
+  }
 
-    if (auth.isLoggedIn) {
+  void _onAuthChanged() {
+    final auth = _authProvider;
+    if (auth == null) return;
+    if (!auth.isLoggedIn) {
+      _initializedUserId = null;
+      return;
+    }
+    final uid = auth.userUid;
+    if (uid != null && uid != _initializedUserId) {
+      unawaited(_initializeAccountServices(uid));
+    }
+  }
+
+  Future<void> _initializeAccountServices(String userId) async {
+    if (_initializedUserId == userId || _initializingUserId == userId) return;
+    _initializingUserId = userId;
+    try {
+      await context.read<SyncProvider>().init(userId);
+      // Sync/pull first so cloud-restored rows are reflected in provider state.
       await context.read<ShopProvider>().load();
+      await context.read<InventoryProvider>().load();
+      await context.read<PosProvider>().loadHistory();
+      await context.read<SupplierProvider>().load();
+      await context.read<SalesProvider>().load();
+      await context.read<FinanceProvider>().load();
+      _initializedUserId = userId;
+    } catch (error, stackTrace) {
+      debugPrint('[StartupGate] Account initialization failed: $error\\n$stackTrace');
+    } finally {
+      _initializingUserId = null;
+      if (mounted) setState(() => _ready = true);
     }
+  }
 
-    if (mounted) {
-      setState(() => _ready = true);
-    }
+  @override
+  void dispose() {
+    _authProvider?.removeListener(_onAuthChanged);
+    super.dispose();
   }
 
   @override

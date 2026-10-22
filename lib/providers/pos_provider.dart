@@ -4,6 +4,7 @@ import '../models/bill.dart';
 import '../models/product.dart';
 import '../models/daily_sale.dart';
 import '../services/db_service.dart';
+import '../services/business_operations_service.dart';
 import 'inventory_provider.dart';
 
 class PosProvider extends ChangeNotifier {
@@ -14,14 +15,16 @@ class PosProvider extends ChangeNotifier {
   final _uuid = const Uuid();
   final List<Bill> savedBills = [];
   final Map<String, List<BillItem>> _billItemsCache = {};
+  bool isLoadingHistory = false;
+  String? historyLoadError;
 
   double get subtotal => cart.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get taxAmount => (subtotal - discount) * (taxPercent / 100);
   double get grandTotal => (subtotal - discount) + taxAmount;
 
-  void addItem(String productName, int quantity, double unitPrice) {
+  void addItem(String productName, int quantity, double unitPrice, {String? productId, String? imei}) {
     if (quantity <= 0 || unitPrice < 0) return;
-    cart.add(BillItem(productName: productName, quantity: quantity, unitPrice: unitPrice));
+    cart.add(BillItem(productName: productName, productId: productId, imei: imei?.trim().isEmpty == true ? null : imei?.trim(), quantity: quantity, unitPrice: unitPrice));
     notifyListeners();
   }
 
@@ -54,15 +57,34 @@ class PosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Bill> checkout(InventoryProvider inventory) async {
+  Future<Bill> checkout(InventoryProvider inventory, {List<PaymentLine>? payments, String? branchId}) async {
     if (cart.isEmpty) throw StateError('Cart is empty');
 
+    // Aggregate duplicate cart lines so a product cannot be oversold by
+    // validating each line independently.
+    final quantities = <String, int>{};
     for (final item in cart) {
-      final matches = inventory.products.where((p) => p.name == item.productName);
-      if (matches.isEmpty) throw StateError('Product not found: ${item.productName}');
-      final product = matches.first;
-      if (product.stockQuantity < item.quantity) {
-        throw StateError('Insufficient stock for ${item.productName}');
+      if (item.quantity <= 0 || item.unitPrice < 0) {
+        throw StateError('Invalid quantity or price for ${item.productName}');
+      }
+      quantities.update(item.productName, (q) => q + item.quantity,
+          ifAbsent: () => item.quantity);
+    }
+
+    final productByName = <String, Product>{};
+    for (final name in quantities.keys) {
+      final matches = inventory.products.where((p) => p.name == name);
+      if (matches.isEmpty) throw StateError('Product not found: $name');
+      productByName[name] = matches.first;
+    }
+
+    if (payments != null && payments.isNotEmpty) {
+      if (payments.any((p) => p.amount <= 0 || p.method.trim().isEmpty)) {
+        throw ArgumentError('Payment methods and amounts must be valid.');
+      }
+      final paid = payments.fold<double>(0, (sum, p) => sum + p.amount);
+      if ((paid - grandTotal).abs() > 0.01) {
+        throw StateError('Payments must equal the bill total.');
       }
     }
 
@@ -71,58 +93,165 @@ class PosProvider extends ChangeNotifier {
       id: _uuid.v4(),
       date: DateTime.now(),
       customerName: customerName,
-      items: List.of(cart),
+      branchId: branchId,
+      items: cart.map((item) => BillItem(
+        productName: item.productName,
+        productId: productByName[item.productName]!.id,
+        imei: item.imei,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      )).toList(),
       discount: discount,
       taxPercent: taxPercent,
     );
 
     await db.transaction((txn) async {
+      // Validate each serialised phone inside the same transaction as checkout.
+      for (final item in bill.items.where((item) => item.imei != null)) {
+        if (item.quantity != 1) {
+          throw StateError('An IMEI-specific phone sale must have quantity 1.');
+        }
+        final devices = await txn.query('mobile_devices',
+            where: 'imei = ?', whereArgs: [item.imei], limit: 1);
+        if (devices.isEmpty || devices.first['status'] != 'in_stock') {
+          throw StateError('IMEI ${item.imei} is not available for sale.');
+        }
+        final device = devices.first;
+        if (device['productId'] != null && device['productId'] != item.productId) {
+          throw StateError('IMEI ${item.imei} does not belong to product ${item.productName}.');
+        }
+        if (device['branchId'] != null && device['branchId'] != branchId) {
+          throw StateError('IMEI ${item.imei} is assigned to another stock location.');
+        }
+      }
+
+      // Re-check persisted stock and deduct it in the same transaction as
+      // bill, bill items, serialised-device status, and daily sales.
+      for (final entry in quantities.entries) {
+        final product = productByName[entry.key]!;
+        if (branchId != null) {
+          final branchRows = await txn.query('branch_stock',
+              columns: ['id', 'quantity'],
+              where: 'branchId = ? AND productId = ?',
+              whereArgs: [branchId, product.id],
+              limit: 1);
+          if (branchRows.isEmpty) {
+            throw StateError('No stock allocated to this branch for ${entry.key}.');
+          }
+          final stock = (branchRows.first['quantity'] as num).toInt();
+          if (stock < entry.value) {
+            throw StateError('Insufficient branch stock for ${entry.key}: available $stock, requested ${entry.value}');
+          }
+          await txn.update('branch_stock', {'quantity': stock - entry.value},
+              where: 'id = ?', whereArgs: [branchRows.first['id']]);
+        } else {
+          final rows = await txn.query('products',
+              columns: ['stockQuantity'],
+              where: 'id = ?',
+              whereArgs: [product.id],
+              limit: 1);
+          if (rows.isEmpty) throw StateError('Product no longer exists: ${entry.key}');
+          final stock = (rows.first['stockQuantity'] as num).toInt();
+          if (stock < entry.value) {
+            throw StateError('Insufficient stock for ${entry.key}: available $stock, requested ${entry.value}');
+          }
+          await txn.update('products', {'stockQuantity': stock - entry.value},
+              where: 'id = ?', whereArgs: [product.id]);
+        }
+      }
+
       await txn.insert('bills', bill.toMap());
+      if (payments != null) {
+        for (final payment in payments) {
+          await txn.insert('payments', {
+            'id': _uuid.v4(),
+            'billId': bill.id,
+            'method': payment.method.trim(),
+            'amount': payment.amount,
+            'reference': payment.reference,
+          });
+        }
+      }
       for (final item in bill.items) {
         await txn.insert('bill_items', {...item.toMap(), 'billId': bill.id});
-        final product = inventory.products.firstWhere((p) => p.name == item.productName);
-        for (int i = 0; i < item.quantity; i++) {
-          await txn.insert('daily_sales', DailySale(
-            id: _uuid.v4(),
-            date: bill.date,
-            productName: item.productName,
-            costPrice: product.costPrice,
-            salePrice: item.unitPrice,
-          ).toMap());
+        if (item.imei != null) {
+          final updatedDevices = await txn.update('mobile_devices', {
+            'status': 'sold',
+            'billId': bill.id,
+            'salePrice': item.unitPrice,
+            'branchId': branchId,
+          }, where: 'imei = ? AND status = ?', whereArgs: [item.imei, 'in_stock']);
+          if (updatedDevices != 1) {
+            throw StateError('IMEI ${item.imei} was sold by another checkout.');
+          }
         }
+        final product = productByName[item.productName]!;
+        await txn.insert('daily_sales', DailySale(
+          id: _uuid.v4(),
+          date: bill.date,
+          productName: item.productName,
+          costPrice: product.costPrice,
+          salePrice: item.unitPrice,
+        ).toMap());
+      }
+
+      final saved = await txn.query('bills',
+          where: 'id = ?', whereArgs: [bill.id], limit: 1);
+      final savedItems = await txn.query('bill_items',
+          where: 'billId = ?', whereArgs: [bill.id]);
+      if (saved.length != 1 || savedItems.length != bill.items.length) {
+        throw StateError('Checkout persistence verification failed.');
       }
     });
 
-    for (final item in bill.items) {
-      await inventory.deductStock(item.productName, item.quantity);
-    }
-
+    savedBills.removeWhere((existing) => existing.id == bill.id);
     savedBills.insert(0, bill);
     _billItemsCache[bill.id] = bill.items;
     clearCart();
+    if (branchId == null) await inventory.load();
     return bill;
   }
 
   Future<void> loadHistory() async {
-    final db = await DBService.instance.database;
-    final billRows = await db.query('bills', orderBy: 'date DESC');
-    savedBills.clear();
-    _billItemsCache.clear();
-    for (final row in billRows) {
-      final itemRows = await db.query('bill_items', where: 'billId = ?', whereArgs: [row['id']]);
-      final items = itemRows.map((r) => BillItem.fromMap(r)).toList();
-      final bill = Bill(
-        id: row['id'] as String,
-        date: DateTime.parse(row['date'] as String),
-        customerName: row['customerName'] as String?,
-        items: items,
-        discount: (row['discount'] as num).toDouble(),
-        taxPercent: (row['taxPercent'] as num).toDouble(),
-      );
-      savedBills.add(bill);
-      _billItemsCache[bill.id] = items;
-    }
+    isLoadingHistory = true;
+    historyLoadError = null;
     notifyListeners();
+    try {
+      final db = await DBService.instance.database;
+      final billRows = await db.query('bills', orderBy: 'date DESC');
+      final loadedBills = <Bill>[];
+      final loadedItems = <String, List<BillItem>>{};
+      for (final row in billRows) {
+        final billId = row['id'] as String;
+        final itemRows = await db.query('bill_items',
+            where: 'billId = ?', whereArgs: [billId]);
+        final items = itemRows
+            .map((r) => BillItem.fromMap(Map<String, dynamic>.from(r)))
+            .toList();
+        loadedBills.add(Bill(
+          id: billId,
+          date: DateTime.parse(row['date'] as String),
+          customerName: row['customerName'] as String?,
+          branchId: row['branchId'] as String?,
+          items: items,
+          discount: (row['discount'] as num?)?.toDouble() ?? 0,
+          taxPercent: (row['taxPercent'] as num?)?.toDouble() ?? 0,
+        ));
+        loadedItems[billId] = items;
+      }
+      savedBills
+        ..clear()
+        ..addAll(loadedBills);
+      _billItemsCache
+        ..clear()
+        ..addAll(loadedItems);
+    } catch (error, stackTrace) {
+      historyLoadError = 'Bill history load nahi ho saki: $error';
+      debugPrint('[PosProvider] loadHistory failed: $error\n$stackTrace');
+    } finally {
+      isLoadingHistory = false;
+      notifyListeners();
+    }
   }
 
   List<Bill> filterHistory({DateTime? date, String? customer, double? minAmount}) {

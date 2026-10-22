@@ -61,14 +61,21 @@ class _PhoneEntryScreenState extends State<PhoneEntryScreen> {
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
                           final phone = _phoneController.text.trim();
-                          final otp = await auth.requestOtp(phone);
-                          if (!context.mounted) return;
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => OtpScreen(phoneNumber: phone, demoOtp: otp),
-                            ),
-                          );
+                          try {
+                            await auth.requestOtp(phone);
+                            if (!context.mounted || auth.isLoggedIn) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => OtpScreen(phoneNumber: phone),
+                              ),
+                            );
+                          } catch (error) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('OTP send nahi hua: $error')),
+                            );
+                          }
                         },
                   child: auth.isLoading
                       ? const SizedBox(

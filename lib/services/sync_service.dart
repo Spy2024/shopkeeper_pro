@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+
 import 'db_service.dart';
 
-/// Multi-device sync service using Firebase Firestore.
-/// Syncs local SQLite changes to cloud and vice versa.
-/// Handles offline-first with sync queue.
+/// User-scoped local/cloud synchronization. Parent tables are processed before
+/// their child tables so foreign-key relationships can be restored in order.
 class SyncService {
   SyncService._internal();
   static final SyncService instance = SyncService._internal();
@@ -15,215 +17,163 @@ class SyncService {
   final Connectivity _connectivity = Connectivity();
   bool _isOnline = true;
   bool _isSyncing = false;
+  String? _activeUserId;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   bool get isOnline => _isOnline;
   bool get isSyncing => _isSyncing;
 
-  /// Initialize sync service and monitor connectivity
+  // Local SQLite table -> Firestore collection.
+  static const Map<String, String> _collections = {
+    'shop': 'shop',
+    'products': 'products',
+    'customers': 'customers',
+    'suppliers': 'suppliers',
+    'supplier_orders': 'supplier_orders',
+    'supplier_order_items': 'supplier_order_items',
+    'bills': 'bills',
+    'bill_items': 'bill_items',
+    'payments': 'payments',
+    'customer_ledger': 'customer_ledger',
+    'daily_sales': 'sales', // retain the existing cloud collection name
+    'expenses': 'expenses',
+    'returns': 'returns',
+    'return_items': 'return_items',
+    'branches': 'branches',
+    'branch_stock': 'branch_stock',
+    'branch_cash_entries': 'branch_cash_entries',
+    'product_variants': 'product_variants',
+    'mobile_devices': 'mobile_devices',
+    'restaurant_tables': 'restaurant_tables',
+    'restaurant_orders': 'restaurant_orders',
+    'vehicle_records': 'vehicle_records',
+    'transport_routes': 'transport_routes',
+    'transport_tickets': 'transport_tickets',
+    'cargo_jobs': 'cargo_jobs',
+    'service_jobs': 'service_jobs',
+    'spare_part_compatibility': 'spare_part_compatibility',
+    'school_students': 'school_students',
+    'school_fees': 'school_fees',
+    'clinic_patients': 'clinic_patients',
+    'clinic_appointments': 'clinic_appointments',
+    'salon_services': 'salon_services',
+    'salon_bookings': 'salon_bookings',
+    'farm_plots': 'farm_plots',
+    'farm_activities': 'farm_activities',
+    'construction_projects': 'construction_projects',
+    'construction_tasks': 'construction_tasks',
+    'public_service_cases': 'public_service_cases',
+    'restaurant_menu_items': 'restaurant_menu_items',
+    'restaurant_order_items': 'restaurant_order_items',
+    'vehicle_transactions': 'vehicle_transactions',
+    'cargo_status_history': 'cargo_status_history',
+  };
+
   Future<void> init(String userId) async {
-    _connectivity.onConnectivityChanged.listen((result) {
+    _ensureActiveUser(userId);
+    _activeUserId = userId;
+    await _connectivitySubscription?.cancel();
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((result) {
       _isOnline = !result.contains(ConnectivityResult.none);
       if (_isOnline) {
-        debugPrint('[SyncService] Online detected, triggering sync');
-        _syncAll(userId);
+        syncNow(userId);
       }
     });
+    final current = await _connectivity.checkConnectivity();
+    _isOnline = !current.contains(ConnectivityResult.none);
+    if (_isOnline) await syncNow(userId);
   }
 
-  /// Sync all local data to Firebase (push)
+  Future<void> syncNow(String userId) async {
+    _ensureActiveUser(userId);
+    if (!_isOnline || _isSyncing) return;
+    await syncFromCloud(userId);
+    await _syncAll(userId);
+  }
+
+  void _ensureActiveUser(String userId) {
+    if (userId.trim().isEmpty) throw ArgumentError('A signed-in UID is required.');
+    if (DBService.instance.activeUserId != userId) {
+      throw StateError('Refusing to sync: active SQLite account does not match Firebase UID.');
+    }
+    if (_activeUserId != null && _activeUserId != userId) {
+      throw StateError('Refusing to sync: another user is active in SyncService.');
+    }
+  }
+
+  CollectionReference<Map<String, dynamic>> _collection(String userId, String name) =>
+      _firestore.collection('users').doc(userId).collection(name);
+
+  String _documentId(String table, Map<String, Object?> row) {
+    if (table == 'shop') return 'profile';
+    final id = row['id'];
+    if (id == null) throw StateError('Table $table has a row without an id.');
+    return id.toString();
+  }
+
   Future<void> _syncAll(String userId) async {
     if (_isSyncing) return;
     _isSyncing = true;
-
     try {
+      _ensureActiveUser(userId);
       final db = await DBService.instance.database;
-
-      // Sync shop profile
-      debugPrint('[SyncService] Syncing shop profile...');
-      final shopRows = await db.query('shop', limit: 1);
-      if (shopRows.isNotEmpty) {
-        await _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('shop')
-            .doc('profile')
-            .set(shopRows.first as Map<String, dynamic>, SetOptions(merge: true));
+      for (final entry in _collections.entries) {
+        final rows = await db.query(entry.key);
+        for (var offset = 0; offset < rows.length; offset += 400) {
+          final batch = _firestore.batch();
+          final end = (offset + 400 < rows.length) ? offset + 400 : rows.length;
+          for (final row in rows.sublist(offset, end)) {
+            final data = Map<String, dynamic>.from(row);
+            final ref = _collection(userId, entry.value).doc(_documentId(entry.key, row));
+            batch.set(ref, data, SetOptions(merge: true));
+          }
+          if (end > offset) await batch.commit();
+        }
+        debugPrint('[SyncService] Pushed ${rows.length} rows from ${entry.key}');
       }
-
-      // Sync products with batch
-      debugPrint('[SyncService] Syncing products...');
-      final products = await db.query('products');
-      final productBatch = _firestore.batch();
-      for (final product in products) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('products')
-            .doc(product['id'] as String);
-        productBatch.set(ref, product as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await productBatch.commit();
-      debugPrint('[SyncService] Synced ${products.length} products');
-
-      // Sync bills with batch
-      debugPrint('[SyncService] Syncing bills...');
-      final bills = await db.query('bills');
-      final billBatch = _firestore.batch();
-      for (final bill in bills) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('bills')
-            .doc(bill['id'] as String);
-        billBatch.set(ref, bill as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await billBatch.commit();
-      debugPrint('[SyncService] Synced ${bills.length} bills');
-
-      // Sync suppliers
-      debugPrint('[SyncService] Syncing suppliers...');
-      final suppliers = await db.query('suppliers');
-      final supplierBatch = _firestore.batch();
-      for (final supplier in suppliers) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('suppliers')
-            .doc(supplier['id'] as String);
-        supplierBatch.set(ref, supplier as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await supplierBatch.commit();
-      debugPrint('[SyncService] Synced ${suppliers.length} suppliers');
-
-      // Sync sales
-      debugPrint('[SyncService] Syncing sales...');
-      final sales = await db.query('daily_sales');
-      final salesBatch = _firestore.batch();
-      for (final sale in sales) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('sales')
-            .doc(sale['id'] as String);
-        salesBatch.set(ref, sale as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await salesBatch.commit();
-      debugPrint('[SyncService] Synced ${sales.length} sales entries');
-
-      // Sync expenses
-      debugPrint('[SyncService] Syncing expenses...');
-      final expenses = await db.query('expenses');
-      final expenseBatch = _firestore.batch();
-      for (final expense in expenses) {
-        final ref = _firestore
-            .collection('users')
-            .doc(userId)
-            .collection('expenses')
-            .doc(expense['id'] as String);
-        expenseBatch.set(ref, expense as Map<String, dynamic>, SetOptions(merge: true));
-      }
-      await expenseBatch.commit();
-      debugPrint('[SyncService] Synced ${expenses.length} expenses');
-
-      debugPrint('[SyncService] ✓ All data synced to cloud');
-    } catch (e) {
-      debugPrint('[SyncService] Sync error: $e');
+    } catch (error, stackTrace) {
+      debugPrint('[SyncService] Cloud push failed: $error\n$stackTrace');
     } finally {
       _isSyncing = false;
     }
   }
 
-  /// Download cloud data and merge with local SQLite (pull)
+  /// Pulls each supported cloud collection into the active user's database.
+  /// Existing rows are merged by primary key. Deletion tombstones/conflict
+  /// resolution require an explicit change log and are not inferred from absence.
   Future<void> syncFromCloud(String userId) async {
+    _ensureActiveUser(userId);
     if (_isSyncing || !_isOnline) return;
     _isSyncing = true;
-
     try {
       final db = await DBService.instance.database;
-
-      // Sync shop
-      debugPrint('[SyncService] Pulling shop from cloud...');
-      final shopSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('shop')
-          .doc('profile')
-          .get();
-      if (shopSnap.exists) {
-        await db.insert('shop', shopSnap.data()!,
-            conflictAlgorithm: ConflictAlgorithm.replace);
+      for (final entry in _collections.entries) {
+        final snapshot = await _collection(userId, entry.value).get();
+        if (snapshot.docs.isEmpty) continue;
+        await db.transaction((txn) async {
+          for (final doc in snapshot.docs) {
+            final data = Map<String, dynamic>.from(doc.data());
+            data.putIfAbsent('id', () {
+              if (entry.key == 'bill_items' || entry.key == 'supplier_order_items') {
+                return int.tryParse(doc.id) ?? doc.id;
+              }
+              return doc.id;
+            });
+            await txn.insert(entry.key, data, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        });
+        debugPrint('[SyncService] Pulled ${snapshot.docs.length} rows into ${entry.key}');
       }
-
-      // Pull products
-      debugPrint('[SyncService] Pulling products from cloud...');
-      final productsSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('products')
-          .get();
-      for (final doc in productsSnap.docs) {
-        await db.insert('products', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      debugPrint('[SyncService] Pulled ${productsSnap.docs.length} products');
-
-      // Pull bills
-      debugPrint('[SyncService] Pulling bills from cloud...');
-      final billsSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('bills')
-          .get();
-      for (final doc in billsSnap.docs) {
-        await db.insert('bills', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      debugPrint('[SyncService] Pulled ${billsSnap.docs.length} bills');
-
-      // Pull suppliers
-      debugPrint('[SyncService] Pulling suppliers from cloud...');
-      final suppliersSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('suppliers')
-          .get();
-      for (final doc in suppliersSnap.docs) {
-        await db.insert('suppliers', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      debugPrint('[SyncService] Pulled ${suppliersSnap.docs.length} suppliers');
-
-      // Pull sales
-      debugPrint('[SyncService] Pulling sales from cloud...');
-      final salesSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('sales')
-          .get();
-      for (final doc in salesSnap.docs) {
-        await db.insert('daily_sales', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      debugPrint('[SyncService] Pulled ${salesSnap.docs.length} sales');
-
-      // Pull expenses
-      debugPrint('[SyncService] Pulling expenses from cloud...');
-      final expensesSnap = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('expenses')
-          .get();
-      for (final doc in expensesSnap.docs) {
-        await db.insert('expenses', doc.data(),
-            conflictAlgorithm: ConflictAlgorithm.replace);
-      }
-      debugPrint('[SyncService] Pulled ${expensesSnap.docs.length} expenses');
-
-      debugPrint('[SyncService] ✓ All cloud data pulled and merged');
-    } catch (e) {
-      debugPrint('[SyncService] Cloud pull error: $e');
+    } catch (error, stackTrace) {
+      debugPrint('[SyncService] Cloud pull failed: $error\n$stackTrace');
     } finally {
       _isSyncing = false;
     }
+  }
+
+  Future<void> dispose() async {
+    await _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+    _activeUserId = null;
   }
 }

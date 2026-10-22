@@ -6,6 +6,8 @@ import '../../providers/pos_provider.dart';
 import '../../providers/inventory_provider.dart';
 import '../../providers/shop_provider.dart';
 import '../../services/pdf_service.dart';
+import '../../services/business_operations_service.dart';
+import '../../services/db_service.dart';
 import 'bill_history_screen.dart';
 
 class PosScreen extends StatefulWidget {
@@ -17,7 +19,24 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final _currency = NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2);
-  final _searchCtrl = TextEditingController();
+  List<Map<String, Object?>> _branches = [];
+  String? _selectedBranchId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBranches();
+  }
+
+  Future<void> _loadBranches() async {
+    try {
+      final db = await DBService.instance.database;
+      final rows = await db.query('branches', orderBy: 'name COLLATE NOCASE');
+      if (mounted) setState(() => _branches = rows);
+    } catch (error) {
+      debugPrint('[POS] Branch list unavailable: $error');
+    }
+  }
 
   void _openAddItemSheet() {
     final inventory = context.read<InventoryProvider>();
@@ -36,6 +55,7 @@ class _PosScreenState extends State<PosScreen> {
       appBar: AppBar(
         title: const Text('New Bill'),
         actions: [
+          IconButton(icon: const Icon(Icons.refresh), tooltip: 'Refresh branch list', onPressed: _loadBranches),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: 'Bill History',
@@ -46,6 +66,22 @@ class _PosScreenState extends State<PosScreen> {
       ),
       body: Column(
         children: [
+          if (_branches.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: DropdownButtonFormField<String>(
+                value: _selectedBranchId ?? '__main__',
+                decoration: const InputDecoration(labelText: 'Stock source / branch', isDense: true),
+                items: [
+                  const DropdownMenuItem(value: '__main__', child: Text('Main inventory')),
+                  ..._branches.map((branch) => DropdownMenuItem(
+                    value: branch['id']! as String,
+                    child: Text(branch['name']! as String),
+                  )),
+                ],
+                onChanged: (value) => setState(() => _selectedBranchId = value == '__main__' ? null : value),
+              ),
+            ),
           Expanded(
             child: pos.cart.isEmpty
                 ? const _EmptyCart()
@@ -74,7 +110,7 @@ class _PosScreenState extends State<PosScreen> {
                     },
                   ),
           ),
-          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet),
+          _BillSummaryPanel(pos: pos, currency: _currency, onAddItem: _openAddItemSheet, branchId: _selectedBranchId),
         ],
       ),
     );
@@ -103,8 +139,9 @@ class _BillSummaryPanel extends StatelessWidget {
   final PosProvider pos;
   final NumberFormat currency;
   final VoidCallback onAddItem;
+  final String? branchId;
 
-  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem});
+  const _BillSummaryPanel({required this.pos, required this.currency, required this.onAddItem, required this.branchId});
 
   @override
   Widget build(BuildContext context) {
@@ -214,13 +251,81 @@ class _BillSummaryPanel extends StatelessWidget {
     );
   }
 
+  Future<List<PaymentLine>?> _showPaymentDialog(BuildContext context, double total) async {
+    final cashCtrl = TextEditingController(text: total.toStringAsFixed(2));
+    final bankCtrl = TextEditingController(text: '0');
+    String? error;
+    final result = await showDialog<List<PaymentLine>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Payment split'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Bill total: ${currency.format(total)}'),
+              TextField(
+                controller: cashCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Cash amount (Rs.)'),
+              ),
+              TextField(
+                controller: bankCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Card / bank transfer (Rs.)'),
+              ),
+              if (error != null) Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(error!, style: const TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                final cash = double.tryParse(cashCtrl.text) ?? -1;
+                final bank = double.tryParse(bankCtrl.text) ?? -1;
+                if (cash < 0 || bank < 0 || (cash + bank - total).abs() > 0.01) {
+                  setDialogState(() => error = 'Cash + card/bank must equal the bill total.');
+                  return;
+                }
+                final lines = <PaymentLine>[];
+                if (cash > 0) lines.add(PaymentLine(method: 'cash', amount: cash));
+                if (bank > 0) lines.add(PaymentLine(method: 'card_or_bank', amount: bank));
+                if (lines.isEmpty) {
+                  setDialogState(() => error = 'Enter at least one payment amount.');
+                  return;
+                }
+                Navigator.pop(dialogContext, lines);
+              },
+              child: const Text('Confirm payment'),
+            ),
+          ],
+        ),
+      ),
+    );
+    cashCtrl.dispose();
+    bankCtrl.dispose();
+    return result;
+  }
+
   Future<void> _checkoutAndShare(BuildContext context, PosProvider pos) async {
-    final inventory = context.read<InventoryProvider>();
-    final shop = context.read<ShopProvider>().shop;
-    final bill = await pos.checkout(inventory);
-    final file = await PdfService.generateInvoice(bill, shop);
-    if (!context.mounted) return;
-    await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
+    final payments = await _showPaymentDialog(context, pos.grandTotal);
+    if (payments == null || !context.mounted) return;
+    try {
+      final inventory = context.read<InventoryProvider>();
+      final shop = context.read<ShopProvider>().shop;
+      final bill = await pos.checkout(inventory, payments: payments, branchId: branchId);
+      final file = await PdfService.generateInvoice(bill, shop);
+      if (!context.mounted) return;
+      await Share.shareXFiles([XFile(file.path)], text: 'Here is your invoice from ${shop?.name ?? "our shop"}.');
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Checkout failed: $error')),
+      );
+    }
   }
 }
 
@@ -237,10 +342,22 @@ class _AddItemSheetState extends State<_AddItemSheet> {
   final _nameCtrl = TextEditingController();
   final _qtyCtrl = TextEditingController(text: '1');
   final _priceCtrl = TextEditingController();
+  final _imeiCtrl = TextEditingController();
+  String? _selectedProductId;
 
-  void _selectProduct(String name, double price) {
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    _imeiCtrl.dispose();
+    super.dispose();
+  }
+
+  void _selectProduct(String name, double price, String productId) {
     _nameCtrl.text = name;
     _priceCtrl.text = price.toString();
+    _selectedProductId = productId;
     setState(() {});
   }
 
@@ -272,12 +389,18 @@ class _AddItemSheetState extends State<_AddItemSheet> {
                           dense: true,
                           title: Text(p.name),
                           subtitle: Text('Stock: ${p.stockQuantity} • ${widget.currency.format(p.sellingPrice)}'),
-                          onTap: () => _selectProduct(p.name, p.sellingPrice),
+                          onTap: () => _selectProduct(p.name, p.sellingPrice, p.id),
                         ))
                     .toList(),
               ),
             ),
           const SizedBox(height: 8),
+          TextField(
+            controller: _imeiCtrl,
+            keyboardType: TextInputType.number,
+            maxLength: 15,
+            decoration: const InputDecoration(labelText: 'IMEI (optional for serialized mobile phones)', counterText: ''),
+          ),
           Row(
             children: [
               Expanded(
@@ -304,7 +427,12 @@ class _AddItemSheetState extends State<_AddItemSheet> {
               final qty = int.tryParse(_qtyCtrl.text) ?? 0;
               final price = double.tryParse(_priceCtrl.text) ?? 0;
               if (name.isEmpty || qty <= 0 || price <= 0) return;
-              context.read<PosProvider>().addItem(name, qty, price);
+              final imei = _imeiCtrl.text.trim();
+              if (imei.isNotEmpty && qty != 1) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('IMEI sale quantity must be 1.')));
+                return;
+              }
+              context.read<PosProvider>().addItem(name, qty, price, productId: _selectedProductId, imei: imei.isEmpty ? null : imei);
               Navigator.pop(context);
             },
             child: const Text('Add to Bill'),

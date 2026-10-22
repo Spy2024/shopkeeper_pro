@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'db_service.dart';
@@ -11,6 +13,8 @@ class SyncQueueService {
 
   final List<SyncOperation> _pendingQueue = [];
   bool _isSyncing = false;
+  String? _activeUserId;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Queue operations table schema
   static const String queueTableName = 'sync_queue';
@@ -26,6 +30,7 @@ class SyncQueueService {
 
   /// Initialize queue from database
   Future<void> init(String userId) async {
+    _activeUserId = userId;
     await _loadPendingQueue();
     debugPrint('[SyncQueue] Initialized with ${_pendingQueue.length} pending operations');
   }
@@ -46,8 +51,9 @@ class SyncQueueService {
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
 
-    _pendingQueue.add(syncOp);
     await _saveSyncOperation(syncOp);
+    _pendingQueue.removeWhere((existing) => existing.id == syncOp.id);
+    _pendingQueue.add(syncOp);
 
     debugPrint('[SyncQueue] Queued: $operation on $tableName/$documentId');
   }
@@ -71,6 +77,7 @@ class SyncQueueService {
       );
     } catch (e) {
       debugPrint('[SyncQueue] Error saving operation: $e');
+      rethrow;
     }
   }
 
@@ -109,13 +116,10 @@ class SyncQueueService {
 
     for (final op in List<SyncOperation>.from(_pendingQueue)) {
       try {
-        // TODO: Call _executeSync(userId, op) once Firestore is configured
-        successCount++;
-
-        // Mark as synced
+        await _executeSync(userId, op);
         await _markSynced(op.id);
-        _pendingQueue.remove(op);
-
+        _pendingQueue.removeWhere((queued) => queued.id == op.id);
+        successCount++;
         debugPrint('[SyncQueue] ✓ Synced: ${op.tableName}/${op.documentId}');
       } catch (e) {
         failureCount++;
@@ -133,6 +137,27 @@ class SyncQueueService {
     }
   }
 
+  Future<void> _executeSync(String userId, SyncOperation op) async {
+    if (userId.trim().isEmpty) throw ArgumentError('A signed-in user ID is required for sync.');
+    if (_activeUserId != null && _activeUserId != userId) {
+      throw StateError('Sync queue user does not match the active account.');
+    }
+    const allowedTables = <String>{'shop', 'products', 'bills', 'bill_items', 'suppliers', 'supplier_orders', 'supplier_order_items', 'daily_sales', 'expenses', 'customers', 'customer_ledger', 'returns', 'return_items', 'payments', 'branches', 'branch_stock', 'branch_cash_entries', 'product_variants', 'mobile_devices', 'restaurant_tables', 'restaurant_orders', 'restaurant_menu_items', 'restaurant_order_items', 'vehicle_records', 'vehicle_transactions', 'transport_routes', 'transport_tickets', 'cargo_jobs', 'cargo_status_history', 'service_jobs', 'spare_part_compatibility', 'school_students', 'school_fees', 'clinic_patients', 'clinic_appointments', 'salon_services', 'salon_bookings', 'farm_plots', 'farm_activities', 'construction_projects', 'construction_tasks', 'public_service_cases'};
+    if (!allowedTables.contains(op.tableName)) throw StateError('Unsupported sync table: ${op.tableName}');
+    final ref = _firestore.collection('users').doc(userId).collection(op.tableName).doc(op.documentId);
+    switch (op.operation) {
+      case 'create':
+      case 'update':
+        await ref.set(op.data, SetOptions(merge: op.operation == 'update'));
+        break;
+      case 'delete':
+        await ref.delete();
+        break;
+      default:
+        throw StateError('Unsupported sync operation: ${op.operation}');
+    }
+  }
+
   /// Mark operation as synced
   Future<void> _markSynced(String opId) async {
     try {
@@ -145,7 +170,14 @@ class SyncQueueService {
       );
     } catch (e) {
       debugPrint('[SyncQueue] Error marking as synced: $e');
+      rethrow;
     }
+  }
+
+  Future<void> resetForLogout() async {
+    _isSyncing = false;
+    _pendingQueue.clear();
+    _activeUserId = null;
   }
 
   /// Get pending operation count
@@ -155,44 +187,53 @@ class SyncQueueService {
 
   /// Clear failed operations after manual review
   Future<void> clearFailedOperations() async {
-    try {
-      final db = await DBService.instance.database;
-      // In production, mark failed ops differently for manual review
-      debugPrint('[SyncQueue] Cleared failed operations');
-    } catch (e) {
-      debugPrint('[SyncQueue] Error clearing failed ops: $e');
-    }
+    // Failure details are not persisted in the current schema, so clearing
+    // would risk deleting valid pending writes. Keep them until reviewed.
+    debugPrint('[SyncQueue] Failed-operation deletion is disabled to protect pending writes.');
   }
 }
 
 /// Represents a single sync operation
 class SyncOperation {
   final String id;
-  final String operation; // 'create', 'update', 'delete'
+  final String operation;
   final String tableName;
   final String documentId;
   final Map<String, dynamic> data;
   final int timestamp;
+  final int attempts;
+  final int? nextRetryAt;
+  final String? lastError;
 
-  SyncOperation({
+  const SyncOperation({
     required this.id,
     required this.operation,
     required this.tableName,
     required this.documentId,
     required this.data,
     required this.timestamp,
+    this.attempts = 0,
+    this.nextRetryAt,
+    this.lastError,
   });
 
-  String get dataAsJson => data.toString();
+  String get dataAsJson => jsonEncode(data);
 
   factory SyncOperation.fromMap(Map<String, dynamic> map) {
+    final rawData = map['data'];
+    final decodedData = rawData is String
+        ? jsonDecode(rawData)
+        : rawData;
     return SyncOperation(
       id: map['id'] as String,
       operation: map['operation'] as String,
       tableName: map['tableName'] as String,
       documentId: map['documentId'] as String,
-      data: {},
-      timestamp: map['timestamp'] as int,
+      data: Map<String, dynamic>.from(decodedData as Map),
+      timestamp: (map['timestamp'] as num).toInt(),
+      attempts: (map['attempts'] as num?)?.toInt() ?? 0,
+      nextRetryAt: (map['nextRetryAt'] as num?)?.toInt(),
+      lastError: map['lastError'] as String?,
     );
   }
 }

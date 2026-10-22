@@ -10,10 +10,8 @@ class ShopProvider extends ChangeNotifier {
   Future<void> load() async {
     final db = await DBService.instance.database;
     final rows = await db.query('shop', limit: 1);
-    if (rows.isNotEmpty) {
-      shop = Shop.fromMap(rows.first);
-      notifyListeners();
-    }
+    shop = rows.isNotEmpty ? Shop.fromMap(rows.first) : null;
+    notifyListeners();
   }
 
   Future<void> save({

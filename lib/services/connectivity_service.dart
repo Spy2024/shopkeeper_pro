@@ -10,7 +10,7 @@ class ConnectivityService {
   static final ConnectivityService instance = ConnectivityService._internal();
 
   final Connectivity _connectivity = Connectivity();
-  late StreamSubscription<List<ConnectivityResult>> _subscription;
+  StreamSubscription<List<ConnectivityResult>>? _subscription;
   bool _isOnline = false;
   String? _userId;
 
@@ -18,6 +18,7 @@ class ConnectivityService {
 
   /// Initialize connectivity monitoring
   Future<void> init(String userId) async {
+    await _subscription?.cancel();
     _userId = userId;
 
     // Check initial state
@@ -64,7 +65,9 @@ class ConnectivityService {
   }
 
   /// Dispose listener
-  void dispose() {
-    _subscription.cancel();
+  Future<void> dispose() async {
+    await _subscription?.cancel();
+    _subscription = null;
+    _userId = null;
   }
 }

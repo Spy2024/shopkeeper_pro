@@ -17,9 +17,12 @@ class SyncProvider extends ChangeNotifier {
 
   /// Initialize sync monitoring
   Future<void> init(String userId) async {
+    await SyncQueueService.instance.init(userId);
     await SyncService.instance.init(userId);
     await ConnectivityService.instance.init(userId);
-    await SyncQueueService.instance.init(userId);
+    if (SyncQueueService.instance.hasPending) {
+      await SyncQueueService.instance.syncPendingOperations(userId);
+    }
 
     // Update UI state
     _updateStatus();
@@ -45,8 +48,8 @@ class SyncProvider extends ChangeNotifier {
         await SyncQueueService.instance.syncPendingOperations(userId);
       }
 
-      // Sync from cloud
-      await SyncService.instance.syncFromCloud(userId);
+      // Pull remote changes and push the active user's local tables.
+      await SyncService.instance.syncNow(userId);
 
       _lastSyncTime = DateTime.now().toString();
     } finally {
